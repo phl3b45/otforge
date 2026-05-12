@@ -1,0 +1,70 @@
+appId: com.iburres.ics-simulator
+productName: ICS Simulator
+copyright: Copyright © 2026 Ian Burres
+
+directories:
+  buildResources: build
+  output: release
+
+files:
+  - out/**/*
+  - node_modules/**/*
+  - package.json
+
+extraMetadata:
+  main: out/main/index.js
+
+# Windows — NSIS installer
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ICS-Simulator-${version}-Setup.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ICS Simulator
+
+# macOS — DMG
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.developer-tools
+  artifactName: ICS-Simulator-${version}-${arch}.${ext}
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+dmg:
+  title: ICS Simulator ${version}
+  background: build/dmg-background.png
+  window:
+    width: 540
+    height: 380
+
+# Linux — AppImage
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Development
+  artifactName: ICS-Simulator-${version}.${ext}
+  maintainer: Ian Burres <iburres@att.net>
+  description: ICS/SCADA Security Simulator for Research and Education
+
+# Auto-update via GitHub Releases
+publish:
+  provider: github
+  owner: iburres
+  repo: ics-simulator
+  releaseType: release

@@ -1,0 +1,41 @@
+{
+  "name": "ics-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=packages/app",
+    "build": "npm run build --workspace=packages/schema && npm run build --workspace=packages/app",
+    "build:win": "npm run build:schema && npm run build:win --workspace=packages/app",
+    "build:mac": "npm run build:schema && npm run build:mac --workspace=packages/app",
+    "build:linux": "npm run build:schema && npm run build:linux --workspace=packages/app",
+    "build:schema": "npm run build --workspace=packages/schema",
+    "lint": "eslint \"packages/*/src/**/*.{ts,tsx}\"",
+    "lint:fix": "eslint \"packages/*/src/**/*.{ts,tsx}\" --fix",
+    "typecheck": "npm run typecheck --workspace=packages/schema && npm run typecheck --workspace=packages/app",
+    "format": "prettier --write \"packages/*/src/**/*.{ts,tsx,css,json}\"",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react": "^7.37.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3"
+  },
+  "lint-staged": {
+    "packages/*/src/**/*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "packages/*/src/**/*.{css,json}": [
+      "prettier --write"
+    ]
+  }
+}
