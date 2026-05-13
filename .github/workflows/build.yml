@@ -87,12 +87,15 @@ jobs:
   #   1. npm audit  — known CVEs in npm dependencies (hard-fail on critical only)
   #   2. Trivy FS   — broader CVE scan + secret detection across the repo
   #   3. Semgrep    — SAST for TypeScript security anti-patterns (informational)
+  #
+  # Results are saved as downloadable artifacts rather than uploaded to the
+  # GitHub Security tab — SARIF upload requires GitHub Advanced Security (GHAS),
+  # which is only available on public repos or paid plans.
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write   # needed to upload SARIF results to GitHub Security tab
     steps:
       - uses: actions/checkout@v4
 
@@ -121,39 +124,32 @@ jobs:
           severity: CRITICAL,HIGH
           scanners: vuln,secret
           ignore-unfixed: true
-          format: sarif
-          output: trivy-results.sarif
-        continue-on-error: true   # upload report even when findings exist
-
-      - name: Upload Trivy SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: trivy-results.sarif
-          category: trivy
+          format: table
+        continue-on-error: true   # informational — findings print to log, job continues
 
       # Semgrep SAST — TypeScript security patterns and hardcoded-secret rules.
-      # Informational on first rollout: findings appear in logs and as an artifact
-      # but do not block the pipeline.  Tighten to hard-fail after initial triage.
+      # --break-system-packages required on Ubuntu 24.04 where pip is externally managed.
+      # Informational on first rollout; tighten to hard-fail after initial triage.
       - name: Semgrep SAST scan
         run: |
-          python3 -m pip install --quiet semgrep
+          python3 -m pip install --quiet --break-system-packages semgrep
           semgrep scan \
             --config p/typescript \
             --config p/secrets \
-            --sarif \
-            --output semgrep-results.sarif \
+            --json \
+            --output semgrep-results.json \
             --no-git-ignore \
             . || true
         env:
           SEMGREP_SEND_METRICS: "off"   # opt out of telemetry in CI
 
-      - name: Upload Semgrep SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
+      - name: Upload Semgrep results artifact
+        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('semgrep-results.json') != ''
         with:
-          sarif_file: semgrep-results.sarif
-          category: semgrep
+          name: semgrep-results
+          path: semgrep-results.json
+          retention-days: 14
 
   # ── Platform builds ───────────────────────────────────────────────────────────
   # Waits for typecheck, lint, AND unit tests — all three must be green before

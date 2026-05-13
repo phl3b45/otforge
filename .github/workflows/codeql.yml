@@ -39,16 +39,16 @@ jobs:
       # including checks for prototype pollution, path traversal, and
       # injection vulnerabilities — all relevant to an Electron + Node.js app.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
 
       # CodeQL auto-builds JavaScript/TypeScript — no explicit build step needed.
       - name: Auto-build
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}
