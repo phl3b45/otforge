@@ -1,28 +1,34 @@
-import { useEffect, useState } from 'react'
-import type { AppInfo, DockerStatus } from '@ics-sim/schema'
+import { useEffect, useState, useCallback } from 'react'
+import type {
+  AppInfo,
+  DockerStatus,
+  ICSLabScenario,
+  DeviceConfig,
+  ContainerStatus
+} from '@ics-sim/schema'
+import { ScadaCanvas } from './canvas/ScadaCanvas'
+import { DevicePalette } from './palette/DevicePalette'
+import { PropertiesPanel } from './properties/PropertiesPanel'
 import './index.css'
 
-export default function App() {
-  const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
-  const [docker, setDocker] = useState<DockerStatus | null>(null)
-  const [checking, setChecking] = useState(true)
+type SimStatus = 'idle' | 'starting' | 'running' | 'stopping'
 
-  useEffect(() => {
-    async function init() {
-      const [info, dockerStatus] = await Promise.all([
-        window.electronAPI.app.info(),
-        window.electronAPI.docker.check()
-      ])
-      setAppInfo(info)
-      setDocker(dockerStatus)
-      setChecking(false)
-    }
-    init()
-  }, [])
+// ── Launch screen (shown before first scenario is loaded) ──────────────────────
 
+function LaunchScreen({
+  docker,
+  appInfo,
+  onImport,
+  onNew
+}: {
+  docker: DockerStatus | null
+  appInfo: AppInfo | null
+  onImport: () => void
+  onNew: () => void
+}) {
   return (
-    <div className="app">
-      <div className="app-header">
+    <div className="launch-screen">
+      <div className="launch-content">
         <div className="logo-mark">
           <span className="logo-bracket">[</span>
           <span className="logo-text">ICS</span>
@@ -30,67 +36,331 @@ export default function App() {
         </div>
         <h1>ICS Simulator</h1>
         <p className="tagline">ICS/SCADA Security Research &amp; Education Platform</p>
+
+        <div className="launch-status">
+          <div className="status-row">
+            <span className={`status-dot ${docker?.available ? 'ok' : 'error'}`} />
+            <span>
+              Docker:{' '}
+              {docker === null
+                ? 'Checking…'
+                : docker.available
+                  ? `Ready (v${docker.version})`
+                  : (docker.message ?? 'Not available')}
+            </span>
+          </div>
+          {appInfo && (
+            <div className="status-row">
+              <span className="status-dot ok" />
+              <span>
+                v{appInfo.version} · Electron {appInfo.electronVersion} · {appInfo.platform}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="launch-actions">
+          <button className="btn btn-primary btn-lg" onClick={onNew} disabled={!docker?.available}>
+            New Scenario
+          </button>
+          <button
+            className="btn btn-secondary btn-lg"
+            onClick={onImport}
+            disabled={!docker?.available}
+          >
+            Open .icslab File
+          </button>
+        </div>
+
+        {!docker?.available && docker !== null && (
+          <p className="launch-warning">Docker Desktop must be running to use the simulator.</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Toolbar ────────────────────────────────────────────────────────────────────
+
+function Toolbar({
+  scenario,
+  simStatus,
+  docker,
+  onImport,
+  onNew,
+  onStart,
+  onStop,
+  onHome
+}: {
+  scenario: ICSLabScenario | null
+  simStatus: SimStatus
+  docker: DockerStatus | null
+  onImport: () => void
+  onNew: () => void
+  onStart: () => void
+  onStop: () => void
+  onHome: () => void
+}) {
+  const scenarioName = scenario?.meta.name ?? 'Untitled Scenario'
+  const deviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
+  // Pre-compute booleans before JSX to avoid TypeScript control-flow narrowing inside ternaries
+  const isIdle = simStatus === 'idle'
+  const isStarting = simStatus === 'starting'
+  const isRunning = simStatus === 'running'
+  const isStopping = simStatus === 'stopping'
+  const showStop = isRunning || isStarting
+  const canStart = !!docker?.available && !!scenario && deviceCount > 0 && isIdle
+  const startTitle = !docker?.available
+    ? 'Docker is not running'
+    : deviceCount === 0
+      ? 'Add at least one device'
+      : ''
+
+  return (
+    <header className="toolbar">
+      <div className="toolbar-left">
+        <button className="toolbar-logo" onClick={onHome} title="Home">
+          <span className="logo-bracket">[</span>
+          <span className="logo-text-sm">ICS</span>
+          <span className="logo-bracket">]</span>
+        </button>
+        <div className="toolbar-scenario">
+          <span className="toolbar-scenario-name">{scenarioName}</span>
+          {deviceCount > 0 && (
+            <span className="toolbar-scenario-meta">
+              {deviceCount} device{deviceCount !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className="status-panel">
-        {checking ? (
-          <div className="status-row">
-            <span className="status-dot checking" />
-            <span>Checking system requirements…</span>
-          </div>
+      <div className="toolbar-center">
+        <SimStatusBadge status={simStatus} />
+      </div>
+
+      <div className="toolbar-right">
+        <button className="btn btn-sm btn-ghost" onClick={onNew} title="New scenario">
+          New
+        </button>
+        <button className="btn btn-sm btn-ghost" onClick={onImport} title="Open .icslab file">
+          Open
+        </button>
+        <div className="toolbar-divider" />
+        {showStop ? (
+          <button className="btn btn-sm btn-danger" onClick={onStop} disabled={isStopping}>
+            {isStopping ? 'Stopping…' : 'Stop Simulation'}
+          </button>
         ) : (
+          <button
+            className="btn btn-sm btn-run"
+            onClick={onStart}
+            disabled={!canStart}
+            title={startTitle}
+          >
+            {isStarting ? 'Starting…' : 'Run Simulation'}
+          </button>
+        )}
+      </div>
+    </header>
+  )
+}
+
+function SimStatusBadge({ status }: { status: SimStatus }) {
+  const configs: Record<SimStatus, { dot: string; label: string }> = {
+    idle: { dot: 'muted', label: 'Idle' },
+    starting: { dot: 'checking', label: 'Starting containers…' },
+    running: { dot: 'ok', label: 'Simulation running' },
+    stopping: { dot: 'checking', label: 'Stopping…' }
+  }
+  const { dot, label } = configs[status]
+  return (
+    <div className="sim-badge">
+      <span className={`status-dot ${dot}`} />
+      <span>{label}</span>
+    </div>
+  )
+}
+
+// ── Status bar ─────────────────────────────────────────────────────────────────
+
+function StatusBar({
+  docker,
+  simStatus,
+  containerStatuses
+}: {
+  docker: DockerStatus | null
+  simStatus: SimStatus
+  containerStatuses: ContainerStatus[]
+}) {
+  const running = containerStatuses.filter(c => c.status === 'running').length
+  const total = containerStatuses.length
+
+  return (
+    <footer className="status-bar">
+      <div className="status-bar-left">
+        <span className={`status-dot ${docker?.available ? 'ok' : 'error'}`} />
+        <span>Docker {docker?.available ? `v${docker.version}` : 'not ready'}</span>
+        {simStatus === 'running' && total > 0 && (
           <>
-            <div className="status-row">
-              <span className={`status-dot ${docker?.available ? 'ok' : 'error'}`} />
-              <span>
-                Docker:{' '}
-                {docker?.available
-                  ? `Ready (v${docker.version})`
-                  : (docker?.message ?? 'Not available')}
-              </span>
-            </div>
-            <div className="status-row">
-              <span className="status-dot ok" />
-              <span>
-                App: v{appInfo?.version} · Electron {appInfo?.electronVersion} · Node{' '}
-                {appInfo?.nodeVersion}
-              </span>
-            </div>
-            <div className="status-row">
-              <span className="status-dot ok" />
-              <span>Platform: {appInfo?.platform}</span>
-            </div>
+            <span className="status-sep">·</span>
+            <span>
+              {running}/{total} containers running
+            </span>
           </>
         )}
       </div>
-
-      <div className="phase-notice">
-        <strong>Phase 0 — Scaffold Complete</strong>
-        <p>
-          Canvas editor, protocol simulation, security stack, and HMI panels are built in Phases
-          1–11. Import a <code>.icslab</code> scenario file to begin.
-        </p>
-        <div className="action-row">
-          <button
-            className="btn btn-primary"
-            onClick={() => window.electronAPI.scenario.import()}
-            disabled={!docker?.available}
+      <div className="status-bar-right">
+        {containerStatuses.slice(0, 6).map(c => (
+          <span
+            key={c.nodeId}
+            className="container-pill"
+            title={`${c.nodeId}: ${c.status}`}
+            style={{
+              borderColor:
+                c.status === 'running' ? '#3fb950' : c.status === 'error' ? '#f85149' : '#484f58'
+            }}
           >
-            Import Scenario
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() =>
-              window.electronAPI.app.openExternal('https://github.com/iburres/ics-simulator')
-            }
-          >
-            Documentation
-          </button>
-        </div>
-        {!docker?.available && (
-          <p className="warning">Docker Desktop must be running to launch simulations.</p>
+            <span
+              className={`status-dot xs ${c.status === 'running' ? 'ok' : c.status === 'error' ? 'error' : 'checking'}`}
+            />
+            {c.nodeId}
+          </span>
+        ))}
+        {containerStatuses.length > 6 && (
+          <span className="container-pill-more">+{containerStatuses.length - 6}</span>
         )}
       </div>
+    </footer>
+  )
+}
+
+// ── Root App ───────────────────────────────────────────────────────────────────
+
+type View = 'launch' | 'canvas'
+
+export default function App() {
+  const [view, setView] = useState<View>('launch')
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
+  const [docker, setDocker] = useState<DockerStatus | null>(null)
+  const [scenario, setScenario] = useState<ICSLabScenario | null>(null)
+  const [selectedDevice, setSelectedDevice] = useState<DeviceConfig | null>(null)
+  const [selectedZone, setSelectedZone] = useState<string | null>(null)
+  const [simStatus, setSimStatus] = useState<SimStatus>('idle')
+  const [containerStatuses, setContainerStatuses] = useState<ContainerStatus[]>([])
+
+  useEffect(() => {
+    Promise.all([window.electronAPI.app.info(), window.electronAPI.docker.check()]).then(
+      ([info, dockerStatus]) => {
+        setAppInfo(info)
+        setDocker(dockerStatus)
+      }
+    )
+
+    const unsubStatus = window.electronAPI.on.containerStatusUpdate(status => {
+      setContainerStatuses(prev => {
+        const idx = prev.findIndex(s => s.nodeId === status.nodeId)
+        if (idx >= 0) {
+          return prev.map((s, i) => (i === idx ? status : s))
+        }
+        return [...prev, status]
+      })
+    })
+
+    return () => {
+      unsubStatus()
+    }
+  }, [])
+
+  const handleImport = useCallback(async () => {
+    const result = await window.electronAPI.scenario.import()
+    if (result.scenario) {
+      setScenario(result.scenario)
+      setView('canvas')
+    }
+  }, [])
+
+  const handleNew = useCallback(() => {
+    setScenario(null)
+    setSelectedDevice(null)
+    setSelectedZone(null)
+    setSimStatus('idle')
+    setContainerStatuses([])
+    setView('canvas')
+  }, [])
+
+  const handleHome = useCallback(() => {
+    if (simStatus === 'running') return
+    setView('launch')
+  }, [simStatus])
+
+  const handleSelectDevice = useCallback(
+    (nodeId: string | null, device: DeviceConfig | null) => {
+      setSelectedDevice(device)
+      // Find zone from scenario
+      if (nodeId && scenario) {
+        const canvasNode = scenario.visual.nodes.find(n => n.id === nodeId)
+        setSelectedZone(canvasNode?.data.zone ?? null)
+      } else {
+        setSelectedZone(null)
+      }
+    },
+    [scenario]
+  )
+
+  const handleScenarioChange = useCallback(
+    (updater: (s: ICSLabScenario | null) => ICSLabScenario | null) => {
+      setScenario(prev => updater(prev))
+    },
+    []
+  )
+
+  const handleStart = useCallback(async () => {
+    if (!scenario) return
+    setSimStatus('starting')
+    setContainerStatuses([])
+    const result = await window.electronAPI.simulation.start(scenario)
+    if (result.ok) {
+      setSimStatus('running')
+    } else {
+      setSimStatus('idle')
+    }
+  }, [scenario])
+
+  const handleStop = useCallback(async () => {
+    setSimStatus('stopping')
+    await window.electronAPI.simulation.stop()
+    setSimStatus('idle')
+    setContainerStatuses([])
+  }, [])
+
+  if (view === 'launch') {
+    return (
+      <LaunchScreen docker={docker} appInfo={appInfo} onImport={handleImport} onNew={handleNew} />
+    )
+  }
+
+  return (
+    <div className="app-shell">
+      <Toolbar
+        scenario={scenario}
+        simStatus={simStatus}
+        docker={docker}
+        onImport={handleImport}
+        onNew={handleNew}
+        onStart={handleStart}
+        onStop={handleStop}
+        onHome={handleHome}
+      />
+      <div className="workspace">
+        <DevicePalette />
+        <ScadaCanvas
+          scenario={scenario}
+          onSelectDevice={handleSelectDevice}
+          onScenarioChange={handleScenarioChange}
+        />
+        <PropertiesPanel device={selectedDevice} zone={selectedZone} />
+      </div>
+      <StatusBar docker={docker} simStatus={simStatus} containerStatuses={containerStatuses} />
     </div>
   )
 }

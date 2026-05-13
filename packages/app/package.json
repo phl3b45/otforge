@@ -19,6 +19,7 @@
     "@electron-toolkit/utils": "^3.0.0",
     "@ics-sim/orchestrator": "*",
     "@ics-sim/schema": "*",
+    "@xyflow/react": "^12.10.2",
     "classic-level": "^1.4.1"
   },
   "devDependencies": {
