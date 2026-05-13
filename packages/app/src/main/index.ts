@@ -8,9 +8,27 @@ import type {
   ScenarioExportResult,
   ScenarioExportOptions
 } from '@ics-sim/schema'
-import { readFile, writeFile } from 'fs/promises'
+import { readFile, writeFile, access } from 'fs/promises'
 import { exec } from 'child_process'
 import { promisify } from 'util'
+import { join as pathJoin } from 'path'
+
+const DOCKER_DOWNLOAD_URLS: Record<string, string> = {
+  win32: 'https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe',
+  darwin: 'https://desktop.docker.com/mac/main/arm64/Docker.dmg',
+  linux: 'https://docs.docker.com/desktop/install/linux/'
+}
+
+async function isFirstLaunch(): Promise<boolean> {
+  const flagPath = pathJoin(app.getPath('userData'), '.launched')
+  try {
+    await access(flagPath)
+    return false
+  } catch {
+    await writeFile(flagPath, '1', 'utf-8')
+    return true
+  }
+}
 
 const execAsync = promisify(exec)
 
@@ -39,6 +57,36 @@ function buildDockerEnv(): NodeJS.ProcessEnv {
     ...process.env,
     PATH: `${extra}${sep}${process.env.PATH ?? ''}`
   }
+}
+
+async function checkDocker(): Promise<{ available: boolean }> {
+  try {
+    await execAsync('docker version --format "{{.Server.Version}}"', { env: buildDockerEnv() })
+    return { available: true }
+  } catch {
+    return { available: false }
+  }
+}
+
+function showDockerInstallPrompt(): void {
+  const url = DOCKER_DOWNLOAD_URLS[process.platform] ?? DOCKER_DOWNLOAD_URLS['linux']
+  dialog
+    .showMessageBox(mainWindow!, {
+      type: 'info',
+      title: 'Docker Desktop Required',
+      message: 'ICS Simulator requires Docker Desktop',
+      detail:
+        'Docker Desktop creates the isolated virtual networks that power every simulation.\n\n' +
+        'Click "Download Docker Desktop" to get the installer. Once installed, start Docker Desktop ' +
+        'and look for the whale icon in your system tray before launching a simulation.\n\n' +
+        'Docker Desktop is free for personal and educational use.',
+      buttons: ['Download Docker Desktop', 'I Already Have It'],
+      defaultId: 0,
+      cancelId: 1
+    })
+    .then(({ response }) => {
+      if (response === 0) shell.openExternal(url)
+    })
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -81,9 +129,14 @@ function createWindow(): void {
 
 // ── App lifecycle ──────────────────────────────────────────────────────────────
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow()
   registerIPCHandlers()
+
+  const [first, dockerStatus] = await Promise.all([isFirstLaunch(), checkDocker()])
+  if (first && !dockerStatus.available) {
+    showDockerInstallPrompt()
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
