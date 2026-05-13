@@ -94,6 +94,8 @@ interface ComposeService {
   environment: string[] | undefined
   volumes: string[] | undefined
   cap_add: string[] | undefined
+  /** Port mappings in "hostPort:containerPort" format. Used for PLC web UIs. */
+  ports?: string[]
   deploy: { resources: { limits: { memory: string; cpus: string } } }
 }
 
@@ -164,6 +166,15 @@ export function generateCompose(scenario: ICSLabScenario, projectName: string): 
 
   // ── Device containers ──────────────────────────────────────────────────────
   // One service per device node in the scenario's device graph.
+  //
+  // PLC port assignment (Phase 4):
+  //   Each PLC container's OpenPLC web interface (port 8080) is published on a
+  //   deterministic host port starting at PLC_WEB_PORT_BASE. The same ordering
+  //   is replicated in main/index.ts to build the activePlcPorts map used by
+  //   the plc:deploy IPC handler.
+  const PLC_WEB_PORT_BASE = 18080
+  let plcPortIndex = 0
+
   for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
     // Use a custom image if specified (for advanced scenarios), otherwise use the category default
     const image = device.dockerImage ?? DEVICE_IMAGES[device.category]
@@ -191,6 +202,15 @@ export function generateCompose(scenario: ICSLabScenario, projectName: string): 
           limits: { memory: `${limits.memory}m`, cpus: limits.cpus }
         }
       }
+    }
+
+    // PLC containers publish their OpenPLC web interface (port 8080) on a
+    // deterministic host port so the main process can reach the REST API for
+    // live ST program deployment (plc:deploy IPC handler).
+    if (device.category === 'plc') {
+      const hostPort = PLC_WEB_PORT_BASE + plcPortIndex
+      services[serviceName].ports = [`${hostPort}:8080`]
+      plcPortIndex++
     }
 
     // Firewall bridges all three internal zones to enforce inter-zone ACLs.
@@ -438,6 +458,19 @@ function buildDeviceEnv(
   if (device.opcua) {
     env.push(`OPCUA_PORT=${device.opcua.port}`)
     env.push(`OPCUA_NAMESPACE=${device.opcua.namespace}`)
+  }
+
+  // PLC program pre-load (Phase 4):
+  //   If the device has a saved Structured Text program, inject it as a base64-
+  //   encoded environment variable. The OpenPLC entrypoint.sh reads this variable,
+  //   decodes it to a .st file, and pre-loads it into the runtime at container
+  //   startup — so the PLC runs the user's program from the very first second.
+  //   The source field in PLCProgramConfig is already base64-encoded (btoa in the UI).
+  if (device.plcProgram?.source) {
+    env.push(`INITIAL_PROGRAM_B64=${device.plcProgram.source}`)
+    // Also inject the Modbus variable binding count so the bridge script knows
+    // how many protocol-mapped registers to initialise.
+    env.push(`PLC_VAR_COUNT=${device.plcProgram.variables.length}`)
   }
 
   return env

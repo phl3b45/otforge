@@ -686,6 +686,273 @@ code.prop-value {
   line-height: 1.4;
 }
 
+/* ── PLC IDE panel ─────────────────────────────────────────────────────────────
+ *
+ * The PLC IDE replaces the standard property rows when a PLC device is selected.
+ * It provides a Structured Text editor, ladder logic viewer, variable binding
+ * table, and deploy controls — all fitting within the right sidebar panel.
+ *
+ * The panel widens slightly in .plc-mode to give the ST editor more horizontal
+ * space without overflowing the 1400px minimum window width.
+ * ────────────────────────────────────────────────────────────────────────────── */
+
+.properties-panel.plc-mode {
+  width: 320px;
+}
+
+.plc-ide {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── Section wrappers ──────────────────────────────────────────────────── */
+
+.plc-ide-section {
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.plc-ide-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.375rem 0.75rem 0.25rem;
+}
+
+.plc-ide-section-title {
+  font-size: 0.675rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.plc-ide-section-hint {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+/* ── Structured Text editor textarea ───────────────────────────────────── */
+
+.plc-st-editor {
+  display: block;
+  width: 100%;
+  min-height: 200px;
+  resize: vertical;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: none;
+  border-top: 1px solid var(--border-muted);
+  padding: 0.5rem 0.625rem;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  tab-size: 2;
+  outline: none;
+  /* Preserve whitespace and newlines as typed */
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.plc-st-editor:focus {
+  background: var(--bg-primary);
+  border-top-color: var(--accent-blue);
+}
+
+/* ── Ladder logic SVG viewer ────────────────────────────────────────────── */
+
+.plc-ladder-wrap {
+  padding: 0.375rem 0.625rem 0.5rem;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-muted);
+}
+
+.plc-ladder-svg {
+  display: block;
+  width: 100%;
+  /* Prevent the SVG from growing taller than the content naturally needs */
+  max-height: 180px;
+  overflow: visible;
+}
+
+.plc-ladder-empty {
+  padding: 0.75rem 0.625rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: center;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-muted);
+}
+
+/* ── Analog variable summary chips below the ladder ────────────────────── */
+
+.plc-ladder-analog {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.375rem;
+  padding-top: 0.375rem;
+  border-top: 1px solid var(--border-muted);
+}
+
+.plc-ladder-analog-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.plc-ladder-analog-chip {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-muted);
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.plc-ladder-analog-chip code {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--accent-orange);
+  font-size: 0.65rem;
+}
+
+/* ── Variable binding table ─────────────────────────────────────────────── */
+
+.plc-var-table-wrap {
+  padding: 0.375rem 0;
+  border-top: 1px solid var(--border-muted);
+  background: var(--bg-secondary);
+}
+
+.plc-var-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.7rem;
+}
+
+.plc-var-table th {
+  padding: 0.2rem 0.375rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  text-align: left;
+  border-bottom: 1px solid var(--border-muted);
+  white-space: nowrap;
+}
+
+.plc-var-table td {
+  padding: 0.15rem 0.25rem;
+  vertical-align: middle;
+}
+
+.plc-var-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+/* Compact inputs and selects that fit in narrow table cells */
+.plc-var-input,
+.plc-var-select {
+  width: 100%;
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  padding: 1px 3px;
+  font-size: 0.7rem;
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
+}
+
+.plc-var-input:focus,
+.plc-var-select:focus {
+  background: var(--bg-panel);
+  border-color: var(--accent-blue);
+}
+
+.plc-var-input.plc-var-mono {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--accent-teal);
+}
+
+.plc-var-select {
+  cursor: pointer;
+  /* Prevent the native select arrow from overlapping text in narrow cells */
+  padding-right: 14px;
+  appearance: auto;
+}
+
+/* Delete row button — small ×, appears only on hover for density */
+.plc-var-del {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.4;
+  transition:
+    opacity 0.15s,
+    color 0.15s;
+}
+
+.plc-var-del:hover {
+  color: var(--accent-red);
+  opacity: 1;
+}
+
+.plc-var-add {
+  display: block;
+  width: calc(100% - 1rem);
+  margin: 0.375rem 0.5rem 0;
+  text-align: center;
+  font-size: 0.7rem;
+}
+
+/* ── Action buttons row ─────────────────────────────────────────────────── */
+
+.plc-ide-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.plc-ide-actions .btn {
+  flex: 1;
+  justify-content: center;
+  font-size: 0.7rem;
+}
+
+/* ── Deploy output console ──────────────────────────────────────────────── */
+
+.plc-deploy-output {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 100px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
 /* ── Status bar ───────────────────────────────────────────────────────────────── */
 
 .status-bar {

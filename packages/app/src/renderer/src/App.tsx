@@ -29,7 +29,8 @@ import type {
   DockerStatus,
   ICSLabScenario,
   DeviceConfig,
-  ContainerStatus
+  ContainerStatus,
+  PLCProgramConfig
 } from '@ics-sim/schema'
 import { ScadaCanvas } from './canvas/ScadaCanvas'
 import { DevicePalette } from './palette/DevicePalette'
@@ -433,6 +434,34 @@ export default function App() {
   )
 
   /**
+   * Stores a PLC program into the scenario's device config.
+   *
+   * Called by PlcIdePanel (via PropertiesPanel) when the user saves or deploys
+   * a Structured Text program. Performs a deep-merge update into the nested
+   * scenario.devices.devices[nodeId] object, preserving all other device fields.
+   *
+   * The updated scenario is immediately available to handleStart() for the next
+   * simulation launch. The compose generator will include INITIAL_PROGRAM_B64
+   * in the PLC service's environment when a plcProgram is present.
+   *
+   * @param nodeId  - Canvas node ID of the PLC device being updated.
+   * @param program - New PLCProgramConfig to write into the scenario.
+   */
+  const handleProgramChange = useCallback((nodeId: string, program: PLCProgramConfig) => {
+    setScenario(prev => {
+      if (!prev) return prev
+      const updatedDevice = { ...prev.devices.devices[nodeId], plcProgram: program }
+      return {
+        ...prev,
+        devices: {
+          ...prev.devices,
+          devices: { ...prev.devices.devices, [nodeId]: updatedDevice }
+        }
+      }
+    })
+  }, [])
+
+  /**
    * Starts the simulation:
    *   1. Transition to 'starting' (disables controls)
    *   2. Call simulation:start IPC which generates compose and runs docker compose up
@@ -491,7 +520,12 @@ export default function App() {
           onSelectDevice={handleSelectDevice}
           onScenarioChange={handleScenarioChange}
         />
-        <PropertiesPanel device={selectedDevice} zone={selectedZone} />
+        <PropertiesPanel
+          device={selectedDevice}
+          zone={selectedZone}
+          simRunning={simStatus === 'running'}
+          onProgramChange={handleProgramChange}
+        />
       </div>
       <StatusBar docker={docker} simStatus={simStatus} containerStatuses={containerStatuses} />
     </div>

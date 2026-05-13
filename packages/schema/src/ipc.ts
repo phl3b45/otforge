@@ -21,7 +21,7 @@ export interface ScenarioImportResult {
 
 export interface ScenarioExportOptions {
   locked: boolean
-  filePath?: string   // if omitted, opens save dialog
+  filePath?: string // if omitted, opens save dialog
 }
 
 export interface ScenarioExportResult {
@@ -63,6 +63,33 @@ export interface AppInfo {
   platform: 'win32' | 'darwin' | 'linux'
 }
 
+// ── PLC IDE (Phase 4) ──────────────────────────────────────────────────────────
+
+/**
+ * Result of uploading and compiling a Structured Text program to a running
+ * OpenPLC Runtime container. The `output` field carries compiler stdout so the
+ * IDE panel can display any warnings or errors to the user.
+ */
+export interface PLCDeployResult {
+  ok: boolean
+  /** Raw compiler output lines from the IEC 61131-3 → C transpiler. */
+  output?: string
+  error?: string
+}
+
+/**
+ * Runtime state of the OpenPLC execution engine inside a container.
+ * Polled by the IDE panel to show whether the PLC is actively running a program.
+ */
+export interface PLCRuntimeStatus {
+  nodeId: string
+  /** True when OpenPLC Runtime is executing a program (not stopped or crashed). */
+  running: boolean
+  /** Name of the currently loaded program file (without extension). */
+  program?: string
+  error?: string
+}
+
 // ── IPC Channel map ────────────────────────────────────────────────────────────
 // Keyed by channel name. Value is [RequestArgs, ResponseType].
 // Used to type contextBridge exposure and ipcMain.handle registration.
@@ -74,7 +101,10 @@ export interface IPCChannels {
 
   // Scenario management
   'scenario:import': [void, ScenarioImportResult]
-  'scenario:export': [{ scenario: ICSLabScenario; options: ScenarioExportOptions }, ScenarioExportResult]
+  'scenario:export': [
+    { scenario: ICSLabScenario; options: ScenarioExportOptions },
+    ScenarioExportResult
+  ]
   'scenario:validate': [ICSLabScenario, { valid: boolean; errors: string[] }]
 
   // Simulation lifecycle
@@ -89,6 +119,21 @@ export interface IPCChannels {
   // App
   'app:info': [void, AppInfo]
   'app:openExternal': [{ url: string }, void]
+
+  // PLC IDE (Phase 4)
+  /**
+   * Uploads a Structured Text source string to the running OpenPLC container
+   * for the given device nodeId. The main process locates the container by
+   * its published web port, authenticates to OpenPLC, uploads the file, and
+   * triggers recompilation + PLC restart.
+   */
+  'plc:deploy': [{ nodeId: string; source: string }, PLCDeployResult]
+
+  /**
+   * Returns the execution state of the OpenPLC runtime inside the given
+   * device's container. Used by the IDE panel to show run/stopped status.
+   */
+  'plc:status': [{ nodeId: string }, PLCRuntimeStatus]
 }
 
 // ── One-way event channels (main → renderer) ───────────────────────────────────

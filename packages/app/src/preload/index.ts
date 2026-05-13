@@ -33,7 +33,9 @@ import type {
   SimulationStopResult,
   ContainerStatus,
   LicenseValidationResult,
-  ICSLabScenario
+  ICSLabScenario,
+  PLCDeployResult,
+  PLCRuntimeStatus
 } from '@ics-sim/schema'
 
 /**
@@ -127,6 +129,29 @@ const api = {
       ipcRenderer.invoke('license:validate', { key }),
     /** Returns the current license state without a key argument. */
     info: (): Promise<LicenseValidationResult> => ipcRenderer.invoke('license:info')
+  },
+
+  // ── PLC IDE (Phase 4) ─────────────────────────────────────────────────────────
+  plc: {
+    /**
+     * Uploads a Structured Text program to the running OpenPLC container for the
+     * given device and triggers recompilation + PLC scan cycle restart.
+     *
+     * @param nodeId - Canvas node ID of the target PLC device.
+     * @param source - Raw ST source text (UTF-8, decoded from base64 storage).
+     * @returns PLCDeployResult with compiler output or error message.
+     */
+    deploy: (nodeId: string, source: string): Promise<PLCDeployResult> =>
+      ipcRenderer.invoke('plc:deploy', { nodeId, source }),
+
+    /**
+     * Returns the current execution state of the OpenPLC runtime in the given
+     * device's container (running vs. stopped/idle).
+     *
+     * @param nodeId - Canvas node ID of the PLC device to query.
+     */
+    status: (nodeId: string): Promise<PLCRuntimeStatus> =>
+      ipcRenderer.invoke('plc:status', { nodeId })
   },
 
   // ── One-way push events from main → renderer ──────────────────────────────────

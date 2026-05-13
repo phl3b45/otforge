@@ -31,13 +31,16 @@ import type {
   SimulationStartResult,
   SimulationStopResult,
   ContainerStatus,
-  ICSLabScenario
+  ICSLabScenario,
+  PLCDeployResult,
+  PLCRuntimeStatus
 } from '@ics-sim/schema'
 import { readFile, writeFile, access } from 'fs/promises'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { join as pathJoin } from 'path'
 import os from 'os'
+import http from 'http'
 import {
   generateCompose,
   DockerClient,
@@ -171,6 +174,17 @@ let dockerClient: DockerClient
  * Null when no simulation is active. Used by stop/status IPC handlers.
  */
 let activeProjectName: string | null = null
+
+/**
+ * Maps PLC device nodeIds to their published host ports for the OpenPLC web
+ * interface. Populated when a simulation starts (same ordering as the compose
+ * generator's PLC_WEB_PORT_BASE + index logic) and cleared when it stops.
+ *
+ * Used by the plc:deploy IPC handler to route HTTP API calls to the correct
+ * container. Ports start at 18080 (first PLC in Object.entries iteration order,
+ * matching compose-generator.ts).
+ */
+const activePlcPorts = new Map<string, number>()
 
 // ── App lifecycle ──────────────────────────────────────────────────────────────
 
@@ -469,6 +483,17 @@ function registerIPCHandlers(): void {
       const projectName = toProjectName(scenario.meta.name)
       activeProjectName = projectName
 
+      // Build PLC port map with same iteration order and base port as compose-generator.ts
+      // so plc:deploy can find the right host port without parsing the compose file.
+      activePlcPorts.clear()
+      let plcIdx = 0
+      for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
+        if (device.category === 'plc') {
+          activePlcPorts.set(nodeId, 18080 + plcIdx)
+          plcIdx++
+        }
+      }
+
       const composeYaml = generateCompose(scenario, projectName)
       const result = await dockerClient.startScenario(projectName, composeYaml)
 
@@ -501,6 +526,7 @@ function registerIPCHandlers(): void {
     if (result.ok) {
       await clearActiveScenario()
       activeProjectName = null
+      activePlcPorts.clear()
     }
     return result
   })
@@ -513,6 +539,89 @@ function registerIPCHandlers(): void {
     if (!activeProjectName) return []
     return dockerClient.getStatus(activeProjectName)
   })
+
+  // ── PLC IDE — live program deployment (Phase 4) ───────────────────────────────
+
+  /**
+   * Uploads a Structured Text program to a running OpenPLC container and
+   * triggers recompilation + PLC restart.
+   *
+   * Workflow:
+   *   1. Look up the OpenPLC container's published host port from activePlcPorts.
+   *   2. POST credentials to /login to obtain a Flask session cookie.
+   *   3. POST the ST source as a multipart file upload to /upload-program.
+   *   4. GET /start_plc to compile and begin execution.
+   *   5. Return the compiler output for display in the PlcIdePanel status area.
+   *
+   * If no simulation is running (activePlcPorts is empty), returns a notice
+   * telling the user to restart the simulation to apply the saved program.
+   *
+   * OpenPLC default credentials are openplc / openplc (set during install.sh).
+   * These are intentionally insecure defaults for lab use — in production ICS
+   * environments, credentials would be rotated and the web interface would be
+   * isolated behind a VLAN.
+   *
+   * @param nodeId - Canvas node ID of the target PLC device.
+   * @param source - Decoded ST source text (not base64 — the preload decodes it).
+   */
+  ipcMain.handle(
+    'plc:deploy',
+    async (
+      _e,
+      { nodeId, source }: { nodeId: string; source: string }
+    ): Promise<PLCDeployResult> => {
+      // If no simulation is running, the program can only be pre-loaded at next start
+      if (!activeProjectName || activePlcPorts.size === 0) {
+        return {
+          ok: true,
+          output: 'Program saved to scenario. Restart simulation to deploy to PLC container.'
+        }
+      }
+
+      const hostPort = activePlcPorts.get(nodeId)
+      if (!hostPort) {
+        return {
+          ok: false,
+          error: `No running OpenPLC container found for device "${nodeId}". Check simulation status.`
+        }
+      }
+
+      try {
+        return await deployToOpenPLC(hostPort, source, nodeId)
+      } catch (err) {
+        return { ok: false, error: `Deploy error: ${(err as Error).message}` }
+      }
+    }
+  )
+
+  /**
+   * Polls the OpenPLC Runtime's web interface to determine whether the PLC
+   * is actively executing a program or is stopped/idle.
+   *
+   * Makes a lightweight GET request to the /dashboard endpoint and inspects
+   * the response HTML for the "PLC Status" indicator text. Returns running=false
+   * if the request fails (container not yet ready, network not available, etc.).
+   *
+   * @param nodeId - Canvas node ID of the PLC device to query.
+   */
+  ipcMain.handle(
+    'plc:status',
+    async (_e, { nodeId }: { nodeId: string }): Promise<PLCRuntimeStatus> => {
+      const hostPort = activePlcPorts.get(nodeId)
+      if (!hostPort) {
+        return { nodeId, running: false, error: 'No active container for this device' }
+      }
+
+      try {
+        const body = await httpGet(`http://localhost:${hostPort}/dashboard`)
+        // OpenPLC dashboard HTML contains "PLC Status: Running" or "PLC Status: Stopped"
+        const running = body.includes('Running') && !body.includes('PLC Status: Stopped')
+        return { nodeId, running }
+      } catch {
+        return { nodeId, running: false }
+      }
+    }
+  )
 
   // ── License (Phase 12 stubs) ──────────────────────────────────────────────────
   // Real license validation is implemented in Phase 12. During development,
@@ -547,4 +656,174 @@ function registerIPCHandlers(): void {
     freeMb: Math.round(os.freemem() / 1024 / 1024),
     cpus: os.cpus().length
   }))
+}
+
+// ── OpenPLC HTTP API helpers ───────────────────────────────────────────────────
+//
+// These helpers implement the OpenPLC Runtime v3 web API using Node.js's built-in
+// `http` module. The native module is used (rather than global `fetch`) because it
+// gives us direct access to individual Set-Cookie headers without the redirect
+// handling complexities of the Fetch API's cookie model.
+//
+// OpenPLC Runtime v3 web API summary (Flask backend):
+//   POST /login                  — Form auth: username + password → session cookie
+//   POST /upload-program         — Multipart file upload: field name = "file"
+//   GET  /start_plc              — Compile uploaded file and start scan cycle
+//   GET  /stop_plc               — Halt scan cycle (program remains loaded)
+//   GET  /dashboard              — HTML status page (scraped for PLC Status text)
+//
+// Default credentials installed by install.sh: openplc / openplc
+// These are intentionally weak — lab environments rotate them via the web UI.
+
+/**
+ * Makes a raw HTTP GET request and returns the response body as a string.
+ *
+ * @param url - Full URL to GET (http://localhost:PORT/path).
+ * @returns Response body text.
+ * @throws If the connection is refused or times out.
+ */
+function httpGet(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, res => {
+      let data = ''
+      res.on('data', (chunk: Buffer) => {
+        data += chunk.toString()
+      })
+      res.on('end', () => resolve(data))
+    })
+    req.on('error', reject)
+    // 5-second timeout — containers may be slow to respond during startup
+    req.setTimeout(5000, () => {
+      req.destroy()
+      reject(new Error('Request timed out'))
+    })
+  })
+}
+
+/**
+ * Makes an HTTP POST request with a raw body and returns status code,
+ * response headers, and body text.
+ *
+ * @param options - Node.js http.RequestOptions (host, port, path, headers).
+ * @param body    - Request body as a string.
+ */
+function httpPost(
+  options: http.RequestOptions,
+  body: string
+): Promise<{ statusCode: number; headers: http.IncomingMessage['headers']; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(options, res => {
+      let data = ''
+      res.on('data', (chunk: Buffer) => {
+        data += chunk.toString()
+      })
+      res.on('end', () =>
+        resolve({ statusCode: res.statusCode ?? 0, headers: res.headers, body: data })
+      )
+    })
+    req.on('error', reject)
+    req.setTimeout(10000, () => {
+      req.destroy()
+      reject(new Error('Request timed out'))
+    })
+    req.write(body)
+    req.end()
+  })
+}
+
+/**
+ * Deploys a Structured Text program to a running OpenPLC Runtime container.
+ *
+ * Authentication flow:
+ *   1. POST /login with form-encoded credentials → 302 redirect with Set-Cookie
+ *   2. All subsequent requests carry the session cookie in the Cookie header
+ *
+ * Upload flow:
+ *   3. POST /upload-program with multipart/form-data body containing the .st file
+ *   4. GET /start_plc to recompile and restart the PLC scan cycle
+ *
+ * The multipart body is constructed manually (without a form-data library) to
+ * avoid adding a production runtime dependency to the main process.
+ *
+ * @param hostPort - Host-side published port for the container's port 8080.
+ * @param source   - Raw ST source text (UTF-8, not base64).
+ * @param nodeId   - Device node ID, used as the uploaded filename.
+ * @returns PLCDeployResult with compiler output or error message.
+ */
+async function deployToOpenPLC(
+  hostPort: number,
+  source: string,
+  nodeId: string
+): Promise<PLCDeployResult> {
+  const host = 'localhost'
+
+  // Step 1: Login — POST /login with URL-encoded form body
+  const loginBody = `username=openplc&password=openplc`
+  const loginResp = await httpPost(
+    {
+      host,
+      port: hostPort,
+      path: '/login',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(loginBody)
+      }
+    },
+    loginBody
+  )
+
+  // Extract session cookie from the login response (Flask sets it on the 302 redirect).
+  // Node.js types set-cookie as string[] | undefined — it is always an array when present.
+  const rawCookie = loginResp.headers['set-cookie']
+  const sessionCookie = rawCookie ? rawCookie.map(c => c.split(';')[0]).join('; ') : ''
+
+  if (!sessionCookie) {
+    return { ok: false, error: 'Login failed — could not obtain session cookie from OpenPLC.' }
+  }
+
+  // Step 2: Upload program — POST /upload-program with multipart/form-data
+  // The boundary string separates the multipart body parts.
+  const boundary = `----ICSSimBoundary${Date.now()}`
+  const filename = `${nodeId}.st`
+  const multipartBody =
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+    `Content-Type: text/plain\r\n\r\n` +
+    `${source}\r\n` +
+    `--${boundary}--\r\n`
+
+  const uploadResp = await httpPost(
+    {
+      host,
+      port: hostPort,
+      path: '/upload-program',
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': Buffer.byteLength(multipartBody),
+        Cookie: sessionCookie
+      }
+    },
+    multipartBody
+  )
+
+  // Step 3: Start PLC — GET /start_plc triggers compile + scan cycle restart
+  // The response is an HTML page with compilation output; we extract the log text.
+  let compileOutput = ''
+  try {
+    const startBody = await httpGet(`http://${host}:${hostPort}/start_plc`)
+    // Scrape the compile log from the HTML (appears between <pre> tags in OpenPLC v3)
+    const preMatch = startBody.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i)
+    compileOutput = preMatch ? preMatch[1].trim() : ''
+  } catch {
+    // /start_plc may redirect — treat as success if upload succeeded
+  }
+
+  const uploadOk = uploadResp.statusCode < 400
+  return {
+    ok: uploadOk,
+    output: compileOutput || (uploadOk ? 'Program uploaded and PLC restarted.' : undefined),
+    error: uploadOk ? undefined : `Upload failed (HTTP ${uploadResp.statusCode})`
+  }
 }
