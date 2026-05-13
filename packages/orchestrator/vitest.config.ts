@@ -14,6 +14,13 @@ export default defineConfig({
     environment: 'node',
 
     /**
+     * Only discover tests under src/ — the dist/ directory contains tsc-compiled
+     * CommonJS output and vitest 4.x refuses to require() itself in CJS context.
+     * Without this, vitest would pick up dist/__tests__/*.test.js and fail.
+     */
+    include: ['src/**/*.{test,spec}.{ts,js}'],
+
+    /**
      * Keep vitest globals off; tests import describe/it/expect/vi explicitly.
      * Explicit imports make it clear which test utilities are in scope and
      * prevent collisions with identically-named symbols in tested modules.
