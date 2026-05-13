@@ -28,8 +28,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build schema package
-        run: npm run build:schema
+      - name: Build workspace packages
+        # Both schema and orchestrator must be compiled before tsc can resolve
+        # @ics-sim/schema and @ics-sim/orchestrator imports in packages/app.
+        run: npm run build:packages
 
       - name: Type check all packages
         run: npm run typecheck
@@ -83,8 +85,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build schema package
-        run: npm run build:schema
+      - name: Build workspace packages
+        run: npm run build:packages
 
       # macOS: install the codesigning certificate if secrets are available
       - name: Import macOS signing certificate

@@ -12,6 +12,8 @@
     "build:mac": "npm run build:schema && npm run build:mac --workspace=packages/app",
     "build:linux": "npm run build:schema && npm run build:linux --workspace=packages/app",
     "build:schema": "npm run build --workspace=packages/schema",
+    "build:orchestrator": "npm run build --workspace=packages/orchestrator",
+    "build:packages": "npm run build:schema && npm run build:orchestrator",
     "lint": "eslint \"packages/*/src/**/*.{ts,tsx}\"",
     "lint:fix": "eslint \"packages/*/src/**/*.{ts,tsx}\" --fix",
     "typecheck": "npm run typecheck --workspace=packages/schema && npm run typecheck --workspace=packages/app",

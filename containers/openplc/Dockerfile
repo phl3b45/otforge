@@ -11,6 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /opt
 
+# Prevent git from trying to open an interactive credential prompt.
+# Without this, git clone fails in the Docker build context because there is
+# no TTY available ("could not read Username: No such device or address").
+# The OpenPLC Runtime repository is public, so no credentials are needed —
+# this just stops git from attempting to ask for them.
+ENV GIT_TERMINAL_PROMPT=0
+
 # Clone and build OpenPLC Runtime (shallow clone for speed)
 RUN git clone --depth=1 https://github.com/thiagoralves/OpenPLC_Runtime.git openplc
 

@@ -22,6 +22,10 @@ module.exports = {
     'react/react-in-jsx-scope': 'off',
     '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     '@typescript-eslint/explicit-function-return-type': 'off',
-    '@typescript-eslint/no-explicit-any': 'warn'
+    '@typescript-eslint/no-explicit-any': 'warn',
+    // Disable triple-slash-reference rule — both env.d.ts lines are standard
+    // electron-vite boilerplate (/// <reference types="vite/client" /> and
+    // /// <reference path="preload/index.d.ts" />) with no import equivalent.
+    '@typescript-eslint/triple-slash-reference': 'off'
   }
 }
