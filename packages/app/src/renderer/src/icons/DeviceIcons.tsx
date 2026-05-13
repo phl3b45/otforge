@@ -1,5 +1,33 @@
+/**
+ * DeviceIcons.tsx — ISA-5.1-inspired SVG icons for every ICS device category.
+ *
+ * Provides one inline SVG icon per DeviceCategory, loosely following the P&ID
+ * (Piping and Instrumentation Diagram) symbol conventions from ISA-5.1 and
+ * IEC 60617. Icons are designed on a 24×24 viewBox with 1.5px stroke weight,
+ * consistent with Heroicons/Feather icon families that practitioners recognize.
+ *
+ * Design principles:
+ *   - All icons use `stroke: 'currentColor'` so the caller controls color via CSS
+ *     or the `color` prop — no hardcoded fill colors.
+ *   - ISA-5.1 instrument bubbles (circles) represent measurement devices.
+ *   - Standard P&ID symbols used where practical:
+ *       Valve → butterfly valve outline (two opposing triangles)
+ *       Pump  → centrifugal pump circle with flow arrow
+ *       Sensor → instrument bubble with connection nub
+ *       PLC/RTU/IED → rectangular controller/DCS shapes
+ *
+ * Usage:
+ *   <DeviceIcon category="plc" size={24} color="#39d0b0" />
+ *   <DeviceIcon category="sensor" size={20} className="my-icon" />
+ */
+
 import type { DeviceCategory } from '@ics-sim/schema'
 
+/**
+ * Shared SVG presentation attributes applied to every icon.
+ * Spreading this object onto <svg> ensures consistent stroke style
+ * without repeating attributes on each individual icon component.
+ */
 const S = {
   fill: 'none',
   stroke: 'currentColor',
@@ -8,6 +36,11 @@ const S = {
   strokeLinejoin: 'round' as const
 }
 
+// ── Individual icon components ─────────────────────────────────────────────────
+// Each component renders a single 24×24 SVG. They are not exported — callers
+// use the DeviceIcon wrapper which maps category → component.
+
+/** PLC — rectangular controller body with horizontal rungs (ladder logic reference). */
 function PlcSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -21,6 +54,7 @@ function PlcSvg() {
   )
 }
 
+/** RTU — Remote Terminal Unit; box with an analog indicator dial and register lines. */
 function RtuSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -33,6 +67,8 @@ function RtuSvg() {
   )
 }
 
+/** IED — Intelligent Electronic Device; lightning/zigzag symbol inside a rectangle
+ *  (references the power-system relay function these devices often perform). */
 function IedSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -42,6 +78,7 @@ function IedSvg() {
   )
 }
 
+/** HMI — monitor with stand and a small screen region (workstation operator interface). */
 function HmiSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -53,6 +90,7 @@ function HmiSvg() {
   )
 }
 
+/** Historian — cylinder shape (ISA database/storage symbol) with mid-section data line. */
 function HistorianSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -65,6 +103,7 @@ function HistorianSvg() {
   )
 }
 
+/** Sensor — ISA instrument bubble (circle) with a connection nub at the top. */
 function SensorSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -75,6 +114,7 @@ function SensorSvg() {
   )
 }
 
+/** Actuator — diamond shape with crosshairs (generic actuating element symbol). */
 function ActuatorSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -85,6 +125,7 @@ function ActuatorSvg() {
   )
 }
 
+/** Pump — centrifugal pump symbol: circle body with curved impeller arc and flow arrow. */
 function PumpSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -95,6 +136,10 @@ function PumpSvg() {
   )
 }
 
+/**
+ * Valve — ISA-5.1 butterfly / gate valve symbol: two opposing triangles meeting
+ * at the centerline with a vertical stem line indicating actuator position.
+ */
 function ValveSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -105,6 +150,7 @@ function ValveSvg() {
   )
 }
 
+/** Flow Meter — instrument bubble with horizontal flow line and a direction arrow. */
 function FlowMeterSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -115,6 +161,10 @@ function FlowMeterSvg() {
   )
 }
 
+/**
+ * Pressure Transmitter — instrument bubble with an arch representing a Bourdon tube
+ * (the sensing element inside an analog pressure gauge).
+ */
 function PressureTransmitterSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -125,6 +175,10 @@ function PressureTransmitterSvg() {
   )
 }
 
+/**
+ * Firewall — staggered brick pattern; the deliberate misalignment of blocks evokes
+ * a physical firewall barrier (common in network security iconography).
+ */
 function FirewallSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -138,6 +192,10 @@ function FirewallSvg() {
   )
 }
 
+/**
+ * IDS/IPS — shield shape with a radar/target reticle inside, representing
+ * detection and monitoring (Suricata/Zeek in this stack).
+ */
 function IdsIpsSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -148,6 +206,7 @@ function IdsIpsSvg() {
   )
 }
 
+/** Switch — network switch chassis with port lines and indicator LEDs (filled circles). */
 function SwitchSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -164,6 +223,7 @@ function SwitchSvg() {
   )
 }
 
+/** Router — center node with four directional spokes and bidirectional arrows. */
 function RouterSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -178,6 +238,11 @@ function RouterSvg() {
   )
 }
 
+/**
+ * Attack Machine — monitor with a crosshair/target overlay, clearly distinguishing
+ * this device from the HMI. The red color (set via palette) reinforces that this is
+ * a hostile/red-team tool (Kali Linux container).
+ */
 function AttackMachineSvg() {
   return (
     <svg viewBox="0 0 24 24" {...S}>
@@ -193,6 +258,10 @@ function AttackMachineSvg() {
   )
 }
 
+/**
+ * Maps each DeviceCategory to its icon component function.
+ * Used by DeviceIcon to look up the correct SVG without a switch statement.
+ */
 const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   plc: PlcSvg,
   rtu: RtuSvg,
@@ -212,6 +281,19 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   'attack-machine': AttackMachineSvg
 }
 
+/**
+ * Renders the ISA-5.1-inspired SVG icon for a given device category.
+ *
+ * Wraps the raw SVG in a `<span>` with `display: inline-flex` so it flows
+ * correctly in both flex containers (palette items) and grid layouts (device nodes).
+ * The `flexShrink: 0` prevents the icon from being squeezed in tight horizontal layouts.
+ *
+ * @param category  - The DeviceCategory to render an icon for.
+ * @param size      - Width and height in pixels (defaults to 24).
+ * @param color     - CSS color value passed as `color` to the span, inherited by
+ *   `stroke: currentColor` inside the SVG. Defaults to 'currentColor'.
+ * @param className - Optional CSS class for the wrapper span.
+ */
 export function DeviceIcon({
   category,
   size = 24,

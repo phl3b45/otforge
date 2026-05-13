@@ -1,3 +1,27 @@
+/**
+ * docker-client.ts — Thin wrapper around the Docker Compose CLI.
+ *
+ * The ICS Simulator runs each scenario as a set of Docker containers defined by
+ * a generated docker-compose.yml. This module encapsulates every `docker compose`
+ * command so the rest of the codebase never constructs raw shell strings.
+ *
+ * Design decisions:
+ *   - All commands run through `execAsync` with a custom PATH that includes the
+ *     Docker Desktop binary directories. Electron inherits a stripped launcher PATH,
+ *     so Docker is not on PATH by default on Windows.
+ *   - Compose files are written to `<userData>/scenarios/<projectName>/docker-compose.yml`
+ *     so each scenario has its own isolated directory. This allows multiple distinct
+ *     scenario compose files to coexist without collision.
+ *   - `docker compose ps --format json` outputs one JSON object per stdout line
+ *     (newline-delimited JSON), not a JSON array. Parsing is done line-by-line.
+ *
+ * Usage:
+ *   const client = new DockerClient(app.getPath('userData'))
+ *   await client.startScenario(projectName, composeYaml)
+ *   const statuses = await client.getStatus(projectName)
+ *   await client.stopScenario(projectName)
+ */
+
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { writeFile, mkdir, rm } from 'fs/promises'
@@ -6,6 +30,13 @@ import type { ContainerStatus } from '@ics-sim/schema'
 
 const execAsync = promisify(exec)
 
+/**
+ * Platform-specific directories where the Docker CLI binary may be installed.
+ *
+ * Electron apps launched from the desktop icon inherit a minimal PATH that
+ * typically excludes Docker Desktop's binary directory on Windows. These paths
+ * are prepended to every `docker` invocation to guarantee the binary is found.
+ */
 const DOCKER_PATHS: Record<string, string[]> = {
   win32: [
     'C:\\Program Files\\Docker\\Docker\\resources\\bin',
@@ -19,6 +50,12 @@ const DOCKER_PATHS: Record<string, string[]> = {
   linux: ['/usr/bin', '/usr/local/bin']
 }
 
+/**
+ * Constructs a process environment with Docker binary directories prepended to PATH.
+ *
+ * @returns A copy of process.env with Docker paths at the front so `docker compose`
+ *   resolves correctly on all platforms regardless of how the app was launched.
+ */
 function buildEnv(): NodeJS.ProcessEnv {
   const extra = (DOCKER_PATHS[process.platform] ?? []).join(
     process.platform === 'win32' ? ';' : ':'
@@ -27,17 +64,43 @@ function buildEnv(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: `${extra}${sep}${process.env.PATH ?? ''}` }
 }
 
+/**
+ * Runs a shell command with the augmented Docker PATH environment.
+ *
+ * @param cmd - The shell command string to execute.
+ * @returns stdout and stderr strings from the command.
+ * @throws If the command exits with a non-zero status.
+ */
 async function run(cmd: string): Promise<{ stdout: string; stderr: string }> {
   return execAsync(cmd, { env: buildEnv() })
 }
 
+/**
+ * DockerClient wraps Docker Compose CLI operations for a single scenario.
+ *
+ * Each scenario gets its own subdirectory under `<userData>/scenarios/` containing
+ * the generated docker-compose.yml. The Docker Compose project name scopes all
+ * container, network, and volume names to that scenario, allowing multiple compose
+ * environments to coexist on the same machine without name collisions.
+ */
 export class DockerClient {
+  /** Absolute path to the directory where per-scenario subdirectories are created. */
   private readonly workDir: string
 
+  /**
+   * @param userDataPath - Electron's app.getPath('userData') directory.
+   *   On Windows: %APPDATA%\ics-simulator
+   *   On macOS:   ~/Library/Application Support/ics-simulator
+   */
   constructor(userDataPath: string) {
     this.workDir = join(userDataPath, 'scenarios')
   }
 
+  /**
+   * Checks whether the Docker daemon is running by running `docker version`.
+   *
+   * @returns true if the daemon responds, false if Docker is not installed or not running.
+   */
   async isAvailable(): Promise<boolean> {
     try {
       await run('docker version --format "{{.Server.Version}}"')
@@ -47,7 +110,21 @@ export class DockerClient {
     }
   }
 
-  // Write compose file and start all containers
+  /**
+   * Writes a docker-compose.yml for the scenario and starts all containers.
+   *
+   * Steps:
+   *   1. Create `<workDir>/<projectName>/` if it does not exist.
+   *   2. Write the YAML string as `docker-compose.yml` in that directory.
+   *   3. Run `docker compose up -d --remove-orphans` to launch all services.
+   *      `--remove-orphans` removes containers from a previous run of the same
+   *      project that are no longer defined in the new compose file.
+   *
+   * @param projectName  - Sanitized scenario name used as the Compose project name.
+   *   Must match the Docker Compose project name constraint: lowercase alphanumeric + hyphen.
+   * @param composeYaml  - Complete docker-compose.yml content as a YAML string.
+   * @returns { ok: true } on success, { ok: false, error } on failure.
+   */
   async startScenario(
     projectName: string,
     composeYaml: string
@@ -56,6 +133,7 @@ export class DockerClient {
     const composeFile = join(scenarioDir, 'docker-compose.yml')
 
     try {
+      // recursive: true makes mkdir a no-op if the directory already exists
       await mkdir(scenarioDir, { recursive: true })
       await writeFile(composeFile, composeYaml, 'utf-8')
       await run(`docker compose -p ${projectName} -f "${composeFile}" up -d --remove-orphans`)
@@ -65,7 +143,18 @@ export class DockerClient {
     }
   }
 
-  // Stop and remove all containers for a scenario
+  /**
+   * Stops and removes all containers, networks, and volumes for a scenario.
+   *
+   * Runs `docker compose down --volumes` which:
+   *   - Stops all running services
+   *   - Removes containers
+   *   - Removes the Docker networks created by the compose file
+   *   - Removes named and anonymous volumes (clears historian data, log files, etc.)
+   *
+   * @param projectName - The Compose project name used when the scenario was started.
+   * @returns { ok: true } on success, { ok: false, error } on failure.
+   */
   async stopScenario(projectName: string): Promise<{ ok: boolean; error?: string }> {
     const composeFile = join(this.workDir, projectName, 'docker-compose.yml')
     try {
@@ -76,19 +165,37 @@ export class DockerClient {
     }
   }
 
-  // Remove compose files for a scenario (called after stop when cleaning up)
+  /**
+   * Deletes the scenario directory and its compose file from disk.
+   *
+   * Called after a successful stop when the project data is no longer needed.
+   * Force-deletes so it succeeds even if the directory is partially empty.
+   *
+   * @param projectName - The Compose project name (directory name under workDir).
+   */
   async cleanScenario(projectName: string): Promise<void> {
     const scenarioDir = join(this.workDir, projectName)
     await rm(scenarioDir, { recursive: true, force: true })
   }
 
-  // Return current container statuses for a running scenario
+  /**
+   * Polls the current state and health of all containers in a running scenario.
+   *
+   * Parses the newline-delimited JSON output of `docker compose ps --format json`.
+   * Each line is a separate JSON object with Name, State, and Health fields.
+   *
+   * Docker health states: healthy | unhealthy | starting | "" (no health check configured)
+   * Docker container states: running | exited | dead | created | starting
+   *
+   * @param projectName - The Compose project name to query.
+   * @returns Array of ContainerStatus objects, empty if the project is not running.
+   */
   async getStatus(projectName: string): Promise<ContainerStatus[]> {
     try {
       const { stdout } = await run(`docker compose -p ${projectName} ps --format json`)
       if (!stdout.trim()) return []
 
-      // Docker Compose ps --format json outputs one JSON object per line
+      // Docker Compose ps --format json outputs one JSON object per line (not a JSON array)
       const statuses: ContainerStatus[] = stdout
         .trim()
         .split('\n')
@@ -96,21 +203,32 @@ export class DockerClient {
         .map(line => {
           const obj = JSON.parse(line) as { Name: string; State: string; Health: string }
           const health = mapDockerHealth(obj.Health)
+          // Strip the project name prefix Docker adds to container names (e.g., "ics-sim-demo-plc-1" → "plc-1")
           const entry: ContainerStatus = {
             nodeId: obj.Name.replace(`${projectName}-`, ''),
             containerId: obj.Name,
             status: mapDockerState(obj.State)
           }
+          // healthCheck is an optional field — only set it when Docker reports a health state
           if (health !== undefined) entry.healthCheck = health
           return entry
         })
       return statuses
     } catch {
+      // Compose project not found or docker not running — return empty rather than throwing
       return []
     }
   }
 
-  // Pull latest images for a scenario's compose file
+  /**
+   * Pulls the latest images for all services defined in a scenario's compose file.
+   *
+   * Used before starting a simulation to ensure GHCR images are up to date.
+   * Not called automatically on start — the UI can offer a "Pull latest" action.
+   *
+   * @param projectName - The Compose project name whose compose file to read.
+   * @returns { ok: true } on success, { ok: false, error } on failure.
+   */
   async pullImages(projectName: string): Promise<{ ok: boolean; error?: string }> {
     const composeFile = join(this.workDir, projectName, 'docker-compose.yml')
     try {
@@ -121,11 +239,27 @@ export class DockerClient {
     }
   }
 
+  /**
+   * Returns the absolute path to a scenario's docker-compose.yml file.
+   *
+   * @param projectName - The Compose project name.
+   * @returns Absolute file path (may not exist if the scenario hasn't been started).
+   */
   composeFilePath(projectName: string): string {
     return join(this.workDir, projectName, 'docker-compose.yml')
   }
 }
 
+/**
+ * Maps Docker container state strings to the ContainerStatus.status union type.
+ *
+ * Docker reports lowercase state names. "exited" and "dead" both indicate an
+ * error condition (the container stopped unexpectedly). "created" and "starting"
+ * indicate the container has been scheduled but hasn't entered the running state.
+ *
+ * @param state - Raw state string from `docker compose ps`.
+ * @returns Mapped ContainerStatus status value.
+ */
 function mapDockerState(state: string): ContainerStatus['status'] {
   switch (state.toLowerCase()) {
     case 'running':
@@ -141,6 +275,17 @@ function mapDockerState(state: string): ContainerStatus['status'] {
   }
 }
 
+/**
+ * Maps Docker health check strings to the ContainerStatus.healthCheck union type.
+ *
+ * Returns undefined (not null) when no health check is configured — the schema
+ * uses `healthCheck?: string` so undefined means "field absent", which is the
+ * correct representation for containers without a HEALTHCHECK directive.
+ *
+ * @param health - Raw health string from `docker compose ps` ("healthy", "unhealthy",
+ *   "starting", or "" when no health check is defined).
+ * @returns Mapped health string or undefined.
+ */
 function mapDockerHealth(health: string): ContainerStatus['healthCheck'] {
   switch (health.toLowerCase()) {
     case 'healthy':
@@ -150,6 +295,7 @@ function mapDockerHealth(health: string): ContainerStatus['healthCheck'] {
     case 'starting':
       return 'starting'
     default:
+      // Empty string means the container has no HEALTHCHECK instruction
       return undefined
   }
 }

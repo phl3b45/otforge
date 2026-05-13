@@ -1,9 +1,38 @@
+/**
+ * resource-estimator.ts — RAM and CPU estimation for a simulation scenario.
+ *
+ * Before launching a simulation the app checks whether the host machine has
+ * sufficient free memory to run all the containers the scenario will create.
+ * This module provides the estimation logic and the system-memory comparison.
+ *
+ * Estimation model:
+ *   - Each device gets a flat RAM budget based on its category (e.g., PLC uses
+ *     more RAM than a simple sensor because it runs OpenPLC Runtime).
+ *   - Fixed infrastructure containers (Suricata, Zeek, InfluxDB, Grafana, Loki,
+ *     FUXA, Firewall) are always included regardless of scenario contents.
+ *   - The attack machine (Kali) adds a larger budget due to the pre-installed tooling.
+ *   - CPU estimation is coarse: 1 core per 5 containers, minimum 1.
+ *
+ * These numbers are deliberate overestimates — containers rarely consume their
+ * full budget, but we want to warn users before their system becomes unresponsive.
+ *
+ * Warning thresholds:
+ *   60% of free RAM → info-level warning, user can proceed
+ *   85% of free RAM → warning-level warning, default button is Cancel
+ */
+
 import os from 'os'
 import type { ICSLabScenario, ResourceEstimate } from '@ics-sim/schema'
 
-// Per-container RAM budgets in MB
-const RAM_DEVICE = 80 // each simulated device (PLC, RTU, sensor, etc.)
-const RAM_OPENPLC = 128 // PLC devices run OpenPLC Runtime — slightly heavier
+// ── Per-container RAM budgets (MB) ────────────────────────────────────────────
+// These match the `deploy.resources.limits.memory` values in the compose generator.
+
+/** Standard device budget — Modbus/DNP3 Python servers on Alpine. */
+const RAM_DEVICE = 80
+
+/** PLC devices run OpenPLC Runtime (Ubuntu 22.04 + build toolchain). */
+const RAM_OPENPLC = 128
+
 const RAM_SURICATA = 150
 const RAM_ZEEK = 150
 const RAM_INFLUXDB = 200
@@ -11,15 +40,32 @@ const RAM_GRAFANA = 150
 const RAM_LOKI = 80
 const RAM_FUXA = 100
 const RAM_FIREWALL = 20
-const RAM_ATTACK = 512 // Kali base image
 
+/** Kali Linux image with nmap, Metasploit, pymodbus, tshark pre-installed. */
+const RAM_ATTACK = 512
+
+/**
+ * Sum of all fixed infrastructure containers that are always included.
+ * These run in every simulation regardless of the device graph contents.
+ */
 const FIXED_INFRA_RAM =
   RAM_SURICATA + RAM_ZEEK + RAM_INFLUXDB + RAM_GRAFANA + RAM_LOKI + RAM_FUXA + RAM_FIREWALL
 
+/**
+ * Estimates the RAM and CPU requirements for a given scenario.
+ *
+ * The estimate is used to:
+ *   1. Display a "This scenario requires ~X MB" summary after import.
+ *   2. Compare against available system memory to decide whether to warn the user.
+ *
+ * @param scenario - The scenario whose device graph to evaluate.
+ * @returns ResourceEstimate with estimatedRamMb, estimatedCpuCores, containerCount.
+ */
 export function estimateResources(scenario: ICSLabScenario): ResourceEstimate {
   const devices = Object.values(scenario.devices.devices)
   const containerCount = devices.length
 
+  // Sum per-device RAM, giving PLCs their larger OpenPLC budget
   const deviceRam = devices.reduce((total, device) => {
     return total + (device.category === 'plc' ? RAM_OPENPLC : RAM_DEVICE)
   }, 0)
@@ -28,22 +74,42 @@ export function estimateResources(scenario: ICSLabScenario): ResourceEstimate {
   const attackRam = hasAttackMachine ? RAM_ATTACK : 0
 
   const estimatedRamMb = deviceRam + FIXED_INFRA_RAM + attackRam
+
+  // CPU estimate: 1 core per 5 containers, minimum 1 (very coarse, shown as advisory only)
   const estimatedCpuCores = Math.max(1, Math.ceil(containerCount / 5))
 
-  // Fixed infra containers: Suricata, Zeek, InfluxDB, Grafana, Loki, FUXA, firewall
+  // Total containers = user devices + 7 fixed infra (Suricata, Zeek, InfluxDB, Grafana, Loki, FUXA, firewall)
   const totalContainers = containerCount + 7 + (hasAttackMachine ? 0 : 0)
 
   return { estimatedRamMb, estimatedCpuCores, containerCount: totalContainers }
 }
 
+/**
+ * Describes the host machine's available memory relative to a resource estimate.
+ */
 export interface SystemMemory {
+  /** Total installed RAM in MB. */
   totalMb: number
+  /** Currently free (unallocated) RAM in MB. */
   freeMb: number
+  /** True when the estimate is below 85% of free RAM (scenario should run comfortably). */
   sufficientForScenario: boolean
-  warningThreshold: boolean // true if estimated > 60% of free RAM
-  criticalThreshold: boolean // true if estimated > 85% of free RAM
+  /** True when estimate exceeds 60% of free RAM — show an info warning. */
+  warningThreshold: boolean
+  /** True when estimate exceeds 85% of free RAM — show a danger warning. */
+  criticalThreshold: boolean
 }
 
+/**
+ * Compares a resource estimate against the current system's available memory.
+ *
+ * Uses `os.freemem()` which returns the amount of memory not currently in use by
+ * processes. This is more relevant than total RAM for a running system, but it can
+ * fluctuate. The estimate is intentionally conservative to account for overhead.
+ *
+ * @param estimate - ResourceEstimate returned by estimateResources().
+ * @returns SystemMemory object with threshold flags for the UI warning logic.
+ */
 export function checkSystemMemory(estimate: ResourceEstimate): SystemMemory {
   const totalMb = Math.round(os.totalmem() / 1024 / 1024)
   const freeMb = Math.round(os.freemem() / 1024 / 1024)
@@ -53,7 +119,7 @@ export function checkSystemMemory(estimate: ResourceEstimate): SystemMemory {
     totalMb,
     freeMb,
     sufficientForScenario: ratio < 0.85,
-    warningThreshold: ratio >= 0.6,
-    criticalThreshold: ratio >= 0.85
+    warningThreshold: ratio >= 0.6, // ≥60% of free RAM: show advisory notice
+    criticalThreshold: ratio >= 0.85 // ≥85% of free RAM: show danger warning, default to Cancel
   }
 }

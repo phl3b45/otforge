@@ -1,3 +1,28 @@
+/**
+ * App.tsx — Root React component and application shell.
+ *
+ * Manages the top-level application state and renders one of two views:
+ *   - LaunchScreen: shown on startup, checks Docker status, offers New/Open actions
+ *   - Canvas view: the full editor shell (toolbar + SCADA canvas + properties panel + status bar)
+ *
+ * State owned here:
+ *   - view:              'launch' | 'canvas' — which top-level screen to show
+ *   - appInfo:           Electron version metadata (displayed in launch screen)
+ *   - docker:            Docker status (available, version, error message)
+ *   - scenario:          The active ICSLabScenario document (null = no scenario loaded)
+ *   - selectedDevice:    The device config for the currently selected canvas node
+ *   - selectedZone:      The zone key for the selected node (for PropertiesPanel color)
+ *   - simStatus:         The simulation lifecycle state machine
+ *   - containerStatuses: Live container health data from Docker Compose ps
+ *
+ * Simulation status state machine:
+ *   idle ──→ starting ──→ running ──→ stopping ──→ idle
+ *
+ * IPC flow:
+ *   All Docker/scenario/simulation operations call window.electronAPI (contextBridge),
+ *   which proxies to ipcMain handlers in main/index.ts via ipcRenderer.invoke().
+ */
+
 import { useEffect, useState, useCallback } from 'react'
 import type {
   AppInfo,
@@ -11,10 +36,29 @@ import { DevicePalette } from './palette/DevicePalette'
 import { PropertiesPanel } from './properties/PropertiesPanel'
 import './index.css'
 
+/**
+ * Simulation lifecycle states.
+ *   idle     — no simulation running; controls enabled
+ *   starting — `docker compose up` in progress; controls disabled
+ *   running  — all containers healthy; Stop button active
+ *   stopping — `docker compose down` in progress; controls disabled
+ */
 type SimStatus = 'idle' | 'starting' | 'running' | 'stopping'
 
-// ── Launch screen (shown before first scenario is loaded) ──────────────────────
+// ── Launch screen ──────────────────────────────────────────────────────────────
 
+/**
+ * First screen shown when the app opens.
+ *
+ * Displays Docker availability status and version info. The New Scenario and
+ * Open .icslab buttons are disabled until Docker is confirmed running, because
+ * a simulation cannot start without Docker Desktop.
+ *
+ * @param docker   - Docker status from the main process (null while checking).
+ * @param appInfo  - Electron/Node version info for the status row.
+ * @param onImport - Opens the native file picker to import a .icslab scenario.
+ * @param onNew    - Creates a blank canvas and transitions to the canvas view.
+ */
 function LaunchScreen({
   docker,
   appInfo,
@@ -37,6 +81,7 @@ function LaunchScreen({
         <h1>ICS Simulator</h1>
         <p className="tagline">ICS/SCADA Security Research &amp; Education Platform</p>
 
+        {/* Docker and app version status indicators */}
         <div className="launch-status">
           <div className="status-row">
             <span className={`status-dot ${docker?.available ? 'ok' : 'error'}`} />
@@ -60,6 +105,7 @@ function LaunchScreen({
         </div>
 
         <div className="launch-actions">
+          {/* Buttons disabled until Docker is ready to prevent attempting to start without it */}
           <button className="btn btn-primary btn-lg" onClick={onNew} disabled={!docker?.available}>
             New Scenario
           </button>
@@ -82,6 +128,26 @@ function LaunchScreen({
 
 // ── Toolbar ────────────────────────────────────────────────────────────────────
 
+/**
+ * Top application toolbar with scenario identity, simulation status badge,
+ * and simulation controls.
+ *
+ * TypeScript note:
+ *   Boolean flags (isIdle, isRunning, etc.) are pre-computed BEFORE the JSX so
+ *   TypeScript does not narrow `simStatus` inside ternary branches. When TypeScript
+ *   sees `canStop = simStatus === 'running' || simStatus === 'starting'`, it narrows
+ *   `simStatus` inside the branches — making `simStatus === 'stopping'` always-false
+ *   on the false branch. Pre-computed booleans avoid this narrowing entirely.
+ *
+ * @param scenario  - Current scenario (null for blank canvas).
+ * @param simStatus - Current simulation lifecycle state.
+ * @param docker    - Docker status (used to enable/disable the Run button).
+ * @param onImport  - Opens the file picker.
+ * @param onNew     - Clears the canvas for a new scenario.
+ * @param onStart   - Starts the simulation.
+ * @param onStop    - Stops the simulation.
+ * @param onHome    - Returns to the launch screen (disabled while running).
+ */
 function Toolbar({
   scenario,
   simStatus,
@@ -103,11 +169,13 @@ function Toolbar({
 }) {
   const scenarioName = scenario?.meta.name ?? 'Untitled Scenario'
   const deviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
-  // Pre-compute booleans before JSX to avoid TypeScript control-flow narrowing inside ternaries
+
+  // Pre-compute booleans to prevent TypeScript narrowing inside JSX ternaries
   const isIdle = simStatus === 'idle'
   const isStarting = simStatus === 'starting'
   const isRunning = simStatus === 'running'
   const isStopping = simStatus === 'stopping'
+  // showStop controls which button variant appears in the toolbar right section
   const showStop = isRunning || isStarting
   const canStart = !!docker?.available && !!scenario && deviceCount > 0 && isIdle
   const startTitle = !docker?.available
@@ -119,6 +187,7 @@ function Toolbar({
   return (
     <header className="toolbar">
       <div className="toolbar-left">
+        {/* Logo acts as a home button */}
         <button className="toolbar-logo" onClick={onHome} title="Home">
           <span className="logo-bracket">[</span>
           <span className="logo-text-sm">ICS</span>
@@ -134,6 +203,7 @@ function Toolbar({
         </div>
       </div>
 
+      {/* Centered simulation status badge */}
       <div className="toolbar-center">
         <SimStatusBadge status={simStatus} />
       </div>
@@ -146,6 +216,7 @@ function Toolbar({
           Open
         </button>
         <div className="toolbar-divider" />
+        {/* Stop button shown while running/starting; Run button shown while idle/stopping */}
         {showStop ? (
           <button className="btn btn-sm btn-danger" onClick={onStop} disabled={isStopping}>
             {isStopping ? 'Stopping…' : 'Stop Simulation'}
@@ -165,6 +236,15 @@ function Toolbar({
   )
 }
 
+/**
+ * Small status indicator badge in the toolbar center.
+ *
+ * Uses a pulsing dot (CSS animation on .checking) for transitional states and
+ * a solid dot for stable states. Each SimStatus maps to a distinct dot color
+ * and label so operators know the simulation state at a glance.
+ *
+ * @param status - Current SimStatus value.
+ */
 function SimStatusBadge({ status }: { status: SimStatus }) {
   const configs: Record<SimStatus, { dot: string; label: string }> = {
     idle: { dot: 'muted', label: 'Idle' },
@@ -183,6 +263,17 @@ function SimStatusBadge({ status }: { status: SimStatus }) {
 
 // ── Status bar ─────────────────────────────────────────────────────────────────
 
+/**
+ * Bottom status bar showing Docker status and container health pills.
+ *
+ * Container pills are shown for up to 6 containers with color-coded borders:
+ *   green border = running, red border = error, gray border = other.
+ * When more than 6 containers are running, a "+N more" chip is shown.
+ *
+ * @param docker           - Docker status for the left section.
+ * @param simStatus        - Determines when container count is shown.
+ * @param containerStatuses - Live container health data.
+ */
 function StatusBar({
   docker,
   simStatus,
@@ -200,6 +291,7 @@ function StatusBar({
       <div className="status-bar-left">
         <span className={`status-dot ${docker?.available ? 'ok' : 'error'}`} />
         <span>Docker {docker?.available ? `v${docker.version}` : 'not ready'}</span>
+        {/* Container count only shown when a simulation is actively running */}
         {simStatus === 'running' && total > 0 && (
           <>
             <span className="status-sep">·</span>
@@ -210,6 +302,7 @@ function StatusBar({
         )}
       </div>
       <div className="status-bar-right">
+        {/* Show up to 6 container health pills with color-coded borders */}
         {containerStatuses.slice(0, 6).map(c => (
           <span
             key={c.nodeId}
@@ -226,6 +319,7 @@ function StatusBar({
             {c.nodeId}
           </span>
         ))}
+        {/* Overflow count when more than 6 containers are present */}
         {containerStatuses.length > 6 && (
           <span className="container-pill-more">+{containerStatuses.length - 6}</span>
         )}
@@ -236,8 +330,16 @@ function StatusBar({
 
 // ── Root App ───────────────────────────────────────────────────────────────────
 
+/** Top-level view routes. */
 type View = 'launch' | 'canvas'
 
+/**
+ * Root application component.
+ *
+ * Initializes on mount by fetching app info and Docker status from the main process.
+ * Subscribes to container status push events for live health updates during a running
+ * simulation. Manages the simulation lifecycle state machine transitions.
+ */
 export default function App() {
   const [view, setView] = useState<View>('launch')
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
@@ -249,6 +351,7 @@ export default function App() {
   const [containerStatuses, setContainerStatuses] = useState<ContainerStatus[]>([])
 
   useEffect(() => {
+    // Fetch app metadata and Docker status concurrently on first render
     Promise.all([window.electronAPI.app.info(), window.electronAPI.docker.check()]).then(
       ([info, dockerStatus]) => {
         setAppInfo(info)
@@ -256,21 +359,26 @@ export default function App() {
       }
     )
 
+    // Subscribe to live container status push events from the main process
     const unsubStatus = window.electronAPI.on.containerStatusUpdate(status => {
       setContainerStatuses(prev => {
         const idx = prev.findIndex(s => s.nodeId === status.nodeId)
         if (idx >= 0) {
+          // Update existing entry in-place
           return prev.map((s, i) => (i === idx ? status : s))
         }
+        // New container — append to the list
         return [...prev, status]
       })
     })
 
+    // Clean up IPC listeners when the component unmounts
     return () => {
       unsubStatus()
     }
   }, [])
 
+  /** Opens the file picker, imports a .icslab file, and navigates to the canvas. */
   const handleImport = useCallback(async () => {
     const result = await window.electronAPI.scenario.import()
     if (result.scenario) {
@@ -279,6 +387,7 @@ export default function App() {
     }
   }, [])
 
+  /** Clears all state and opens a blank canvas (new scenario workflow). */
   const handleNew = useCallback(() => {
     setScenario(null)
     setSelectedDevice(null)
@@ -288,15 +397,20 @@ export default function App() {
     setView('canvas')
   }, [])
 
+  /** Returns to the launch screen. Blocked while a simulation is running. */
   const handleHome = useCallback(() => {
     if (simStatus === 'running') return
     setView('launch')
   }, [simStatus])
 
+  /**
+   * Updates the selected device state when the user clicks a canvas node.
+   * Also resolves the zone from the canvas visual layer for PropertiesPanel coloring.
+   */
   const handleSelectDevice = useCallback(
     (nodeId: string | null, device: DeviceConfig | null) => {
       setSelectedDevice(device)
-      // Find zone from scenario
+      // Find zone by locating the canvas node in the visual layer
       if (nodeId && scenario) {
         const canvasNode = scenario.visual.nodes.find(n => n.id === nodeId)
         setSelectedZone(canvasNode?.data.zone ?? null)
@@ -307,6 +421,10 @@ export default function App() {
     [scenario]
   )
 
+  /**
+   * Applies a scenario update from the canvas (device added, edge added, etc.).
+   * Uses an updater function pattern so changes can be based on the previous state.
+   */
   const handleScenarioChange = useCallback(
     (updater: (s: ICSLabScenario | null) => ICSLabScenario | null) => {
       setScenario(prev => updater(prev))
@@ -314,6 +432,12 @@ export default function App() {
     []
   )
 
+  /**
+   * Starts the simulation:
+   *   1. Transition to 'starting' (disables controls)
+   *   2. Call simulation:start IPC which generates compose and runs docker compose up
+   *   3. Transition to 'running' on success, back to 'idle' on failure
+   */
   const handleStart = useCallback(async () => {
     if (!scenario) return
     setSimStatus('starting')
@@ -326,12 +450,20 @@ export default function App() {
     }
   }, [scenario])
 
+  /**
+   * Stops the simulation:
+   *   1. Transition to 'stopping'
+   *   2. Call simulation:stop IPC which runs docker compose down --volumes
+   *   3. Transition back to 'idle' and clear container status pills
+   */
   const handleStop = useCallback(async () => {
     setSimStatus('stopping')
     await window.electronAPI.simulation.stop()
     setSimStatus('idle')
     setContainerStatuses([])
   }, [])
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   if (view === 'launch') {
     return (
@@ -351,6 +483,7 @@ export default function App() {
         onStop={handleStop}
         onHome={handleHome}
       />
+      {/* 3-column workspace: palette | canvas | properties */}
       <div className="workspace">
         <DevicePalette />
         <ScadaCanvas
