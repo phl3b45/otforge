@@ -1,0 +1,32 @@
+name: Gitleaks Secret Detection
+
+# Gitleaks scans the full git commit history for accidentally committed secrets:
+# API keys, private keys, passwords, tokens, and other credentials.
+#
+# This is a hard-fail gate — if a secret is detected the push is blocked.
+# To allow a specific false-positive pattern, add a .gitleaks.toml allowlist
+# at the repo root rather than disabling the workflow.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+
+    steps:
+      # fetch-depth: 0 is required so Gitleaks can walk the entire commit
+      # history rather than just the tip commit.  Without it, secrets in
+      # earlier commits are invisible to the scanner.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
