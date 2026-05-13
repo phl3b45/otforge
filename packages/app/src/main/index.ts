@@ -1,12 +1,45 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import type { AppInfo, DockerStatus, ScenarioImportResult, ScenarioExportResult, ScenarioExportOptions } from '@ics-sim/schema'
+import type {
+  AppInfo,
+  DockerStatus,
+  ScenarioImportResult,
+  ScenarioExportResult,
+  ScenarioExportOptions
+} from '@ics-sim/schema'
 import { readFile, writeFile } from 'fs/promises'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 
 const execAsync = promisify(exec)
+
+// Electron's child processes don't inherit the full user PATH on Windows.
+// Build an augmented PATH that includes all common Docker installation locations.
+const DOCKER_PATHS: Record<string, string[]> = {
+  win32: [
+    'C:\\Program Files\\Docker\\Docker\\resources\\bin',
+    'C:\\ProgramData\\DockerDesktop\\version-bin',
+    'C:\\Program Files\\Docker\\cli-plugins'
+  ],
+  darwin: [
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+    '/Applications/Docker.app/Contents/Resources/bin'
+  ],
+  linux: ['/usr/bin', '/usr/local/bin']
+}
+
+function buildDockerEnv(): NodeJS.ProcessEnv {
+  const extra = (DOCKER_PATHS[process.platform] ?? []).join(
+    process.platform === 'win32' ? ';' : ':'
+  )
+  const sep = process.platform === 'win32' ? ';' : ':'
+  return {
+    ...process.env,
+    PATH: `${extra}${sep}${process.env.PATH ?? ''}`
+  }
+}
 
 let mainWindow: BrowserWindow | null = null
 
@@ -25,7 +58,7 @@ function createWindow(): void {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
-      webviewTag: true    // needed to embed Grafana, FUXA via <webview>
+      webviewTag: true // needed to embed Grafana, FUXA via <webview>
     }
   })
 
@@ -65,12 +98,15 @@ app.on('window-all-closed', () => {
 
 function registerIPCHandlers(): void {
   // App info
-  ipcMain.handle('app:info', (): AppInfo => ({
-    version: app.getVersion(),
-    nodeVersion: process.versions.node,
-    electronVersion: process.versions.electron,
-    platform: process.platform as AppInfo['platform']
-  }))
+  ipcMain.handle(
+    'app:info',
+    (): AppInfo => ({
+      version: app.getVersion(),
+      nodeVersion: process.versions.node,
+      electronVersion: process.versions.electron,
+      platform: process.platform as AppInfo['platform']
+    })
+  )
 
   ipcMain.handle('app:openExternal', async (_event, { url }: { url: string }) => {
     await shell.openExternal(url)
@@ -79,7 +115,9 @@ function registerIPCHandlers(): void {
   // Docker availability check
   ipcMain.handle('docker:check', async (): Promise<DockerStatus> => {
     try {
-      const { stdout } = await execAsync('docker version --format "{{.Server.Version}}"')
+      const { stdout } = await execAsync('docker version --format "{{.Server.Version}}"', {
+        env: buildDockerEnv()
+      })
       return { available: true, version: stdout.trim() }
     } catch {
       return {
@@ -91,7 +129,7 @@ function registerIPCHandlers(): void {
 
   ipcMain.handle('docker:version', async (): Promise<string> => {
     try {
-      const { stdout } = await execAsync('docker --version')
+      const { stdout } = await execAsync('docker --version', { env: buildDockerEnv() })
       return stdout.trim()
     } catch {
       return 'unavailable'
@@ -122,7 +160,10 @@ function registerIPCHandlers(): void {
   // Scenario export — serializes scenario to .icslab JSON, with locked flag
   ipcMain.handle(
     'scenario:export',
-    async (_event, { scenario, options }: { scenario: unknown; options: ScenarioExportOptions }): Promise<ScenarioExportResult> => {
+    async (
+      _event,
+      { scenario, options }: { scenario: unknown; options: ScenarioExportOptions }
+    ): Promise<ScenarioExportResult> => {
       let targetPath = options.filePath
 
       if (!targetPath) {
