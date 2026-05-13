@@ -1,0 +1,57 @@
+%YAML 1.1
+---
+# ICS Simulator — Suricata overlay configuration
+# Extends the base jasonish/suricata defaults with ICS-specific settings.
+
+vars:
+  address-groups:
+    OT_NETWORK: "[172.20.10.0/24]"
+    IT_NETWORK: "[172.20.20.0/24]"
+    DMZ_NETWORK: "[172.20.30.0/24]"
+    EXTERNAL: "[172.20.40.0/24]"
+    HOME_NET: "[172.20.0.0/16]"
+    EXTERNAL_NET: "!$HOME_NET"
+
+  port-groups:
+    MODBUS_PORTS: "502"
+    DNP3_PORTS:   "20000"
+    OPCUA_PORTS:  "4840"
+    HTTP_PORTS:   "80"
+    SHELLCODE_PORTS: "!80"
+
+# Application-layer protocol detection
+app-layer:
+  protocols:
+    modbus:
+      enabled: yes
+      detection-ports:
+        dp: 502
+    dnp3:
+      enabled: yes
+      detection-ports:
+        dp: 20000
+
+# Outputs — Eve JSON for Loki ingestion, fast.log for quick reference
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: /var/log/suricata/eve.json
+      types:
+        - alert
+        - http
+        - dns
+        - tls
+        - flow
+        - stats:
+            totals: yes
+            threads: no
+            deltas: no
+
+  - fast:
+      enabled: yes
+      filename: /var/log/suricata/fast.log
+
+rule-files:
+  - /etc/suricata/rules/ics-sim.rules
+  - /var/lib/suricata/rules/suricata.rules

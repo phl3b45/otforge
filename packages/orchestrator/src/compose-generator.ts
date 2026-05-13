@@ -2,8 +2,7 @@ import yaml from 'js-yaml'
 import type { ICSLabScenario, DeviceCategory, NetworkZone } from '@ics-sim/schema'
 import { ZONE_DEFAULTS } from './network-config'
 
-// GHCR image references — built in Phase 3
-// Using placeholder tags here; the actual images are pushed to ghcr.io/iburres/ics-sim-*
+// GHCR image references — all images built and pushed by .github/workflows/docker.yml
 const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   plc: 'ghcr.io/iburres/ics-sim-openplc:latest',
   rtu: 'ghcr.io/iburres/ics-sim-modbus:latest',
