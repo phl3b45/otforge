@@ -27,7 +27,10 @@ const api = {
 
   scenario: {
     import: (): Promise<ScenarioImportResult> => ipcRenderer.invoke('scenario:import'),
-    export: (scenario: ICSLabScenario, options: ScenarioExportOptions): Promise<ScenarioExportResult> =>
+    export: (
+      scenario: ICSLabScenario,
+      options: ScenarioExportOptions
+    ): Promise<ScenarioExportResult> =>
       ipcRenderer.invoke('scenario:export', { scenario, options }),
     validate: (scenario: ICSLabScenario): Promise<{ valid: boolean; errors: string[] }> =>
       ipcRenderer.invoke('scenario:validate', scenario)
@@ -38,6 +41,11 @@ const api = {
       ipcRenderer.invoke('simulation:start', scenario),
     stop: (): Promise<SimulationStopResult> => ipcRenderer.invoke('simulation:stop'),
     status: (): Promise<ContainerStatus[]> => ipcRenderer.invoke('simulation:status')
+  },
+
+  system: {
+    meminfo: (): Promise<{ totalMb: number; freeMb: number; cpus: number }> =>
+      ipcRenderer.invoke('system:meminfo')
   },
 
   license: {

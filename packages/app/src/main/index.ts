@@ -6,12 +6,49 @@ import type {
   DockerStatus,
   ScenarioImportResult,
   ScenarioExportResult,
-  ScenarioExportOptions
+  ScenarioExportOptions,
+  SimulationStartResult,
+  SimulationStopResult,
+  ContainerStatus,
+  ICSLabScenario
 } from '@ics-sim/schema'
 import { readFile, writeFile, access } from 'fs/promises'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { join as pathJoin } from 'path'
+import os from 'os'
+import {
+  generateCompose,
+  DockerClient,
+  estimateResources,
+  checkSystemMemory,
+  validateScenario,
+  toProjectName
+} from '@ics-sim/orchestrator'
+import { initDb, saveActiveScenario, loadActiveScenario, clearActiveScenario } from './db'
+
+const execAsync = promisify(exec)
+
+const DOCKER_PATHS: Record<string, string[]> = {
+  win32: [
+    'C:\\Program Files\\Docker\\Docker\\resources\\bin',
+    'C:\\ProgramData\\DockerDesktop\\version-bin'
+  ],
+  darwin: [
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+    '/Applications/Docker.app/Contents/Resources/bin'
+  ],
+  linux: ['/usr/bin', '/usr/local/bin']
+}
+
+function buildDockerEnv(): NodeJS.ProcessEnv {
+  const extra = (DOCKER_PATHS[process.platform] ?? []).join(
+    process.platform === 'win32' ? ';' : ':'
+  )
+  const sep = process.platform === 'win32' ? ';' : ':'
+  return { ...process.env, PATH: `${extra}${sep}${process.env.PATH ?? ''}` }
+}
 
 const DOCKER_DOWNLOAD_URLS: Record<string, string> = {
   win32: 'https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe',
@@ -27,35 +64,6 @@ async function isFirstLaunch(): Promise<boolean> {
   } catch {
     await writeFile(flagPath, '1', 'utf-8')
     return true
-  }
-}
-
-const execAsync = promisify(exec)
-
-// Electron's child processes don't inherit the full user PATH on Windows.
-// Build an augmented PATH that includes all common Docker installation locations.
-const DOCKER_PATHS: Record<string, string[]> = {
-  win32: [
-    'C:\\Program Files\\Docker\\Docker\\resources\\bin',
-    'C:\\ProgramData\\DockerDesktop\\version-bin',
-    'C:\\Program Files\\Docker\\cli-plugins'
-  ],
-  darwin: [
-    '/usr/local/bin',
-    '/opt/homebrew/bin',
-    '/Applications/Docker.app/Contents/Resources/bin'
-  ],
-  linux: ['/usr/bin', '/usr/local/bin']
-}
-
-function buildDockerEnv(): NodeJS.ProcessEnv {
-  const extra = (DOCKER_PATHS[process.platform] ?? []).join(
-    process.platform === 'win32' ? ';' : ':'
-  )
-  const sep = process.platform === 'win32' ? ';' : ':'
-  return {
-    ...process.env,
-    PATH: `${extra}${sep}${process.env.PATH ?? ''}`
   }
 }
 
@@ -90,46 +98,20 @@ function showDockerInstallPrompt(): void {
 }
 
 let mainWindow: BrowserWindow | null = null
-
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 1024,
-    minHeight: 768,
-    show: false,
-    autoHideMenuBar: true,
-    title: 'ICS Simulator',
-    backgroundColor: '#1a1a2e',
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
-      contextIsolation: true,
-      nodeIntegration: false,
-      webviewTag: true // needed to embed Grafana, FUXA via <webview>
-    }
-  })
-
-  mainWindow.on('ready-to-show', () => {
-    mainWindow!.show()
-  })
-
-  mainWindow.webContents.setWindowOpenHandler(details => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
-
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-    mainWindow.webContents.openDevTools()
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
-}
+let dockerClient: DockerClient
+let activeProjectName: string | null = null
 
 // ── App lifecycle ──────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  const userData = app.getPath('userData')
+
+  // Init LevelDB working store
+  initDb(userData)
+
+  // Init Docker client
+  dockerClient = new DockerClient(userData)
+
   createWindow()
   registerIPCHandlers()
 
@@ -147,6 +129,42 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
+// ── Window ─────────────────────────────────────────────────────────────────────
+
+function createWindow(): void {
+  mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1024,
+    minHeight: 768,
+    show: false,
+    autoHideMenuBar: true,
+    title: 'ICS Simulator',
+    backgroundColor: '#1a1a2e',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webviewTag: true
+    }
+  })
+
+  mainWindow.on('ready-to-show', () => mainWindow!.show())
+
+  mainWindow.webContents.setWindowOpenHandler(details => {
+    shell.openExternal(details.url)
+    return { action: 'deny' }
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    mainWindow.webContents.openDevTools()
+  } else {
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
 // ── IPC handlers ───────────────────────────────────────────────────────────────
 
 function registerIPCHandlers(): void {
@@ -161,11 +179,11 @@ function registerIPCHandlers(): void {
     })
   )
 
-  ipcMain.handle('app:openExternal', async (_event, { url }: { url: string }) => {
+  ipcMain.handle('app:openExternal', async (_e, { url }: { url: string }) => {
     await shell.openExternal(url)
   })
 
-  // Docker availability check
+  // Docker check
   ipcMain.handle('docker:check', async (): Promise<DockerStatus> => {
     try {
       const { stdout } = await execAsync('docker version --format "{{.Server.Version}}"', {
@@ -194,7 +212,7 @@ function registerIPCHandlers(): void {
     }
   })
 
-  // Scenario import — opens file picker, reads and parses .icslab JSON
+  // Scenario import — validate, estimate resources, warn if needed, store in LevelDB
   ipcMain.handle('scenario:import', async (): Promise<ScenarioImportResult> => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: 'Import ICS Scenario',
@@ -206,21 +224,58 @@ function registerIPCHandlers(): void {
       return { ok: false, error: 'Import cancelled' }
     }
 
+    let raw: unknown
     try {
-      const raw = await readFile(result.filePaths[0], 'utf-8')
-      const scenario = JSON.parse(raw)
-      return { ok: true, scenario }
+      raw = JSON.parse(await readFile(result.filePaths[0], 'utf-8'))
     } catch (err) {
       return { ok: false, error: `Failed to parse scenario: ${(err as Error).message}` }
     }
+
+    // Validate schema
+    const { validateScenario: validate } = await import('@ics-sim/orchestrator')
+    const validation = validate(raw)
+    if (!validation.valid) {
+      return { ok: false, error: `Invalid scenario:\n${validation.errors.join('\n')}` }
+    }
+
+    const scenario = raw as ICSLabScenario
+    const resourceEstimate = estimateResources(scenario)
+    const memCheck = checkSystemMemory(resourceEstimate)
+
+    // Warn if scenario will consume more than 60% of free RAM
+    if (memCheck.warningThreshold) {
+      const level = memCheck.criticalThreshold ? 'warning' : 'info'
+      const { response } = await dialog.showMessageBox(mainWindow!, {
+        type: level,
+        title: memCheck.criticalThreshold ? 'High Memory Warning' : 'Memory Notice',
+        message: `This scenario requires ~${resourceEstimate.estimatedRamMb}MB RAM`,
+        detail: `Your system has ${memCheck.freeMb}MB free of ${memCheck.totalMb}MB total.\n\n${
+          memCheck.criticalThreshold
+            ? 'Your system may become unresponsive. Consider closing other applications first.'
+            : 'Performance may be affected. Close other applications if you experience slowness.'
+        }`,
+        buttons: ['Continue', 'Cancel'],
+        defaultId: memCheck.criticalThreshold ? 1 : 0,
+        cancelId: 1
+      })
+      if (response === 1) return { ok: false, error: 'Import cancelled' }
+    }
+
+    await saveActiveScenario(scenario)
+    return { ok: true, scenario, resourceEstimate }
   })
 
-  // Scenario export — serializes scenario to .icslab JSON, with locked flag
+  // Scenario validate (without file picker — validates an in-memory scenario)
+  ipcMain.handle('scenario:validate', async (_e, scenario: unknown) => {
+    return validateScenario(scenario)
+  })
+
+  // Scenario export
   ipcMain.handle(
     'scenario:export',
     async (
-      _event,
-      { scenario, options }: { scenario: unknown; options: ScenarioExportOptions }
+      _e,
+      { scenario, options }: { scenario: ICSLabScenario; options: ScenarioExportOptions }
     ): Promise<ScenarioExportResult> => {
       let targetPath = options.filePath
 
@@ -228,18 +283,24 @@ function registerIPCHandlers(): void {
         const result = await dialog.showSaveDialog(mainWindow!, {
           title: 'Export ICS Scenario',
           filters: [{ name: 'ICS Lab Scenario', extensions: ['icslab'] }],
-          defaultPath: 'scenario.icslab'
+          defaultPath: `${scenario.meta.name.replace(/\s+/g, '-')}.icslab`
         })
-
-        if (result.canceled || !result.filePath) {
-          return { ok: false, error: 'Export cancelled' }
-        }
+        if (result.canceled || !result.filePath) return { ok: false, error: 'Export cancelled' }
         targetPath = result.filePath
       }
 
+      // Locked scenarios omit visual and security layers
+      const exportData = options.locked
+        ? {
+            ...scenario,
+            meta: { ...scenario.meta, locked: true },
+            visual: undefined,
+            security: undefined
+          }
+        : scenario
+
       try {
-        const data = JSON.stringify(scenario, null, 2)
-        await writeFile(targetPath, data, 'utf-8')
+        await writeFile(targetPath, JSON.stringify(exportData, null, 2), 'utf-8')
         return { ok: true, filePath: targetPath }
       } catch (err) {
         return { ok: false, error: `Failed to write scenario: ${(err as Error).message}` }
@@ -247,30 +308,78 @@ function registerIPCHandlers(): void {
     }
   )
 
-  // Simulation lifecycle stubs — implemented in Phase 1 (orchestrator package)
-  ipcMain.handle('simulation:start', async () => ({
-    ok: false,
-    error: 'Simulation engine not yet implemented (Phase 1)'
-  }))
+  // Simulation start — generate compose, write to disk, docker compose up
+  ipcMain.handle(
+    'simulation:start',
+    async (_e, scenario: ICSLabScenario): Promise<SimulationStartResult> => {
+      const dockerAvailable = await dockerClient.isAvailable()
+      if (!dockerAvailable) {
+        return { ok: false, error: 'Docker Desktop is not running.' }
+      }
 
-  ipcMain.handle('simulation:stop', async () => ({
-    ok: false,
-    error: 'Simulation engine not yet implemented (Phase 1)'
-  }))
+      const projectName = toProjectName(scenario.meta.name)
+      activeProjectName = projectName
 
-  ipcMain.handle('simulation:status', async () => [])
+      const composeYaml = generateCompose(scenario, projectName)
+      const result = await dockerClient.startScenario(projectName, composeYaml)
 
-  // License stubs — implemented in Phase 12
+      if (!result.ok) {
+        activeProjectName = null
+        return { ok: false, error: result.error }
+      }
+
+      // Brief delay then report which containers started
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      const statuses = await dockerClient.getStatus(projectName)
+      const started = statuses.filter(s => s.status === 'running').map(s => s.nodeId)
+
+      return { ok: true, containersStarted: started }
+    }
+  )
+
+  // Simulation stop
+  ipcMain.handle('simulation:stop', async (): Promise<SimulationStopResult> => {
+    if (!activeProjectName) return { ok: false, error: 'No simulation is running' }
+
+    const result = await dockerClient.stopScenario(activeProjectName)
+    if (result.ok) {
+      await clearActiveScenario()
+      activeProjectName = null
+    }
+    return result
+  })
+
+  // Container status poll
+  ipcMain.handle('simulation:status', async (): Promise<ContainerStatus[]> => {
+    if (!activeProjectName) return []
+    return dockerClient.getStatus(activeProjectName)
+  })
+
+  // License stubs — implemented Phase 12
   ipcMain.handle('license:validate', async () => ({
     valid: true,
     userId: 'dev-mode',
-    packScopes: ['*'],
-    error: undefined
+    packScopes: ['*']
   }))
-
   ipcMain.handle('license:info', async () => ({
     valid: true,
     userId: 'dev-mode',
     packScopes: ['*']
+  }))
+
+  // Restore active scenario on startup if one was running before app closed
+  loadActiveScenario().then(scenario => {
+    if (scenario && mainWindow) {
+      mainWindow.webContents.on('did-finish-load', () => {
+        mainWindow!.webContents.send('scenario:restored', scenario)
+      })
+    }
+  })
+
+  // System info for renderer
+  ipcMain.handle('system:meminfo', async () => ({
+    totalMb: Math.round(os.totalmem() / 1024 / 1024),
+    freeMb: Math.round(os.freemem() / 1024 / 1024),
+    cpus: os.cpus().length
   }))
 }
