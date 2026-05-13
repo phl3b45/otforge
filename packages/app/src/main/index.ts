@@ -119,10 +119,15 @@ function registerIPCHandlers(): void {
         env: buildDockerEnv()
       })
       return { available: true, version: stdout.trim() }
-    } catch {
+    } catch (err) {
+      const msg = (err as Error).message ?? ''
+      const notRunning =
+        msg.includes('pipe') || msg.includes('connect') || msg.includes('Cannot connect')
       return {
         available: false,
-        message: 'Docker is not running. Please start Docker Desktop before launching a simulation.'
+        message: notRunning
+          ? 'Docker Desktop is not running. Open Docker Desktop from the Start Menu and wait for the whale icon to appear in the system tray.'
+          : `Docker error: ${msg}`
       }
     }
   })
