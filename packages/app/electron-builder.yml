@@ -46,7 +46,6 @@ mac:
 
 dmg:
   title: ICS Simulator ${version}
-  background: build/dmg-background.png
   window:
     width: 540
     height: 380
