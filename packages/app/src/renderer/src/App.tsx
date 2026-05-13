@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AppInfo, DockerStatus } from '@ics-sim/schema'
-import './App.css'
+import './index.css'
 
 export default function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
@@ -46,13 +46,14 @@ export default function App() {
                 Docker:{' '}
                 {docker?.available
                   ? `Ready (v${docker.version})`
-                  : docker?.message ?? 'Not available'}
+                  : (docker?.message ?? 'Not available')}
               </span>
             </div>
             <div className="status-row">
               <span className="status-dot ok" />
               <span>
-                App: v{appInfo?.version} · Electron {appInfo?.electronVersion} · Node {appInfo?.nodeVersion}
+                App: v{appInfo?.version} · Electron {appInfo?.electronVersion} · Node{' '}
+                {appInfo?.nodeVersion}
               </span>
             </div>
             <div className="status-row">
@@ -66,8 +67,8 @@ export default function App() {
       <div className="phase-notice">
         <strong>Phase 0 — Scaffold Complete</strong>
         <p>
-          Canvas editor, protocol simulation, security stack, and HMI panels are built in
-          Phases 1–11. Import a <code>.icslab</code> scenario file to begin.
+          Canvas editor, protocol simulation, security stack, and HMI panels are built in Phases
+          1–11. Import a <code>.icslab</code> scenario file to begin.
         </p>
         <div className="action-row">
           <button
@@ -79,15 +80,15 @@ export default function App() {
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => window.electronAPI.app.openExternal('https://github.com/iburres/ics-simulator')}
+            onClick={() =>
+              window.electronAPI.app.openExternal('https://github.com/iburres/ics-simulator')
+            }
           >
             Documentation
           </button>
         </div>
         {!docker?.available && (
-          <p className="warning">
-            Docker Desktop must be running to launch simulations.
-          </p>
+          <p className="warning">Docker Desktop must be running to launch simulations.</p>
         )}
       </div>
     </div>
