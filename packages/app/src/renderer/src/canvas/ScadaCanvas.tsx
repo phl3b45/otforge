@@ -22,7 +22,7 @@
  * bezier ProtocolEdge connectors.
  */
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ReactFlow,
   Background,
@@ -52,6 +52,45 @@ import type {
 import { DeviceNode, type DeviceNodeData, type DeviceNodeType, ZONE_COLORS } from './DeviceNode'
 import { ProtocolEdge, type ProtocolEdgeType } from './ProtocolEdge'
 import { PipeEdge, type PipeEdgeType } from './PipeEdge'
+
+/**
+ * Protocol / cable options shown in the right-click connection context menu.
+ * Each entry maps a schema Protocol value to a human-readable label and an
+ * accent color matching the Purdue-zone palette (teal = OT, blue = DNP3, etc.).
+ */
+const CONNECTION_OPTIONS: { protocol: Protocol; label: string; color: string }[] = [
+  { protocol: 'modbus-tcp', label: 'Modbus TCP', color: '#39d0b0' },
+  { protocol: 'modbus-rtu', label: 'Modbus RTU', color: '#39d0b0' },
+  { protocol: 'modbus-ascii', label: 'Modbus ASCII', color: '#39d0b0' },
+  { protocol: 'dnp3', label: 'DNP3', color: '#388bfd' },
+  { protocol: 'opc-ua', label: 'OPC-UA', color: '#d29922' },
+  { protocol: 'bacnet', label: 'BACnet', color: '#d29922' },
+  { protocol: 'ethernet-ip', label: 'EtherNet/IP', color: '#f85149' },
+  { protocol: 'iec61850', label: 'IEC 61850', color: '#a371f7' },
+  { protocol: 'none', label: 'Ethernet Cable', color: '#484f58' }
+]
+
+/** State shape for the right-click connection context menu. */
+interface ContextMenuState {
+  /** ID of the source device node that was right-clicked. */
+  nodeId: string
+  /** Viewport X coordinate for menu placement (used with position: fixed). */
+  x: number
+  /** Viewport Y coordinate for menu placement (used with position: fixed). */
+  y: number
+}
+
+/**
+ * State shape for a pending two-click edge connection.
+ * Set when the user picks a protocol from the context menu; cleared when they
+ * click a target node or press Escape.
+ */
+interface PendingConnectionState {
+  /** The node that was right-clicked — becomes the edge source. */
+  sourceId: string
+  /** Protocol selected from the menu — written into the new edge's data. */
+  protocol: Protocol
+}
 
 /** Registration map: React Flow node type key → component. */
 const nodeTypes: NodeTypes = {
@@ -243,6 +282,16 @@ export function ScadaCanvas({
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
+  /** Right-click context menu — null when closed. */
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+
+  /**
+   * Pending two-click connection state.
+   * After the user picks a protocol from the context menu, this holds the source
+   * node ID and chosen protocol until they click a target (or press Escape).
+   */
+  const [pendingConnection, setPendingConnection] = useState<PendingConnectionState | null>(null)
+
   /**
    * Ref to the React Flow instance — needed for screenToFlowPosition() in onDrop.
    * Using a ref avoids wrapping in ReactFlowProvider just to call useReactFlow().
@@ -254,7 +303,7 @@ export function ScadaCanvas({
     if (!scenario) {
       setNodes([])
       setEdges([])
-      setTimeout(() => rfInstance.current?.fitView({ padding: FIT_PADDING }), 100)
+      setTimeout(() => rfInstance.current?.fitView({ padding: FIT_PADDING, maxZoom: 0.75 }), 100)
       return
     }
     const deviceNodes = scenarioToNodes(scenario, activeLayer)
@@ -262,7 +311,7 @@ export function ScadaCanvas({
     setNodes(deviceNodes)
     setEdges(scenarioToEdges(scenario, activeLayer, layerNodeIds) as Edge[])
     // Defer fitView one frame so React Flow has measured the new nodes
-    setTimeout(() => rfInstance.current?.fitView({ padding: FIT_PADDING }), 50)
+    setTimeout(() => rfInstance.current?.fitView({ padding: FIT_PADDING, maxZoom: 0.75 }), 50)
   }, [scenario, activeLayer, setNodes, setEdges])
 
   /*
@@ -275,7 +324,7 @@ export function ScadaCanvas({
     const handleResize = () => {
       clearTimeout(timer)
       timer = setTimeout(() => {
-        rfInstance.current?.fitView({ padding: FIT_PADDING })
+        rfInstance.current?.fitView({ padding: FIT_PADDING, maxZoom: 0.75 })
       }, 150)
     }
     window.addEventListener('resize', handleResize)
@@ -337,6 +386,150 @@ export function ScadaCanvas({
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
+  }, [])
+
+  /**
+   * Node deletion — called by React Flow after it removes nodes from canvas state.
+   * Persists the removal to scenario.visual.nodes, scenario.visual.edges (prune
+   * any edges that referenced a deleted node), and scenario.devices.devices.
+   * Also clears the PropertiesPanel selection so it doesn't show a stale device.
+   */
+  const onNodesDelete = useCallback(
+    (deletedNodes: Node[]) => {
+      const deletedIds = new Set(deletedNodes.map(n => n.id))
+      onSelectDevice(null, null)
+      onScenarioChange(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          visual: {
+            ...prev.visual,
+            nodes: prev.visual.nodes.filter(n => !deletedIds.has(n.id)),
+            edges: prev.visual.edges.filter(
+              e => !deletedIds.has(e.source) && !deletedIds.has(e.target)
+            )
+          },
+          devices: {
+            devices: Object.fromEntries(
+              Object.entries(prev.devices.devices).filter(([id]) => !deletedIds.has(id))
+            )
+          }
+        }
+      })
+    },
+    [onScenarioChange, onSelectDevice]
+  )
+
+  /**
+   * Edge deletion — called by React Flow after it removes edges from canvas state.
+   * Persists the removal to scenario.visual.edges.
+   */
+  const onEdgesDelete = useCallback(
+    (deletedEdges: Edge[]) => {
+      const deletedIds = new Set(deletedEdges.map(e => e.id))
+      onScenarioChange(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          visual: {
+            ...prev.visual,
+            edges: prev.visual.edges.filter(e => !deletedIds.has(e.id))
+          }
+        }
+      })
+    },
+    [onScenarioChange]
+  )
+
+  /**
+   * Cancels any open context menu or in-progress pending connection.
+   * Bound to clicking empty canvas space, pressing Escape, and the Cancel menu item.
+   */
+  const cancelConnection = useCallback(() => {
+    setContextMenu(null)
+    setPendingConnection(null)
+  }, [])
+
+  /**
+   * Right-click on a canvas device node — opens the protocol selection menu at the
+   * cursor position and cancels any previously pending connection.
+   */
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
+    event.preventDefault()
+    setPendingConnection(null)
+    setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
+  }, [])
+
+  /**
+   * Called when the user picks a protocol from the right-click context menu.
+   * Transitions from "menu open" to "awaiting target click" mode.
+   * The canvas cursor changes to a crosshair (via .connecting CSS class) to
+   * signal that the next node click will complete the connection.
+   */
+  const startConnection = useCallback(
+    (protocol: Protocol) => {
+      if (!contextMenu) return
+      setPendingConnection({ sourceId: contextMenu.nodeId, protocol })
+      setContextMenu(null)
+    },
+    [contextMenu]
+  )
+
+  /**
+   * Click on a canvas device node.
+   * If a pending connection is active, creates an edge from the source (right-clicked)
+   * node to this target node using the previously selected protocol.
+   * Self-clicks cancel the pending connection rather than creating a self-loop.
+   * If no pending connection is active this is a no-op — selection is handled by
+   * onSelectionChange via React Flow's built-in machinery.
+   */
+  const onNodeClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      if (!pendingConnection) return
+
+      if (node.id === pendingConnection.sourceId) {
+        // Clicked the source again — treat as cancel
+        cancelConnection()
+        return
+      }
+
+      const edgeType = activeLayer === 'ot' ? 'pipeEdge' : 'protocolEdge'
+      const newEdge: Edge = {
+        id: `${pendingConnection.sourceId}-${node.id}-${Date.now()}`,
+        source: pendingConnection.sourceId,
+        target: node.id,
+        type: edgeType,
+        data: { protocol: pendingConnection.protocol }
+      }
+
+      setEdges(eds => addEdge(newEdge, eds))
+
+      onScenarioChange(prev => {
+        if (!prev) return prev
+        const ce = {
+          id: newEdge.id,
+          source: pendingConnection.sourceId,
+          target: node.id,
+          data: { protocol: pendingConnection.protocol }
+        }
+        return { ...prev, visual: { ...prev.visual, edges: [...prev.visual.edges, ce] } }
+      })
+
+      setPendingConnection(null)
+    },
+    [pendingConnection, activeLayer, setEdges, onScenarioChange, cancelConnection]
+  )
+
+  // Escape key cancels the open menu or pending connection
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setContextMenu(null)
+        setPendingConnection(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
   /**
@@ -419,15 +612,24 @@ export function ScadaCanvas({
   const isOT = activeLayer === 'ot'
 
   return (
-    <div className={`canvas-container${isOT ? ' canvas-ot' : ''}`}>
+    /* .connecting class switches the cursor to a crosshair when the user has
+       picked a protocol and is waiting to click a target node. */
+    <div
+      className={`canvas-container${isOT ? ' canvas-ot' : ''}${pendingConnection ? ' connecting' : ''}`}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodesDelete={onNodesDelete}
+        onEdgesDelete={onEdgesDelete}
         onConnect={onConnect}
         onSelectionChange={onSelectionChange}
         onNodeDragStop={onNodeDragStop}
+        onNodeContextMenu={onNodeContextMenu}
+        onNodeClick={onNodeClick}
+        onPaneClick={cancelConnection}
         onInit={instance => {
           rfInstance.current = instance
         }}
@@ -436,7 +638,7 @@ export function ScadaCanvas({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: FIT_PADDING }}
+        fitViewOptions={{ padding: FIT_PADDING, maxZoom: 0.75 }}
         defaultEdgeOptions={{ type: isOT ? 'pipeEdge' : 'protocolEdge', animated: false }}
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Shift"
@@ -463,6 +665,46 @@ export function ScadaCanvas({
           maskColor="rgba(13, 17, 23, 0.7)"
         />
       </ReactFlow>
+
+      {/* ── Right-click protocol selection menu ─────────────────────────────── */}
+      {/* Rendered outside ReactFlow so it sits above the canvas SVG layer.
+          Uses position:fixed so clientX/clientY coordinates work directly. */}
+      {contextMenu && (
+        <div
+          className="connection-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onContextMenu={e => e.preventDefault()}
+        >
+          <div className="connection-context-menu-title">Connect via…</div>
+          <div className="connection-context-menu-sep" />
+          {CONNECTION_OPTIONS.map(opt => (
+            <button
+              key={opt.protocol}
+              className="connection-context-menu-item"
+              onClick={() => startConnection(opt.protocol)}
+            >
+              {/* Color dot matches the protocol accent (teal = Modbus, blue = DNP3, etc.) */}
+              <span className="connection-context-menu-dot" style={{ background: opt.color }} />
+              {opt.label}
+            </button>
+          ))}
+          <div className="connection-context-menu-sep" />
+          <button
+            className="connection-context-menu-item connection-context-menu-cancel"
+            onClick={cancelConnection}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* ── Connecting mode hint banner ──────────────────────────────────────── */}
+      {/* Shown at the bottom of the canvas while awaiting a target node click. */}
+      {pendingConnection && (
+        <div className="connection-mode-hint">
+          Click a device to connect — press <kbd>Esc</kbd> to cancel
+        </div>
+      )}
     </div>
   )
 }

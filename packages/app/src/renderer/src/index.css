@@ -26,7 +26,7 @@
     system-ui,
     -apple-system,
     sans-serif;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--text-primary);
   background: var(--bg-primary);
 }
@@ -48,15 +48,15 @@ body {
 /* ── Shared utilities ─────────────────────────────────────────────────────────── */
 
 .status-dot {
-  width: 7px;
-  height: 7px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
   display: inline-block;
 }
 .status-dot.xs {
-  width: 5px;
-  height: 5px;
+  width: 7px;
+  height: 7px;
 }
 .status-dot.ok {
   background: var(--accent-green);
@@ -86,17 +86,17 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   color: var(--text-secondary);
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────────────── */
 
 .btn {
-  padding: 0.4rem 1rem;
+  padding: 0.45rem 1.1rem;
   border-radius: 6px;
   border: 1px solid transparent;
-  font-size: 0.8125rem;
+  font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
   transition:
@@ -116,11 +116,11 @@ body {
 
 .btn-sm {
   padding: 0.3rem 0.75rem;
-  font-size: 0.75rem;
+  font-size: 0.825rem;
 }
 .btn-lg {
-  padding: 0.625rem 1.5rem;
-  font-size: 0.875rem;
+  padding: 0.65rem 1.5rem;
+  font-size: 1rem;
 }
 
 .btn-primary {
@@ -361,11 +361,11 @@ body {
 
 .palette-header {
   padding: 0.625rem 0.875rem;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-muted);
+  color: var(--text-primary);
   border-bottom: 1px solid var(--border-muted);
   flex-shrink: 0;
 }
@@ -384,11 +384,11 @@ body {
 
 .palette-section-label {
   padding: 0.375rem 0.875rem 0.25rem;
-  font-size: 0.675rem;
+  font-size: 0.725rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--text-muted);
+  color: var(--text-primary);
 }
 
 .palette-item {
@@ -431,6 +431,10 @@ body {
   flex: 1;
   height: 100%;
   background: var(--bg-primary);
+  position: relative; /* anchors the .connection-mode-hint banner */
+  /* Isolate canvas from the 15px base bump — node labels use rem so they'd
+     scale up otherwise. Keeps device nodes at their designed 13px baseline. */
+  font-size: 13px;
 }
 
 /* Override React Flow defaults */
@@ -607,8 +611,8 @@ body {
 
 .properties-empty {
   text-align: center;
-  color: var(--text-muted);
-  font-size: 0.8rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
   line-height: 1.6;
   padding: 1.5rem;
 }
@@ -1005,12 +1009,12 @@ code.prop-value {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 26px;
+  height: 30px;
   padding: 0 0.75rem;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-muted);
   flex-shrink: 0;
-  font-size: 0.725rem;
+  font-size: 0.825rem;
   color: var(--text-muted);
 }
 
@@ -1588,7 +1592,9 @@ code.prop-value {
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  padding: 0 0.5rem;
+  /* Inset by the palette widths so tabs fill only the canvas column */
+  padding-left: 210px;
+  padding-right: 260px;
 }
 
 /*
@@ -1597,18 +1603,19 @@ code.prop-value {
  * can both reference the same zone accent color.
  */
 .layer-tab {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  padding: 0.5rem 1rem 0.4rem;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0.5rem 0.5rem 0.4rem;
   background: none;
   border: none;
-  border-left: 2px solid transparent;
-  border-bottom: 2px solid transparent;
+  border-bottom: 3px solid transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   font-weight: 500;
   transition:
     color 0.15s,
@@ -1623,7 +1630,7 @@ code.prop-value {
   background: rgba(255, 255, 255, 0.04);
 }
 
-/* Active tab: zone color bottom underline + colored left border */
+/* Active tab: zone color bottom underline */
 .layer-tab.active {
   color: var(--text-primary);
   border-bottom-color: var(--layer-color);
@@ -1632,7 +1639,7 @@ code.prop-value {
 
 /* Purdue level badge (e.g., "L0–L2") in zone accent color */
 .layer-tab-level {
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   font-weight: 700;
   font-family: 'Cascadia Code', 'Fira Code', monospace;
   letter-spacing: 0.05em;
@@ -1641,7 +1648,7 @@ code.prop-value {
 
 /* Layer name row — contains the name string and device count chip */
 .layer-tab-name {
-  font-size: 0.8rem;
+  font-size: 1rem;
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -1653,19 +1660,19 @@ code.prop-value {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  border-radius: 8px;
-  font-size: 0.6rem;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  font-size: 0.7rem;
   font-weight: 700;
   color: #0d1117;
-  padding: 0 4px;
+  padding: 0 5px;
   line-height: 1;
 }
 
 /* One-line description of what belongs in this layer */
 .layer-tab-sublabel {
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
   font-weight: 400;
 }
@@ -1708,4 +1715,131 @@ code.prop-value {
 
 .pipe-edge-label.selected {
   box-shadow: 0 0 0 1px currentColor;
+}
+
+/* ── Right-click connection context menu ──────────────────────────────────────── */
+
+/*
+ * Fixed-position popup shown when the user right-clicks a placed device node.
+ * Uses position:fixed so left/top map directly to clientX/clientY from the
+ * React mouse event without any offset calculation.
+ */
+.connection-context-menu {
+  position: fixed;
+  z-index: 500;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 0;
+  min-width: 190px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  user-select: none;
+}
+
+/* Header label ("Connect via…") */
+.connection-context-menu-title {
+  padding: 6px 12px 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+
+/* Thin horizontal rule between sections */
+.connection-context-menu-sep {
+  height: 1px;
+  background: var(--border-muted);
+  margin: 3px 0;
+}
+
+/* Clickable protocol/cable row */
+.connection-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.connection-context-menu-item:hover {
+  background: var(--bg-panel-hover);
+}
+
+/* Cancel button — dimmed to differentiate from protocol options */
+.connection-context-menu-cancel {
+  color: var(--text-secondary);
+}
+
+.connection-context-menu-cancel:hover {
+  color: var(--accent-red);
+}
+
+/* Colored circle dot indicating the protocol accent color */
+.connection-context-menu-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Connecting mode state ─────────────────────────────────────────────────────── */
+
+/*
+ * Applied to .canvas-container when a protocol has been selected and the user is
+ * waiting to click a target node. Crosshair cursor reinforces the "click to connect"
+ * interaction model.
+ */
+.canvas-container.connecting,
+.canvas-container.connecting .react-flow__pane,
+.canvas-container.connecting .react-flow__node {
+  cursor: crosshair !important;
+}
+
+/*
+ * Hint banner — appears at the bottom of the canvas during connecting mode.
+ * Positioned absolutely so it doesn't shift the ReactFlow layout.
+ */
+.connection-mode-hint {
+  position: absolute;
+  bottom: 52px; /* clears the React Flow controls row */
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(13, 17, 23, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 18px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 10;
+}
+
+.connection-mode-hint kbd {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.75rem;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--text-primary);
+}
+
+/*
+ * Hide React Flow's built-in drag-to-connect handles.
+ * The right-click menu is the sole way to create edges in this app.
+ * pointer-events: none prevents the invisible handles from intercepting clicks
+ * and interfering with the two-click connection flow.
+ */
+.react-flow__handle {
+  opacity: 0 !important;
+  pointer-events: none !important;
 }

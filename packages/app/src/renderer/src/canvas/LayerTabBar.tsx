@@ -5,10 +5,10 @@
  * toolbar and the 3-column workspace. The active tab determines which layer
  * the canvas, palette, and properties panel are scoped to.
  *
- * Tab order (left → right) matches the Purdue model top-down:
+ * Tab order (left → right) follows the Purdue model from field level to enterprise:
  *   OT Process   — Levels 0–2: PLCs, RTUs, IEDs, field sensors/actuators
- *   IT Network   — Level 4:    Historians, HMIs, business systems
  *   DMZ          — Level 3.5:  Firewalls, jump hosts, IDS/IPS sensors
+ *   IT Network   — Level 4:    Historians, HMIs, business systems
  *   External     — Level 5:    Internet-facing, red-team attack machine
  *
  * Each tab shows:
@@ -57,8 +57,8 @@ export const LAYER_COLORS: Record<NetworkZone, string> = {
   external: '#f85149'
 }
 
-/** Tab rendering order — Purdue model from field (OT) to enterprise (External). */
-const LAYER_ORDER: NetworkZone[] = ['ot', 'it', 'dmz', 'external']
+/** Tab rendering order — Purdue model from field (OT) through DMZ to enterprise (External). */
+const LAYER_ORDER: NetworkZone[] = ['ot', 'dmz', 'it', 'external']
 
 /**
  * Counts devices per zone in a scenario by reading each CanvasNode's data.zone.
