@@ -157,23 +157,38 @@ function Toolbar({
   scenario,
   simStatus,
   docker,
+  gridSize,
   onImport,
   onNew,
   onStart,
   onStop,
-  onHome
+  onHome,
+  onGridSizeChange
 }: {
   scenario: ICSLabScenario | null
   simStatus: SimStatus
   docker: DockerStatus | null
+  /** Current snap-grid cell size (null = off). Controlled by the toolbar picker. */
+  gridSize: number | null
   onImport: () => void
   onNew: () => void
   onStart: () => void
   onStop: () => void
   onHome: () => void
+  /** Called when the user changes the grid size picker. */
+  onGridSizeChange: (size: number | null) => void
 }) {
   const scenarioName = scenario?.meta.name ?? 'Untitled Scenario'
   const deviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
+
+  /** Grid size options offered in the toolbar picker. */
+  const GRID_OPTIONS: { label: string; value: number | null }[] = [
+    { label: 'No Grid', value: null },
+    { label: '25 × 25', value: 25 },
+    { label: '50 × 50', value: 50 },
+    { label: '100 × 100', value: 100 },
+    { label: '200 × 200', value: 200 }
+  ]
 
   // Pre-compute booleans to prevent TypeScript narrowing inside JSX ternaries
   const isIdle = simStatus === 'idle'
@@ -220,6 +235,26 @@ function Toolbar({
         <button className="btn btn-sm btn-ghost" onClick={onImport} title="Open .icslab file">
           Open
         </button>
+
+        {/* Grid snap picker — lets the user choose a cell size before placing devices.
+            The selected size enables both visual grid lines and node snap-to-grid. */}
+        <label className="toolbar-grid-label" title="Canvas snap grid cell size">
+          Grid
+          <select
+            className="toolbar-grid-picker"
+            value={gridSize ?? 'off'}
+            onChange={e =>
+              onGridSizeChange(e.target.value === 'off' ? null : Number(e.target.value))
+            }
+          >
+            {GRID_OPTIONS.map(opt => (
+              <option key={opt.value ?? 'off'} value={opt.value ?? 'off'}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <div className="toolbar-divider" />
         {/* Stop button shown while running/starting; Run button shown while idle/stopping */}
         {showStop ? (
@@ -433,6 +468,12 @@ export default function App() {
   const [attackTerminalDevice, setAttackTerminalDevice] = useState<DeviceConfig | null>(null)
   /** Active Purdue layer tab — controls which canvas, palette section, and properties are shown. */
   const [activeLayer, setActiveLayer] = useState<NetworkZone>('ot')
+  /**
+   * Canvas snap-grid cell size in pixels, or null for no grid.
+   * Options match the toolbar picker: 25, 50, 100, 200 px.
+   * Stored at the App level so it persists across layer-tab switches.
+   */
+  const [gridSize, setGridSize] = useState<number | null>(null)
 
   useEffect(() => {
     // Fetch app metadata and Docker status concurrently on first render
@@ -609,11 +650,13 @@ export default function App() {
         scenario={scenario}
         simStatus={simStatus}
         docker={docker}
+        gridSize={gridSize}
         onImport={handleImport}
         onNew={handleNew}
         onStart={handleStart}
         onStop={handleStop}
         onHome={handleHome}
+        onGridSizeChange={setGridSize}
       />
       {/* Purdue model layer tabs — sit between toolbar and the 3-column workspace */}
       <LayerTabBar activeLayer={activeLayer} scenario={scenario} onLayerChange={setActiveLayer} />
@@ -623,6 +666,7 @@ export default function App() {
         <ScadaCanvas
           scenario={scenario}
           activeLayer={activeLayer}
+          gridSize={gridSize}
           onSelectDevice={handleSelectDevice}
           onScenarioChange={handleScenarioChange}
         />

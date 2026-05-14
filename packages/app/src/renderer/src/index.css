@@ -327,6 +327,41 @@ body {
   margin: 0 0.25rem;
 }
 
+/* ── Grid size picker (toolbar) ────────────────────────────────────────────────
+ * Label + select pair for choosing the canvas snap-grid cell size.
+ * Placed in .toolbar-right between the Open button and the sim-control divider.
+ */
+.toolbar-grid-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.toolbar-grid-picker {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.toolbar-grid-picker:hover {
+  border-color: var(--text-muted);
+}
+
+.toolbar-grid-picker:focus {
+  border-color: var(--accent-blue);
+}
+
 .sim-badge {
   display: flex;
   align-items: center;
@@ -770,17 +805,18 @@ code.prop-value {
 }
 
 .plc-ide-section-title {
-  font-size: 0.675rem;
+  font-size: 0.725rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-muted);
+  /* text-secondary (#8b949e) instead of text-muted (#484f58) for legibility on dark bg */
+  color: var(--text-secondary);
 }
 
 .plc-ide-section-hint {
-  font-size: 0.625rem;
-  color: var(--text-muted);
-  opacity: 0.6;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  opacity: 0.75;
 }
 
 /* ── Structured Text editor textarea ───────────────────────────────────── */
@@ -796,7 +832,7 @@ code.prop-value {
   border-top: 1px solid var(--border-muted);
   padding: 0.5rem 0.625rem;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-  font-size: 0.7rem;
+  font-size: 0.85rem;
   line-height: 1.5;
   tab-size: 2;
   outline: none;
@@ -831,8 +867,8 @@ code.prop-value {
 
 .plc-ladder-empty {
   padding: 0.75rem 0.625rem;
-  font-size: 0.7rem;
-  color: var(--text-muted);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
   text-align: center;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-muted);
@@ -886,16 +922,17 @@ code.prop-value {
 .plc-var-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.7rem;
+  font-size: 0.8rem;
 }
 
 .plc-var-table th {
   padding: 0.2rem 0.375rem;
-  font-size: 0.625rem;
+  font-size: 0.675rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
+  /* text-secondary for legibility against the dark panel background */
+  color: var(--text-secondary);
   text-align: left;
   border-bottom: 1px solid var(--border-muted);
   white-space: nowrap;
@@ -992,8 +1029,8 @@ code.prop-value {
   margin: 0;
   padding: 0.5rem 0.75rem;
   font-family: 'Cascadia Code', 'Fira Code', monospace;
-  font-size: 0.65rem;
-  color: var(--text-secondary);
+  font-size: 0.8rem;
+  color: var(--text-primary);
   background: var(--bg-primary);
   border-top: 1px solid var(--border-muted);
   white-space: pre-wrap;
@@ -1251,7 +1288,7 @@ code.prop-value {
   flex: 1;
   min-height: 0;
   resize: none;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   padding: 0.75rem 1rem;
   border-top: none;
 }
@@ -1313,8 +1350,9 @@ code.prop-value {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.7rem;
-  color: var(--text-muted);
+  font-size: 0.75rem;
+  /* text-secondary for legibility against the near-black bg-primary */
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 

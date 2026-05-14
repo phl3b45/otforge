@@ -262,6 +262,12 @@ interface ScadaCanvasProps {
   scenario: ICSLabScenario | null
   /** The currently active Purdue layer — scopes which nodes and edges are visible. */
   activeLayer: NetworkZone
+  /**
+   * Snap-grid cell size in pixels, or null for free placement (no grid).
+   * Enables React Flow's snapToGrid + snapGrid and switches the background
+   * to grid lines sized to the chosen cell.
+   */
+  gridSize: number | null
   onSelectDevice: (nodeId: string | null, device: DeviceConfig | null) => void
   onScenarioChange: (updater: (s: ICSLabScenario | null) => ICSLabScenario | null) => void
 }
@@ -276,6 +282,7 @@ interface ScadaCanvasProps {
 export function ScadaCanvas({
   scenario,
   activeLayer,
+  gridSize,
   onSelectDevice,
   onScenarioChange
 }: ScadaCanvasProps) {
@@ -644,11 +651,25 @@ export function ScadaCanvas({
         multiSelectionKeyCode="Shift"
         minZoom={0.15}
         maxZoom={2}
+        snapToGrid={gridSize !== null}
+        snapGrid={[gridSize ?? 25, gridSize ?? 25]}
         proOptions={{ hideAttribution: true }}
       >
-        {/* OT tab: fine grid lines on dark ground give a SCADA/DCS screen feel */}
+        {/*
+         * Background grid:
+         * - OT tab always uses Lines on the dark P&ID navy background.
+         *   When a grid size is set, the line gap matches the snap grid so
+         *   users can see exactly where nodes will snap.
+         * - Other tabs use Dots (no grid) or Lines (grid active).
+         */}
         {isOT ? (
-          <Background variant={BackgroundVariant.Lines} gap={40} color="#0f2233" />
+          <Background
+            variant={BackgroundVariant.Lines}
+            gap={gridSize ?? 40}
+            color={gridSize !== null ? '#152233' : '#0f2233'}
+          />
+        ) : gridSize !== null ? (
+          <Background variant={BackgroundVariant.Lines} gap={gridSize} color="#2a3340" />
         ) : (
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#30363d" />
         )}
