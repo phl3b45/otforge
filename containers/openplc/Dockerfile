@@ -20,7 +20,7 @@ WORKDIR /opt
 # so the source lands directly in /opt/openplc/ without a rename step.
 RUN mkdir openplc && \
     curl -fsSL --retry 3 --retry-delay 15 \
-        https://github.com/thiagoralves/OpenPLC_Runtime/archive/HEAD.tar.gz \
+        https://github.com/thiagoralves/OpenPLC_Runtime/archive/refs/heads/master.tar.gz \
     | tar -xz --strip-components=1 -C openplc
 
 WORKDIR /opt/openplc
