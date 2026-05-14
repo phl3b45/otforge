@@ -39,7 +39,7 @@ import {
   type Edge,
   type ReactFlowInstance,
   type OnSelectionChangeParams,
-  type NodeDragHandler
+  type OnNodeDrag
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type {
@@ -260,7 +260,7 @@ export function ScadaCanvas({
     const deviceNodes = scenarioToNodes(scenario, activeLayer)
     const layerNodeIds = new Set(deviceNodes.map(n => n.id))
     setNodes(deviceNodes)
-    setEdges(scenarioToEdges(scenario, activeLayer, layerNodeIds))
+    setEdges(scenarioToEdges(scenario, activeLayer, layerNodeIds) as Edge[])
     // Defer fitView one frame so React Flow has measured the new nodes
     setTimeout(() => rfInstance.current?.fitView({ padding: FIT_PADDING }), 50)
   }, [scenario, activeLayer, setNodes, setEdges])
@@ -298,7 +298,7 @@ export function ScadaCanvas({
         type: edgeType,
         data: { protocol: 'modbus-tcp' as Protocol }
       }
-      setEdges(eds => addEdge(newEdge, eds))
+      setEdges(eds => addEdge(newEdge as Edge, eds))
 
       if (connection.source && connection.target) {
         onScenarioChange(prev => {
@@ -344,7 +344,7 @@ export function ScadaCanvas({
    * Updates scenario.visual.nodes with the new positions so they survive
    * tab switches and file saves.
    */
-  const onNodeDragStop: NodeDragHandler = useCallback(
+  const onNodeDragStop: OnNodeDrag = useCallback(
     (_event, _node, allNodes) => {
       onScenarioChange(prev => {
         if (!prev) return prev

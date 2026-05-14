@@ -14,9 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dbus-x11 x11-xserver-utils xdg-utils \
     # VNC server (WebSocket bridge comes from pip in Layer 7)
     tigervnc-standalone-server \
-    # Fonts and themes needed for a usable Xfce session
+    # Fonts needed for a usable Xfce session
     fonts-dejavu-core fonts-noto-color-emoji \
-    gtk2-engines-murrine \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Layer 2: Network reconnaissance ───────────────────────────────────────────

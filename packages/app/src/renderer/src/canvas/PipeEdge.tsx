@@ -85,7 +85,7 @@ export function PipeEdge({
   data,
   selected
 }: EdgeProps) {
-  const edgeData = data as PipeEdgeData
+  const edgeData = data as unknown as PipeEdgeData
   const protocol = edgeData?.protocol ?? 'none'
   const color = PIPE_COLORS[protocol] ?? '#484f58'
   const isNone = protocol === 'none'
