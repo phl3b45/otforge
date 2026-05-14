@@ -1326,3 +1326,249 @@ code.prop-value {
   padding: 1px 6px;
   white-space: nowrap;
 }
+
+/* ── Attack Terminal Modal ─────────────────────────────────────────────────────
+ *
+ * Full-screen overlay for the Kali Linux attack machine terminal and desktop.
+ * Mirrors the PLC IDE modal structure with a tab bar replacing the two-column
+ * IDE layout.
+ *
+ * Layout (z-axis):
+ *   .attack-modal-overlay  — fixed backdrop (z-index: 200)
+ *     .attack-modal        — centered panel (max 1400×900)
+ *       .attack-modal-header
+ *       .attack-modal-tabs
+ *       .attack-modal-body
+ *         .attack-terminal-container  (Terminal tab)
+ *           .attack-terminal-xterm    (xterm.js mount point)
+ *         .attack-desktop-container   (Desktop tab)
+ *           webview                   (noVNC)
+ */
+
+.attack-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(3px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.attack-modal {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  width: min(1400px, calc(100vw - 48px));
+  height: min(900px, calc(100vh - 48px));
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+/* ── Header ── */
+.attack-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.attack-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.attack-modal-device-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+
+.attack-modal-subtitle {
+  font-size: 0.75rem;
+  color: var(--accent-red);
+  opacity: 0.85;
+}
+
+.attack-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  line-height: 1;
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+
+.attack-modal-close:hover {
+  background: var(--bg-panel-hover);
+  color: var(--text-primary);
+}
+
+/* ── Tab bar ── */
+.attack-modal-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  padding: 0 1rem;
+}
+
+.attack-tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.5rem 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+  margin-bottom: -1px;
+}
+
+.attack-tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.attack-tab-btn.active {
+  color: var(--accent-red);
+  border-bottom-color: var(--accent-red);
+}
+
+/* Faint hint text listing GUI apps available in the Desktop tab */
+.attack-tab-hint {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* ── Body ── */
+.attack-modal-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Terminal tab ── */
+.attack-terminal-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #0d1117;
+  padding: 0.5rem;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* xterm.js mounts its canvas here — must fill the container */
+.attack-terminal-xterm {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Make xterm.js fill the container div vertically */
+.attack-terminal-xterm .xterm {
+  height: 100%;
+}
+
+.attack-terminal-xterm .xterm-viewport {
+  overflow-y: auto;
+}
+
+.attack-terminal-error {
+  padding: 1rem;
+  color: var(--accent-red);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.attack-terminal-error p {
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+}
+
+/* ── Desktop tab ── */
+.attack-desktop-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  background: #0d1117;
+}
+
+/* noVNC webview fills the full body area */
+.attack-novnc-webview {
+  flex: 1;
+  width: 100%;
+  border: none;
+  min-height: 0;
+}
+
+.attack-desktop-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.attack-desktop-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.attack-desktop-hint code {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--accent-yellow);
+  background: rgba(210, 153, 34, 0.1);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* ── PropertiesPanel — attack machine section ── */
+.prop-attack-btn {
+  display: block;
+  width: calc(100% - 1.75rem);
+  margin: 0.375rem 0.875rem;
+  text-align: center;
+}
+
+.prop-attack-idle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0.375rem 0.875rem;
+  line-height: 1.4;
+}
+
+.prop-attack-note {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.65;
+  margin: 0.25rem 0.875rem 0.5rem;
+  line-height: 1.4;
+}

@@ -21,9 +21,10 @@
  *   rows plus an "Open PLC IDE" button. Clicking the button asks App.tsx to open
  *   a full-screen PlcIdePanel modal (two-column ST editor + variable bindings).
  *
- * Attack machine warning:
- *   The Kali Linux container has special network placement requirements. A warning
- *   banner is shown when an attack machine is selected to explain the constraints.
+ * Attack machine panel:
+ *   When an attack-machine is selected and the simulation is running, a button
+ *   opens the AttackTerminalModal (xterm.js Terminal + noVNC Desktop tabs).
+ *   When the simulation is not running, a note explains it must be started first.
  */
 
 import type { DeviceConfig } from '@ics-sim/schema'
@@ -63,13 +64,18 @@ interface PropertiesPanelProps {
   device: DeviceConfig | null
   /** The zone key of the selected device (e.g., "ot", "it"). Null when no device selected. */
   zone: string | null
+  /** True when a simulation is actively running (enables terminal/IDE launch buttons). */
+  simRunning: boolean
   /**
    * Called when the user clicks "Open PLC IDE" on a PLC device.
    * App.tsx responds by rendering PlcIdeModal with the full two-column editor.
-   *
-   * @param device - The PLC DeviceConfig to open in the IDE.
    */
   onOpenPlcIde: (device: DeviceConfig) => void
+  /**
+   * Called when the user clicks "Open Attack Terminal" on an attack-machine device.
+   * App.tsx responds by rendering AttackTerminalModal (xterm.js + noVNC Desktop).
+   */
+  onOpenAttackTerminal: (device: DeviceConfig) => void
 }
 
 /**
@@ -84,13 +90,22 @@ interface PropertiesPanelProps {
  *   - Modbus config (if device.modbus is defined)
  *   - DNP3 config (if device.dnp3 is defined)
  *   - OPC UA config (if device.opcua is defined)
- *   - Attack machine warning banner (if category === 'attack-machine')
+ *   - Attack machine panel — "Open Attack Terminal" button when sim running,
+ *     or a "start the simulation" note when idle.
  *
- * @param device       - Selected DeviceConfig or null.
- * @param zone         - Zone key string or null.
- * @param onOpenPlcIde - Callback to open the full-screen PLC IDE modal.
+ * @param device               - Selected DeviceConfig or null.
+ * @param zone                 - Zone key string or null.
+ * @param simRunning           - Whether a simulation is currently running.
+ * @param onOpenPlcIde         - Callback to open the full-screen PLC IDE modal.
+ * @param onOpenAttackTerminal - Callback to open the attack terminal modal.
  */
-export function PropertiesPanel({ device, zone, onOpenPlcIde }: PropertiesPanelProps) {
+export function PropertiesPanel({
+  device,
+  zone,
+  simRunning,
+  onOpenPlcIde,
+  onOpenAttackTerminal
+}: PropertiesPanelProps) {
   // Empty state — shown when no node is selected on the canvas
   if (!device) {
     return (
@@ -261,12 +276,26 @@ export function PropertiesPanel({ device, zone, onOpenPlcIde }: PropertiesPanelP
             </section>
           )}
 
-          {/* ── Attack machine warning ────────────────────────────────────────── */}
+          {/* ── Attack machine panel ──────────────────────────────────────────── */}
           {device.category === 'attack-machine' && (
-            <div className="prop-warning">
-              Kali Linux — only reachable from External network segment. Requires Docker Desktop
-              with additional RAM allocation.
-            </div>
+            <section className="prop-section">
+              <div className="prop-section-title">Attack Terminal</div>
+              {simRunning ? (
+                <button
+                  className="btn btn-sm btn-danger prop-attack-btn"
+                  onClick={() => onOpenAttackTerminal(device)}
+                >
+                  Open Attack Terminal
+                </button>
+              ) : (
+                <p className="prop-attack-idle">
+                  Start the simulation to open the terminal and Xfce4 desktop.
+                </p>
+              )}
+              <p className="prop-attack-note">
+                Kali Linux · External segment · xterm.js + noVNC Desktop (Wireshark, Armitage)
+              </p>
+            </section>
           )}
         </div>
       )}

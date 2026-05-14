@@ -122,6 +122,42 @@ const api = {
       ipcRenderer.invoke('system:meminfo')
   },
 
+  // ── Attack terminal ───────────────────────────────────────────────────────────
+  terminal: {
+    /**
+     * Opens an interactive bash session in the named attack-machine container.
+     * Stdout/stderr are pushed back to the renderer via the on.terminalData listener.
+     *
+     * @param nodeId - Canvas node ID of the attack-machine device.
+     * @returns { ok, containerName } on success, { ok: false, error } on failure.
+     */
+    open: (nodeId: string): Promise<{ ok: boolean; containerName?: string; error?: string }> =>
+      ipcRenderer.invoke('terminal:open', { nodeId }),
+
+    /**
+     * Sends a keystroke or paste payload to the running terminal's stdin.
+     * Should be called from xterm.js onData handler on every key event.
+     *
+     * @param data - Raw string produced by xterm.js (may contain escape sequences).
+     */
+    write: (data: string): Promise<void> => ipcRenderer.invoke('terminal:write', { data }),
+
+    /**
+     * Kills the active terminal session. Should be called when the modal closes.
+     */
+    close: (): Promise<void> => ipcRenderer.invoke('terminal:close'),
+
+    /**
+     * Returns the noVNC URL for the Desktop tab webview.
+     * The URL includes autoconnect and scale parameters for seamless embedding.
+     *
+     * @param nodeId - Canvas node ID of the attack-machine device.
+     * @returns { url } on success, { error } if simulation is not running.
+     */
+    getVncUrl: (nodeId: string): Promise<{ url?: string; error?: string }> =>
+      ipcRenderer.invoke('terminal:getVncUrl', { nodeId })
+  },
+
   // ── License (Phase 12 stubs) ──────────────────────────────────────────────────
   license: {
     /** Validates a license key string. Returns dev-mode grant during development. */
@@ -186,6 +222,19 @@ const api = {
     dockerError: (cb: (err: { message: string }) => void) => {
       ipcRenderer.on('docker:error', (_event, err) => cb(err))
       return () => ipcRenderer.removeAllListeners('docker:error')
+    },
+
+    /**
+     * Fires for each chunk of stdout/stderr from the active terminal session.
+     * The callback should be wired to xterm.js terminal.write() so output
+     * appears in the terminal as it arrives.
+     *
+     * @param cb - Callback receiving the raw terminal data string.
+     * @returns Unsubscribe function — call in useEffect cleanup.
+     */
+    terminalData: (cb: (data: string) => void) => {
+      ipcRenderer.on('terminal:data', (_event, data) => cb(data))
+      return () => ipcRenderer.removeAllListeners('terminal:data')
     }
   }
 }

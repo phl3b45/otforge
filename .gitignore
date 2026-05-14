@@ -4,10 +4,9 @@ out
 build
 release
 *.log
+*.tsbuildinfo
 .DS_Store
 Thumbs.db
 .env
 .env.local
 packages/app/src/renderer/dist
-
-labshock/

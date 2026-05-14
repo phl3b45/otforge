@@ -20,6 +20,8 @@
     "@ics-sim/orchestrator": "*",
     "@ics-sim/schema": "*",
     "@xyflow/react": "^12.10.2",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "classic-level": "^1.4.1"
   },
   "devDependencies": {

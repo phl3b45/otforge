@@ -36,6 +36,7 @@ import { ScadaCanvas } from './canvas/ScadaCanvas'
 import { DevicePalette } from './palette/DevicePalette'
 import { PropertiesPanel } from './properties/PropertiesPanel'
 import { PlcIdePanel } from './properties/PlcIdePanel'
+import { AttackTerminalModal } from './terminal/AttackTerminalModal'
 import './index.css'
 
 /**
@@ -426,6 +427,8 @@ export default function App() {
   const [containerStatuses, setContainerStatuses] = useState<ContainerStatus[]>([])
   /** PLC device currently open in the full-screen IDE modal. Null when modal is closed. */
   const [plcIdeDevice, setPlcIdeDevice] = useState<DeviceConfig | null>(null)
+  /** Attack-machine device currently open in the terminal modal. Null when closed. */
+  const [attackTerminalDevice, setAttackTerminalDevice] = useState<DeviceConfig | null>(null)
 
   useEffect(() => {
     // Fetch app metadata and Docker status concurrently on first render
@@ -578,6 +581,16 @@ export default function App() {
     setPlcIdeDevice(null)
   }, [])
 
+  /** Opens the attack terminal modal for the given attack-machine device. */
+  const handleOpenAttackTerminal = useCallback((device: DeviceConfig) => {
+    setAttackTerminalDevice(device)
+  }, [])
+
+  /** Closes the attack terminal modal. The modal itself calls terminal:close on unmount. */
+  const handleCloseAttackTerminal = useCallback(() => {
+    setAttackTerminalDevice(null)
+  }, [])
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (view === 'launch') {
@@ -609,7 +622,9 @@ export default function App() {
         <PropertiesPanel
           device={selectedDevice}
           zone={selectedZone}
+          simRunning={simStatus === 'running'}
           onOpenPlcIde={handleOpenPlcIde}
+          onOpenAttackTerminal={handleOpenAttackTerminal}
         />
       </div>
       <StatusBar docker={docker} simStatus={simStatus} containerStatuses={containerStatuses} />
@@ -621,6 +636,10 @@ export default function App() {
           onProgramChange={handleProgramChange}
           onClose={handleClosePlcIde}
         />
+      )}
+      {/* Attack terminal + Desktop modal — opens when user clicks "Open Attack Terminal" */}
+      {attackTerminalDevice && (
+        <AttackTerminalModal device={attackTerminalDevice} onClose={handleCloseAttackTerminal} />
       )}
     </div>
   )

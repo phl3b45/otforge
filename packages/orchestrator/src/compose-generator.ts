@@ -82,7 +82,9 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   'ids-ips': { memory: 256, cpus: '0.5' },
   switch: { memory: 32, cpus: '0.1' },
   router: { memory: 32, cpus: '0.1' },
-  'attack-machine': { memory: 512, cpus: '1.0' } // Kali with Metasploit, etc.
+  // 2 GB: full Xfce4 desktop + Wireshark GUI + Armitage + Metasploit + VNC server.
+  // Students are expected to have 16+ GB RAM; this budget reflects that baseline.
+  'attack-machine': { memory: 2048, cpus: '2.0' }
 }
 
 /** Shape of a single service entry in the generated compose file. */
@@ -172,8 +174,16 @@ export function generateCompose(scenario: ICSLabScenario, projectName: string): 
   //   deterministic host port starting at PLC_WEB_PORT_BASE. The same ordering
   //   is replicated in main/index.ts to build the activePlcPorts map used by
   //   the plc:deploy IPC handler.
+  //
+  // Attack machine port assignment:
+  //   Each attack container's noVNC WebSocket (port 6080) is published on a
+  //   deterministic host port starting at ATTACK_NOVNC_PORT_BASE. The same
+  //   ordering is replicated in main/index.ts → activeAttackPorts map, which
+  //   the terminal:getVncUrl IPC handler uses to build the noVNC URL.
   const PLC_WEB_PORT_BASE = 18080
   let plcPortIndex = 0
+  const ATTACK_NOVNC_PORT_BASE = 6900
+  let attackPortIndex = 0
 
   for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
     // Use a custom image if specified (for advanced scenarios), otherwise use the category default
@@ -228,11 +238,17 @@ export function generateCompose(scenario: ICSLabScenario, projectName: string): 
 
     // Attack machine is always isolated on the External network.
     // NET_ADMIN + NET_RAW enable nmap raw scans, ARP poisoning, etc.
+    // Port 6080 (noVNC WebSocket) is published to a deterministic host port so the
+    // Electron renderer can embed the Xfce4 desktop in a webview without hardcoding
+    // an address. The same port index ordering is reproduced in main/index.ts.
     if (device.category === 'attack-machine') {
+      const novncHostPort = ATTACK_NOVNC_PORT_BASE + attackPortIndex
       services[serviceName].networks = {
         'external-net': { ipv4_address: device.ipAddress }
       }
       services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
+      services[serviceName].ports = [`${novncHostPort}:6080`]
+      attackPortIndex++
     }
   }
 

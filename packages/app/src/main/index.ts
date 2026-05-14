@@ -36,7 +36,8 @@ import type {
   PLCRuntimeStatus
 } from '@ics-sim/schema'
 import { readFile, writeFile, access } from 'fs/promises'
-import { exec } from 'child_process'
+import { exec, spawn } from 'child_process'
+import type { ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import { join as pathJoin } from 'path'
 import os from 'os'
@@ -185,6 +186,22 @@ let activeProjectName: string | null = null
  * matching compose-generator.ts).
  */
 const activePlcPorts = new Map<string, number>()
+
+/**
+ * Maps attack-machine device nodeIds to their published noVNC host ports.
+ * Populated on simulation start with the same index ordering as the compose
+ * generator's ATTACK_NOVNC_PORT_BASE=6900 logic.
+ *
+ * Used by terminal:getVncUrl to build the noVNC URL for the Electron webview.
+ */
+const activeAttackPorts = new Map<string, number>()
+
+/**
+ * The currently active terminal process (docker exec session).
+ * Only one terminal session is supported at a time — opening a second one
+ * kills the previous. Null when no terminal is open.
+ */
+let activeTerminalProcess: ChildProcess | null = null
 
 // ── App lifecycle ──────────────────────────────────────────────────────────────
 
@@ -483,14 +500,22 @@ function registerIPCHandlers(): void {
       const projectName = toProjectName(scenario.meta.name)
       activeProjectName = projectName
 
-      // Build PLC port map with same iteration order and base port as compose-generator.ts
-      // so plc:deploy can find the right host port without parsing the compose file.
+      // Build PLC and attack-machine port maps with the same iteration order and base ports
+      // as compose-generator.ts so the IPC handlers can find host ports without re-parsing
+      // the generated compose file.
       activePlcPorts.clear()
+      activeAttackPorts.clear()
       let plcIdx = 0
+      let attackIdx = 0
       for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
         if (device.category === 'plc') {
           activePlcPorts.set(nodeId, 18080 + plcIdx)
           plcIdx++
+        }
+        if (device.category === 'attack-machine') {
+          // Base port 6900 matches ATTACK_NOVNC_PORT_BASE in compose-generator.ts
+          activeAttackPorts.set(nodeId, 6900 + attackIdx)
+          attackIdx++
         }
       }
 
@@ -522,11 +547,18 @@ function registerIPCHandlers(): void {
   ipcMain.handle('simulation:stop', async (): Promise<SimulationStopResult> => {
     if (!activeProjectName) return { ok: false, error: 'No simulation is running' }
 
+    // Kill any open terminal session before tearing down the containers
+    if (activeTerminalProcess) {
+      activeTerminalProcess.kill()
+      activeTerminalProcess = null
+    }
+
     const result = await dockerClient.stopScenario(activeProjectName)
     if (result.ok) {
       await clearActiveScenario()
       activeProjectName = null
       activePlcPorts.clear()
+      activeAttackPorts.clear()
     }
     return result
   })
@@ -622,6 +654,110 @@ function registerIPCHandlers(): void {
       }
     }
   )
+
+  // ── Attack terminal ───────────────────────────────────────────────────────────
+
+  /**
+   * Opens an interactive bash session in the attack machine container by
+   * spawning `docker exec -i` and piping its stdout/stderr back to the renderer
+   * as 'terminal:data' push events. The renderer's xterm.js instance writes
+   * incoming data directly.
+   *
+   * Only one terminal session is active at a time. Opening a second session
+   * automatically closes the previous one.
+   *
+   * docker exec flags:
+   *   -i  — keep stdin open so we can write keystrokes to it
+   *   -e  — pass TERM and COLORTERM so bash and tools render colors correctly
+   *
+   * @param nodeId - Canvas node ID of the attack-machine device to exec into.
+   */
+  ipcMain.handle('terminal:open', async (_e, { nodeId }: { nodeId: string }) => {
+    // Derive the container name the same way compose-generator.ts does
+    const sanitized = nodeId.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+    const containerName = `${activeProjectName}-${sanitized}`
+
+    // Kill any existing session before starting a new one
+    if (activeTerminalProcess) {
+      activeTerminalProcess.kill()
+      activeTerminalProcess = null
+    }
+
+    const proc = spawn(
+      'docker',
+      [
+        'exec',
+        '-i',
+        '-e',
+        'TERM=xterm-256color',
+        '-e',
+        'COLORTERM=truecolor',
+        containerName,
+        '/bin/bash',
+        '-l'
+      ],
+      { env: buildDockerEnv(), stdio: 'pipe' }
+    )
+
+    activeTerminalProcess = proc
+
+    // Stream stdout + stderr to the renderer as raw terminal data
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      mainWindow?.webContents.send('terminal:data', chunk.toString())
+    })
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      mainWindow?.webContents.send('terminal:data', chunk.toString())
+    })
+
+    proc.on('close', code => {
+      mainWindow?.webContents.send('terminal:data', `\r\n[session closed — exit code ${code}]\r\n`)
+      if (activeTerminalProcess === proc) activeTerminalProcess = null
+    })
+
+    return { ok: true, containerName }
+  })
+
+  /**
+   * Writes a keystroke or paste payload to the active terminal's stdin.
+   * Called by the renderer's xterm.js onData handler for every key press.
+   *
+   * @param data - Raw string from xterm.js onData (may include escape sequences).
+   */
+  ipcMain.handle('terminal:write', (_e, { data }: { data: string }) => {
+    if (activeTerminalProcess?.stdin) {
+      activeTerminalProcess.stdin.write(data)
+    }
+  })
+
+  /**
+   * Closes the active terminal session and kills the docker exec process.
+   * Called when the AttackTerminalModal is closed.
+   */
+  ipcMain.handle('terminal:close', () => {
+    if (activeTerminalProcess) {
+      activeTerminalProcess.kill()
+      activeTerminalProcess = null
+    }
+  })
+
+  /**
+   * Returns the localhost URL for the noVNC web interface of the given attack
+   * machine device. The URL points to the websockify bridge running inside the
+   * container at the host-published port tracked in activeAttackPorts.
+   *
+   * @param nodeId - Canvas node ID of the attack-machine device.
+   * @returns { url } on success, { error } if the simulation is not running
+   *   or the device is not found in the active port map.
+   */
+  ipcMain.handle('terminal:getVncUrl', (_e, { nodeId }: { nodeId: string }) => {
+    const port = activeAttackPorts.get(nodeId)
+    if (!port) {
+      return { error: 'No noVNC port found — is the simulation running?' }
+    }
+    // noVNC's index page auto-connects when the `autoconnect=true` query param is set.
+    // `resize=scale` makes it fill the webview width without scrollbars.
+    return { url: `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale&password=kali` }
+  })
 
   // ── License (Phase 12 stubs) ──────────────────────────────────────────────────
   // Real license validation is implemented in Phase 12. During development,
