@@ -40,11 +40,14 @@ echo "[ics-attack] Starting TigerVNC server on display :1 (port 5901)..."
 # Clean up any stale lock files from a previous unclean shutdown
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
 
-# Geometry matches a standard 16:9 monitor — suitable for Wireshark's layout
+# Geometry matches a standard 16:9 monitor — suitable for Wireshark's layout.
+# -SecurityTypes None: password-free VNC — safe because port 5901 is not
+# published to the host; VNC is only reachable via websockify on port 6080.
 vncserver :1 \
     -geometry 1920x1080 \
     -depth 24 \
     -localhost no \
+    -SecurityTypes None \
     -fg &
 VNC_PID=$!
 
@@ -76,7 +79,7 @@ websockify \
 NOVNC_PID=$!
 
 echo "[ics-attack] Desktop ready — connect at container port 6080"
-echo "[ics-attack] VNC password: kali"
+echo "[ics-attack] VNC: no password required (SecurityTypes None; isolated within Docker network)"
 echo ""
 echo "[ics-attack] Waiting for terminal sessions (docker exec)..."
 

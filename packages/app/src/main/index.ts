@@ -756,7 +756,8 @@ function registerIPCHandlers(): void {
     }
     // noVNC's index page auto-connects when the `autoconnect=true` query param is set.
     // `resize=scale` makes it fill the webview width without scrollbars.
-    return { url: `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale&password=kali` }
+    // No password param — VNC runs with SecurityTypes None (no auth) inside Docker's network.
+    return { url: `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale` }
   })
 
   // ── License (Phase 12 stubs) ──────────────────────────────────────────────────

@@ -101,11 +101,10 @@ RUN wget -qO /tmp/novnc.tar.gz \
 RUN msfdb init 2>/dev/null || true
 
 # ── VNC configuration ─────────────────────────────────────────────────────────
-# Default VNC password is "kali" — intentionally simple for lab use.
-# The VNC server runs on display :1 (port 5901); websockify bridges it to 6080.
-RUN mkdir -p /root/.vnc && \
-    printf "kali\nkali\nn\n" | vncpasswd && \
-    chmod 600 /root/.vnc/passwd
+# No VNC password — the server is started with -SecurityTypes None in entrypoint.sh.
+# VNC is only accessible within Docker's internal network (port 5901 is not
+# published to the host), so password-less VNC is safe for lab use.
+RUN mkdir -p /root/.vnc
 
 # Xstartup launches Xfce4 when VNC connects
 RUN printf '#!/bin/bash\nunset SESSION_MANAGER\nunset DBUS_SESSION_BUS_ADDRESS\nexec startxfce4\n' \

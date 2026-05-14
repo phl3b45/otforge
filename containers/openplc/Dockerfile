@@ -21,11 +21,20 @@ ENV GIT_TERMINAL_PROMPT=0
 # Clone OpenPLC Runtime (shallow clone for speed).
 # Retry up to 3 times with a 15-second back-off to handle transient GitHub
 # connectivity issues in CI environments.
-RUN for i in 1 2 3; do \
-      git clone --depth=1 https://github.com/thiagoralves/OpenPLC_Runtime.git openplc \
-      && break \
-      || (echo "Clone attempt $i failed, retrying in 15s..." && sleep 15); \
-    done
+# The success flag ensures the RUN step exits non-zero if all attempts fail —
+# the previous loop silently exited 0 because 'sleep 15' was the last command
+# in the failure branch, masking the missing openplc directory downstream.
+RUN set -e; \
+    success=0; \
+    for i in 1 2 3; do \
+      if git clone --depth=1 https://github.com/thiagoralves/OpenPLC_Runtime.git openplc; then \
+        success=1; break; \
+      fi; \
+      if [ "$i" -lt 3 ]; then \
+        echo "Clone attempt $i failed, retrying in 15s..." && sleep 15; \
+      fi; \
+    done; \
+    [ "$success" -eq 1 ] || { echo "All clone attempts failed — aborting build"; exit 1; }
 
 WORKDIR /opt/openplc
 
