@@ -69,7 +69,7 @@ sleep 3
 # into raw VNC TCP frames that TigerVNC understands.
 echo "[ics-attack] Starting noVNC websockify bridge on port 6080..."
 websockify \
-    --web /usr/share/novnc/ \
+    --web /opt/novnc/ \
     --wrap-mode=ignore \
     0.0.0.0:6080 \
     localhost:5901 &

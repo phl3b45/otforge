@@ -220,11 +220,11 @@ describe('resource limits', () => {
     expect(compose.services['rtu-1'].deploy.resources.limits.memory).toBe('80m')
   })
 
-  it('assigns 512m memory limit to attack machine (Kali + Metasploit)', () => {
+  it('assigns 2048m memory limit to attack machine (Kali + Xfce4 desktop + Metasploit)', () => {
     const compose = gen(
       makeScenario([['kali-1', { category: 'attack-machine', ipAddress: '172.20.40.10' }]])
     )
-    expect(compose.services['kali-1'].deploy.resources.limits.memory).toBe('512m')
+    expect(compose.services['kali-1'].deploy.resources.limits.memory).toBe('2048m')
   })
 })
 

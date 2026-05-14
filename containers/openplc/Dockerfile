@@ -18,8 +18,14 @@ WORKDIR /opt
 # this just stops git from attempting to ask for them.
 ENV GIT_TERMINAL_PROMPT=0
 
-# Clone and build OpenPLC Runtime (shallow clone for speed)
-RUN git clone --depth=1 https://github.com/thiagoralves/OpenPLC_Runtime.git openplc
+# Clone OpenPLC Runtime (shallow clone for speed).
+# Retry up to 3 times with a 15-second back-off to handle transient GitHub
+# connectivity issues in CI environments.
+RUN for i in 1 2 3; do \
+      git clone --depth=1 https://github.com/thiagoralves/OpenPLC_Runtime.git openplc \
+      && break \
+      || (echo "Clone attempt $i failed, retrying in 15s..." && sleep 15); \
+    done
 
 WORKDIR /opt/openplc
 

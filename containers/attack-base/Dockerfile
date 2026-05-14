@@ -5,15 +5,15 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # ── Layer 1: Core system + desktop environment ─────────────────────────────────
 # Xfce4 is the lightest full desktop that pairs well with Kali's tool set.
-# tigervnc-standalone-server provides the VNC server; novnc + websockify bridge
-# the VNC TCP socket to a WebSocket so the Electron webview can connect directly.
+# tigervnc-standalone-server provides the VNC server on display :1 (port 5901).
+# novnc/websockify are NOT taken from apt here (Kali mirror reliability is poor
+# for these packages); they are installed from PyPI in Layer 7 instead.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Desktop environment
     xfce4 xfce4-terminal xfce4-taskmanager \
     dbus-x11 x11-xserver-utils xdg-utils \
-    # VNC + noVNC WebSocket bridge
-    tigervnc-standalone-server tigervnc-tools \
-    novnc websockify \
+    # VNC server (WebSocket bridge comes from pip in Layer 7)
+    tigervnc-standalone-server \
     # Fonts and themes needed for a usable Xfce session
     fonts-dejavu-core fonts-noto-color-emoji \
     gtk2-engines-murrine \
@@ -70,18 +70,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git vim nano \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Layer 7: Python ICS protocol libraries ────────────────────────────────────
-# Installed with --break-system-packages because Kali uses PEP 668 externally-
-# managed Python; these are dev/lab tools, not production packages.
+# ── Layer 7: Python ICS protocol libraries + noVNC WebSocket bridge ───────────
+# websockify bridges VNC port 5901 → WebSocket port 6080 (the Electron webview
+# connects to 6080 via noVNC). Installing via pip is more reliable than the
+# kali-rolling apt mirror for these two packages.
+# --break-system-packages is needed because Kali uses PEP 668 externally-managed
+# Python; these are dev/lab tools, not production packages.
 RUN pip3 install --no-cache-dir --break-system-packages \
+    websockify \
     pymodbus \
     dnp3-python \
     opcua \
     python-snap7 \
     bacpypes3 \
-    scapy 2>/dev/null || pip3 install --no-cache-dir --break-system-packages pymodbus scapy
+    scapy 2>/dev/null || pip3 install --no-cache-dir --break-system-packages websockify pymodbus scapy
 
-# ── Layer 8: Metasploit DB initialization ────────────────────────────────────
+# ── Layer 8: noVNC web client ─────────────────────────────────────────────────
+# Fetch noVNC from the official GitHub release (pinned to v1.5.0 for
+# reproducibility). The websockify proxy started in entrypoint.sh serves
+# this directory at port 6080.
+RUN wget -qO /tmp/novnc.tar.gz \
+    https://github.com/novnc/noVNC/archive/refs/tags/v1.5.0.tar.gz \
+    && tar -xzf /tmp/novnc.tar.gz -C /opt \
+    && mv /opt/noVNC-1.5.0 /opt/novnc \
+    && rm /tmp/novnc.tar.gz \
+    # Create the convenience redirect: /vnc.html → core/vnc.html
+    && ln -sf /opt/novnc/vnc.html /opt/novnc/index.html
+
+# ── Layer 9: Metasploit DB initialization ────────────────────────────────────
 # Pre-initialize the Metasploit PostgreSQL database so the first msfconsole
 # launch inside the container doesn't have to wait for db:init.
 RUN msfdb init 2>/dev/null || true
