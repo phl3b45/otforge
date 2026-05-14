@@ -237,5 +237,5 @@ Runtime Docker images are governed by their own licenses — see the [LICENSE](L
 
 **Ian Burres**
 Professor of Practice — Cybersecurity, University of Texas at San Antonio (UTSA)
-Former: Sandia National Laboratories · Broward County Sheriff's Office · U.S. Secret Service
+Former: Sandia National Laboratories
 ORCID: [0009-0006-1320-9956](https://orcid.org/0009-0006-1320-9956)
