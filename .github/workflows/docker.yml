@@ -103,6 +103,38 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Download OpenPLC Runtime source at the runner level (before Docker build).
+      # BuildKit's RUN network context cannot reliably reach github.com for repo
+      # archive downloads, but the GitHub Actions runner itself has full internet
+      # access. We try 'master' first (historical default), then 'main' as a
+      # fallback in case the repo default branch was renamed.
+      - name: Download OpenPLC Runtime source
+        run: |
+          mkdir -p containers/openplc/openplc-src
+          DOWNLOADED=0
+          for BRANCH in master main; do
+            echo "Trying branch: $BRANCH"
+            HTTP_CODE=$(curl -sSL --write-out "%{http_code}" \
+              "https://github.com/thiagoralves/OpenPLC_Runtime/archive/refs/heads/${BRANCH}.tar.gz" \
+              -o /tmp/openplc.tar.gz)
+            if [ "$HTTP_CODE" = "200" ] && [ -s /tmp/openplc.tar.gz ]; then
+              tar -xz --strip-components=1 -C containers/openplc/openplc-src \
+                -f /tmp/openplc.tar.gz
+              if [ -f containers/openplc/openplc-src/install.sh ]; then
+                echo "Downloaded OpenPLC Runtime from branch: $BRANCH"
+                DOWNLOADED=1
+                break
+              fi
+            else
+              echo "Branch $BRANCH returned HTTP $HTTP_CODE"
+            fi
+            rm -f /tmp/openplc.tar.gz
+          done
+          if [ "$DOWNLOADED" -ne 1 ]; then
+            echo "ERROR: Could not download OpenPLC Runtime source"
+            exit 1
+          fi
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5

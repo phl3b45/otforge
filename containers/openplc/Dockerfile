@@ -11,17 +11,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /opt
 
-# Download OpenPLC Runtime source via GitHub's archive endpoint.
-# This is more reliable than git clone in CI: GitHub's /archive/HEAD.tar.gz
-# endpoint is served by the CDN and succeeds even when git:// or smart-HTTP
-# clone connections are blocked or rate-limited by the runner's network policy.
-# curl --retry handles transient HTTP 5xx / network errors with back-off.
-# --strip-components=1 drops the top-level "OpenPLC_Runtime-<sha>/" directory
-# so the source lands directly in /opt/openplc/ without a rename step.
-RUN mkdir openplc && \
-    curl -fsSL --retry 3 --retry-delay 15 \
-        https://github.com/thiagoralves/OpenPLC_Runtime/archive/refs/heads/master.tar.gz \
-    | tar -xz --strip-components=1 -C openplc
+# OpenPLC Runtime source is pre-downloaded by the CI workflow step
+# "Download OpenPLC Runtime source" and placed in openplc-src/ before
+# this Docker build runs. That directory is part of the build context
+# (containers/openplc/) and is gitignored (never committed).
+#
+# For local builds, pre-populate it first:
+#   mkdir -p containers/openplc/openplc-src
+#   curl -fsSL https://github.com/thiagoralves/OpenPLC_Runtime/archive/refs/heads/master.tar.gz \
+#     | tar -xz --strip-components=1 -C containers/openplc/openplc-src
+COPY openplc-src/ /opt/openplc/
 
 WORKDIR /opt/openplc
 
