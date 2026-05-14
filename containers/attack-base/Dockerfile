@@ -30,12 +30,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # wireshark pulls in the full GUI; tshark is its CLI sibling.
 # Both are required: tshark for scripted capture, Wireshark GUI for visual analysis
 # of ICS protocol fields (Modbus, DNP3, EIP, IEC 104) in the Desktop view.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Running as root inside Docker — no wireshark group or setuid needed for capture.
+RUN echo "wireshark-common wireshark-common/install-setuid boolean false" | debconf-set-selections \
+    && apt-get update && apt-get install -y --no-install-recommends \
     wireshark tshark \
     tcpdump \
-    && echo "wireshark-common wireshark-common/install-setuid boolean true" | debconf-set-selections \
-    && dpkg-reconfigure -f noninteractive wireshark-common \
-    && usermod -aG wireshark root \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Layer 4: Exploitation frameworks ──────────────────────────────────────────
