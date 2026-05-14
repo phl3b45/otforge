@@ -14,6 +14,6 @@ packages/app/src/renderer/dist
 # OpenPLC Runtime source — downloaded by the CI workflow before Docker build;
 # never committed (large C/C++ build tree). To build locally, run:
 #   mkdir -p containers/openplc/openplc-src
-#   curl -fsSL https://github.com/thiagoralves/OpenPLC_Runtime/archive/refs/heads/master.tar.gz \
+#   curl -fsSL https://github.com/thiagoralves/OpenPLC_v3/archive/refs/heads/master.tar.gz \
 #     | tar -xz --strip-components=1 -C containers/openplc/openplc-src
 containers/openplc/openplc-src/

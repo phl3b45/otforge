@@ -115,7 +115,7 @@ jobs:
           for BRANCH in master main; do
             echo "Trying branch: $BRANCH"
             HTTP_CODE=$(curl -sSL --write-out "%{http_code}" \
-              "https://github.com/thiagoralves/OpenPLC_Runtime/archive/refs/heads/${BRANCH}.tar.gz" \
+              "https://github.com/thiagoralves/OpenPLC_v3/archive/refs/heads/${BRANCH}.tar.gz" \
               -o /tmp/openplc.tar.gz)
             if [ "$HTTP_CODE" = "200" ] && [ -s /tmp/openplc.tar.gz ]; then
               tar -xz --strip-components=1 -C containers/openplc/openplc-src \

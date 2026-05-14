@@ -18,7 +18,7 @@ WORKDIR /opt
 #
 # For local builds, pre-populate it first:
 #   mkdir -p containers/openplc/openplc-src
-#   curl -fsSL https://github.com/thiagoralves/OpenPLC_Runtime/archive/refs/heads/master.tar.gz \
+#   curl -fsSL https://github.com/thiagoralves/OpenPLC_v3/archive/refs/heads/master.tar.gz \
 #     | tar -xz --strip-components=1 -C containers/openplc/openplc-src
 COPY openplc-src/ /opt/openplc/
 
