@@ -1,60 +1,38 @@
 /**
- * PlcIdePanel.tsx — Integrated PLC program editor for the right-sidebar properties panel.
+ * PlcIdePanel.tsx — PLC program editor for IEC 61131-3 ST and Ladder Logic.
  *
- * Rendered in place of the standard PropertiesPanel body when a PLC device node
- * is selected on the SCADA canvas. Provides a complete light-weight IDE for
- * authoring and deploying IEC 61131-3 Structured Text (ST) programs:
+ * Renders in two modes:
  *
- *   Structured Text editor:
- *     A monospace textarea supporting the full IEC 61131-3 ST language. ST is the
- *     most widely used high-level PLC language and is natively supported by the
- *     OpenPLC Runtime container image used in this simulator.
+ *   panel (modal=false, default)
+ *     Compact single-column layout for the right-sidebar properties panel.
+ *     Used as a fallback; the modal is the primary UX in this release.
  *
- *   Variable binding table:
- *     Maps named PLC variables to IEC 61131-3 I/O addresses (%IX, %QX, %IW, %MW)
- *     and then to their corresponding protocol register addresses (Modbus coil numbers,
- *     Holding Register addresses, DNP3 point indices). These bindings bridge the
- *     PLC's internal address space to the OT protocol bus.
+ *   modal (modal=true)
+ *     Full-screen two-column IDE layout:
+ *       Left column  — ST / Ladder tab pane (large code editor or ladder diagram)
+ *       Right column — Variable binding table (always visible for cross-reference)
+ *     Action bar spans the full width at the bottom.
  *
- *     IEC address prefixes:
- *       %IX  Input bit      — coil / discrete input (read from field sensor)
- *       %QX  Output bit     — coil / discrete output (written to actuator)
- *       %IW  Input word     — 16-bit integer input register (analog sensor)
- *       %QW  Output word    — 16-bit integer output register (analog actuator)
- *       %MW  Memory word    — internal storage register (setpoints, timers)
+ * The variable binding table maps named PLC variables to IEC 61131-3 I/O
+ * addresses (%IX, %QX, %IW, %MW) and then to protocol register addresses
+ * (Modbus coil/HR, DNP3 point index). These bindings bridge the PLC's internal
+ * address space to the OT field bus.
  *
- *   Ladder logic viewer:
- *     A read-only SVG diagram generated from the variable binding table. It shows
- *     each boolean BOOL variable as the appropriate IEC 61131-3 ladder symbol:
- *       - Normally-open contact  --|[ ]|--  for inputs  (%IX addresses)
- *       - Coil                   --( )--    for outputs (%QX addresses)
- *     Analog/word variables are listed separately below the ladder rail diagram.
- *     This provides an educational cross-reference between the textual ST program
- *     and the traditional relay-ladder representation used in field documentation.
+ * Save / Deploy workflow:
+ *   Save   — base64-encodes the ST source, writes to scenario.devices.devices[id].plcProgram.
+ *             Survives app restart via LevelDB. Pre-loaded into the OpenPLC container as
+ *             INITIAL_PROGRAM_B64 on next simulation start.
+ *   Deploy — when simulation is running: POSTs the program to the live OpenPLC Runtime
+ *             web API (/upload-program → /start_plc) without stopping the simulation.
  *
- *   Save / Deploy workflow:
- *     Save:   Encodes the ST source to base64 and writes it into the scenario's
- *             device.plcProgram field. The change propagates to LevelDB persistence.
- *             Takes effect on the next simulation start (pre-loaded via INITIAL_PROGRAM_B64).
- *     Deploy: If the simulation is currently running, sends the program to the live
- *             OpenPLC container via the plc:deploy IPC channel. The main process
- *             POSTs the file to OpenPLC's web interface, triggers recompilation,
- *             and restarts PLC execution without stopping the full simulation.
- *
- * Data flow:
- *   PlcIdePanel is stateful with local editor/variable state that is promoted to
- *   the scenario document only when the user clicks Save or Deploy. This prevents
- *   every keystroke from triggering scenario updates and LevelDB writes.
+ * OpenPLC Runtime v3 is the target — it natively runs IEC 61131-3 ST programs
+ * compiled by MATIEC to C++ and linked against its real-time scan-cycle engine.
  */
 
 import { useState, useCallback, useId } from 'react'
 import type { DeviceConfig, PLCProgramConfig, Protocol } from '@ics-sim/schema'
 
-// ── IEC 61131-3 default program template ─────────────────────────────────────
-//
-// Presented in the ST editor when a PLC device has no program defined yet.
-// Uses water treatment as the default sector since it is the most common
-// introductory ICS security lab environment.
+// ── Default ST program template ───────────────────────────────────────────────
 
 const DEFAULT_ST_PROGRAM = `(* ============================================================
    ICS Simulator — PLC Program Template
@@ -64,11 +42,11 @@ const DEFAULT_ST_PROGRAM = `(* =================================================
    1. Declare your process variables in the VAR block.
       - Use AT %IX0.0 for digital inputs  (sensors, switches)
       - Use AT %QX0.0 for digital outputs (pumps, valves)
-      - Use AT %IW0   for analog inputs   (4-20mA, 0-10V)
+      - Use AT %IW0   for analog inputs   (4–20 mA, 0–10 V)
       - Use AT %MW0   for memory words    (setpoints, counters)
    2. Write your control logic below END_VAR.
-   3. Add variable bindings in the table below the editor,
-      then click Save to store the program in the scenario.
+   3. Add variable bindings in the table, then click Save
+      to store the program in the scenario.
    4. Click Deploy to push the program to a running container.
    ============================================================ *)
 
@@ -77,7 +55,7 @@ PROGRAM main
     (* Process inputs — read from Modbus Input/Coil registers *)
     level_high  AT %IX0.0 : BOOL;   (* High-level float switch    *)
     level_low   AT %IX0.1 : BOOL;   (* Low-level float switch     *)
-    flow_rate   AT %IW0   : WORD;   (* Flow rate 0-1000 (L/min×10)*)
+    flow_rate   AT %IW0   : WORD;   (* Flow rate 0–1000 (L/min×10)*)
 
     (* Process outputs — written to Modbus Coil/HR registers *)
     pump_run    AT %QX0.0 : BOOL;   (* Start pump                 *)
@@ -109,45 +87,28 @@ END_PROGRAM
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-/** IEC 61131-3 data types shown in the variable table type selector. */
 const IEC_TYPES = ['BOOL', 'WORD', 'INT', 'DINT', 'REAL'] as const
 type IECType = (typeof IEC_TYPES)[number]
 
-/** One row in the variable binding table — extends PLCProgramConfig.variables. */
 interface VarRow {
-  /** Stable React key (not the IEC variable name, which can change). */
   id: string
   name: string
   type: IECType
-  /** IEC 61131-3 address e.g. %IX0.0, %QX0.0, %IW0, %MW0. */
   address: string
   protocol: Protocol
-  /** Protocol-specific address: Modbus register number, DNP3 point index, etc. */
   protocolAddress: string
 }
 
-/** Props accepted by PlcIdePanel. */
-interface PlcIdePanelProps {
-  /** The currently selected PLC device configuration. */
+export interface PlcIdePanelProps {
   device: DeviceConfig
-  /** True when a simulation is actively running (enables Deploy button). */
   simRunning: boolean
-  /**
-   * Called when the user saves or deploys a program. The parent (App) writes
-   * the updated PLCProgramConfig into the scenario document.
-   *
-   * @param nodeId  - The PLC device's canvas node ID.
-   * @param program - The new program configuration to store.
-   */
   onProgramChange: (nodeId: string, program: PLCProgramConfig) => void
+  /** When true, renders in the full-screen two-column IDE modal layout. */
+  modal?: boolean
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Converts a VarRow back to the PLCProgramConfig.variables element shape.
- * The schema expects `Protocol` and `string` addresses — we strip the local `id`.
- */
 function rowToSchemaVar(row: VarRow): PLCProgramConfig['variables'][number] {
   return {
     name: row.name,
@@ -158,10 +119,6 @@ function rowToSchemaVar(row: VarRow): PLCProgramConfig['variables'][number] {
   }
 }
 
-/**
- * Converts PLCProgramConfig.variables elements to the local VarRow shape
- * (adds a stable React `id` for list rendering).
- */
 function schemaVarToRow(v: PLCProgramConfig['variables'][number], idx: number): VarRow {
   return {
     id: `var-${idx}-${v.name}`,
@@ -173,12 +130,6 @@ function schemaVarToRow(v: PLCProgramConfig['variables'][number], idx: number): 
   }
 }
 
-/**
- * Infers the variable's direction (input/output/memory) from the IEC address prefix.
- *   %I prefix = input  (sourced from the field / protocol read)
- *   %Q prefix = output (driven from PLC / protocol write)
- *   %M prefix = memory (internal PLC register, may be read back via protocol)
- */
 function iecDirection(addr: string): 'input' | 'output' | 'memory' {
   if (addr.startsWith('%I')) return 'input'
   if (addr.startsWith('%Q')) return 'output'
@@ -188,47 +139,35 @@ function iecDirection(addr: string): 'input' | 'output' | 'memory' {
 // ── Ladder Logic SVG Viewer ───────────────────────────────────────────────────
 
 /**
- * Generates a read-only SVG ladder logic diagram from a list of variable bindings.
+ * Read-only SVG ladder logic diagram generated from variable bindings.
  *
- * Ladder logic is the graphical PLC programming language defined in IEC 61131-3.
- * It models relay-circuit logic with power rails on the left and right and
- * horizontal "rungs" connecting contacts (inputs) and coils (outputs).
- *
- * Symbol conventions used here (IEC 61131-3 §6.7.2):
- *   Normally-open contact  --|[ ]|--   BOOL input  (%IX address)
- *   Coil                   --( )--     BOOL output (%QX address)
- *   Memory coil            --(M)--     BOOL memory (%MX address)
- *
- * Only BOOL-type variables are shown on the ladder rail. WORD/INT/REAL variables
- * appear in a summary list below, labeled "Analog I/O".
- *
- * @param vars - Variable rows to render from the binding table.
+ * Symbol conventions (IEC 61131-3 §6.7.2):
+ *   Normally-open contact  --|[ ]|--   BOOL input  (%IX)
+ *   Coil                   --( )--     BOOL output (%QX)
+ * WORD/INT/REAL variables appear in an "Analog I/O" summary below the rails.
  */
-function LadderDiagram({ vars }: { vars: VarRow[] }) {
+function LadderDiagram({ vars, large }: { vars: VarRow[]; large?: boolean }) {
   const boolInputs = vars.filter(v => v.type === 'BOOL' && iecDirection(v.address) === 'input')
   const boolOutputs = vars.filter(v => v.type === 'BOOL' && iecDirection(v.address) === 'output')
   const analogVars = vars.filter(v => v.type !== 'BOOL')
 
-  // Geometry constants (all in SVG user units, viewBox maps to 100% width)
-  const SVG_W = 220
-  const RAIL_L = 14 // left power rail x
-  const RAIL_R = 206 // right power rail x
-  const RUNG_H = 34 // vertical spacing per rung
-  const Y_START = 20 // y-center of first rung
-  const CONTACT_W = 12 // half-width of contact symbol
-  const COIL_R = 8 // coil circle radius
-  const LABEL_Y_OFF = 11 // label below symbol center
+  const SVG_W = large ? 520 : 220
+  const RAIL_L = large ? 24 : 14
+  const RAIL_R = large ? 496 : 206
+  const RUNG_H = large ? 50 : 34
+  const Y_START = large ? 30 : 20
+  const CONTACT_W = large ? 16 : 12
+  const COIL_R = large ? 12 : 8
+  const LABEL_Y_OFF = large ? 16 : 11
+  const FONT_SM = large ? 9 : 7
+  const FONT_XS = large ? 8 : 6
 
-  // Build rungs: each output coil gets its own rung; inputs appear as series contacts
-  // This is the simplest ladder topology that remains visually correct for educational use.
-  const rungs = boolOutputs.length > 0 ? boolOutputs : [null] // at least one rung placeholder
-  const svgH = Math.max(50, rungs.length * RUNG_H + 24)
+  const rungs = boolOutputs.length > 0 ? boolOutputs : [null]
+  const svgH = Math.max(60, rungs.length * RUNG_H + (large ? 36 : 24))
 
   if (vars.length === 0) {
     return (
-      <div className="plc-ladder-empty">
-        Add variables in the table below to see the ladder view.
-      </div>
+      <div className="plc-ladder-empty">Add variables in the table to see the ladder diagram.</div>
     )
   }
 
@@ -241,7 +180,7 @@ function LadderDiagram({ vars }: { vars: VarRow[] }) {
         role="img"
         aria-label="Ladder logic diagram"
       >
-        {/* Left and right power rails */}
+        {/* Power rails */}
         <line
           x1={RAIL_L}
           y1={8}
@@ -261,15 +200,13 @@ function LadderDiagram({ vars }: { vars: VarRow[] }) {
 
         {rungs.map((outputVar, rungIdx) => {
           const cy = Y_START + rungIdx * RUNG_H
-
-          // Distribute contacts evenly between left rail and coil
           const contactCount = boolInputs.length
-          const coilX = outputVar ? RAIL_R - 28 : RAIL_R - 20
+          const coilX = outputVar ? RAIL_R - COIL_R * 4 : RAIL_R - 20
           const contactSpacing = contactCount > 0 ? (coilX - RAIL_L - 20) / (contactCount + 1) : 0
 
           return (
             <g key={outputVar?.id ?? 'placeholder'}>
-              {/* Horizontal rung wire from left rail to coil */}
+              {/* Rung wire */}
               <line
                 x1={RAIL_L}
                 y1={cy}
@@ -279,12 +216,11 @@ function LadderDiagram({ vars }: { vars: VarRow[] }) {
                 strokeWidth={1.5}
               />
 
-              {/* Series contacts for all BOOL inputs */}
+              {/* Series contacts */}
               {boolInputs.map((inputVar, ci) => {
                 const cx = RAIL_L + contactSpacing * (ci + 1)
                 return (
                   <g key={inputVar.id}>
-                    {/* Left contact vertical */}
                     <line
                       x1={cx - CONTACT_W}
                       y1={cy - 7}
@@ -293,7 +229,6 @@ function LadderDiagram({ vars }: { vars: VarRow[] }) {
                       stroke="var(--accent-teal)"
                       strokeWidth={1.5}
                     />
-                    {/* Right contact vertical */}
                     <line
                       x1={cx + CONTACT_W}
                       y1={cy - 7}
@@ -302,26 +237,23 @@ function LadderDiagram({ vars }: { vars: VarRow[] }) {
                       stroke="var(--accent-teal)"
                       strokeWidth={1.5}
                     />
-                    {/* Wire between contacts is drawn by the rung line above */}
-                    {/* Variable label below contact */}
                     <text
                       x={cx}
                       y={cy + LABEL_Y_OFF}
                       textAnchor="middle"
                       fill="var(--text-muted)"
-                      fontSize={7}
-                      fontFamily="'Cascadia Code', 'Fira Code', monospace"
+                      fontSize={FONT_SM}
+                      fontFamily="'Cascadia Code','Fira Code',monospace"
                     >
                       {inputVar.name.length > 9 ? inputVar.name.slice(0, 8) + '…' : inputVar.name}
                     </text>
-                    {/* IEC address label above contact */}
                     <text
                       x={cx}
                       y={cy - 9}
                       textAnchor="middle"
                       fill="var(--text-muted)"
-                      fontSize={6}
-                      fontFamily="'Cascadia Code', 'Fira Code', monospace"
+                      fontSize={FONT_XS}
+                      fontFamily="'Cascadia Code','Fira Code',monospace"
                     >
                       {inputVar.address}
                     </text>
@@ -329,7 +261,7 @@ function LadderDiagram({ vars }: { vars: VarRow[] }) {
                 )
               })}
 
-              {/* Output coil circle (or placeholder if no output vars defined yet) */}
+              {/* Coil or placeholder */}
               {outputVar ? (
                 <g>
                   <circle
@@ -340,7 +272,6 @@ function LadderDiagram({ vars }: { vars: VarRow[] }) {
                     stroke="var(--accent-orange)"
                     strokeWidth={1.5}
                   />
-                  {/* Wire from coil to right rail */}
                   <line
                     x1={coilX + COIL_R}
                     y1={cy}
@@ -349,31 +280,28 @@ function LadderDiagram({ vars }: { vars: VarRow[] }) {
                     stroke="var(--text-secondary)"
                     strokeWidth={1.5}
                   />
-                  {/* Variable label below coil */}
                   <text
                     x={coilX}
                     y={cy + LABEL_Y_OFF}
                     textAnchor="middle"
                     fill="var(--text-muted)"
-                    fontSize={7}
-                    fontFamily="'Cascadia Code', 'Fira Code', monospace"
+                    fontSize={FONT_SM}
+                    fontFamily="'Cascadia Code','Fira Code',monospace"
                   >
                     {outputVar.name.length > 9 ? outputVar.name.slice(0, 8) + '…' : outputVar.name}
                   </text>
-                  {/* IEC address above coil */}
                   <text
                     x={coilX}
                     y={cy - 10}
                     textAnchor="middle"
                     fill="var(--text-muted)"
-                    fontSize={6}
-                    fontFamily="'Cascadia Code', 'Fira Code', monospace"
+                    fontSize={FONT_XS}
+                    fontFamily="'Cascadia Code','Fira Code',monospace"
                   >
                     {outputVar.address}
                   </text>
                 </g>
               ) : (
-                // Placeholder wire when no outputs are defined yet
                 <line
                   x1={RAIL_L + 10}
                   y1={cy}
@@ -389,7 +317,6 @@ function LadderDiagram({ vars }: { vars: VarRow[] }) {
         })}
       </svg>
 
-      {/* Analog I/O summary below ladder — WORD/INT/REAL variables can't be shown as contacts/coils */}
       {analogVars.length > 0 && (
         <div className="plc-ladder-analog">
           <span className="plc-ladder-analog-label">Analog I/O:</span>
@@ -410,21 +337,7 @@ function LadderDiagram({ vars }: { vars: VarRow[] }) {
 
 // ── Variable binding table ────────────────────────────────────────────────────
 
-/**
- * Editable table of IEC 61131-3 variable bindings.
- *
- * Each row defines one PLC variable: its IEC 61131-3 address within the PLC
- * runtime (%IX0.0 style), its data type (BOOL/WORD/INT/REAL), and its mapping
- * to a field bus protocol address (Modbus register, DNP3 point, etc.).
- *
- * The table is kept narrow to fit the 260px properties panel. Compact inputs
- * with abbreviated column headers are used for density.
- *
- * @param rows     - Current list of variable rows.
- * @param onChange - Called whenever a row is added, deleted, or edited.
- */
 function VariableTable({ rows, onChange }: { rows: VarRow[]; onChange: (rows: VarRow[]) => void }) {
-  // React's useId generates a stable prefix for new-row IDs
   const idPrefix = useId()
 
   const handleAdd = useCallback(() => {
@@ -446,7 +359,6 @@ function VariableTable({ rows, onChange }: { rows: VarRow[]; onChange: (rows: Va
     [rows, onChange]
   )
 
-  /** Updates a single field of a single row, returning a new rows array. */
   const handleChange = useCallback(
     (id: string, field: keyof Omit<VarRow, 'id'>, value: string) => {
       onChange(rows.map(r => (r.id === id ? { ...r, [field]: value } : r)))
@@ -459,11 +371,10 @@ function VariableTable({ rows, onChange }: { rows: VarRow[]; onChange: (rows: Va
       <table className="plc-var-table">
         <thead>
           <tr>
-            {/* Abbreviated column headers to fit 260px panel width */}
             <th title="IEC 61131-3 variable name">Name</th>
             <th title="IEC 61131-3 data type">Type</th>
             <th title="IEC 61131-3 I/O address (%IX, %QX, %IW, %MW…)">IEC Addr</th>
-            <th title="Field bus protocol for this variable">Proto</th>
+            <th title="Field bus protocol">Proto</th>
             <th title="Protocol register / point address">Reg</th>
             <th aria-label="Delete row" />
           </tr>
@@ -539,7 +450,6 @@ function VariableTable({ rows, onChange }: { rows: VarRow[]; onChange: (rows: Va
           ))}
         </tbody>
       </table>
-
       <button className="plc-var-add btn btn-sm btn-ghost" onClick={handleAdd}>
         + Add variable
       </button>
@@ -550,29 +460,24 @@ function VariableTable({ rows, onChange }: { rows: VarRow[]; onChange: (rows: Va
 // ── PlcIdePanel ───────────────────────────────────────────────────────────────
 
 /**
- * Root PLC IDE panel component.
+ * PLC IDE panel — renders in either compact sidebar mode or full-screen modal mode.
  *
- * Manages three pieces of local state:
- *   source   — the raw ST source text shown in the editor textarea
- *   varRows  — the variable binding table rows
- *   status   — feedback string shown below the action buttons (save/deploy result)
- *
- * On mount, the state is initialised from `device.plcProgram` if one is already
- * stored in the scenario, or from the DEFAULT_ST_PROGRAM template otherwise.
- *
- * The component derives `isDirty` by comparing current source/vars to the
- * last-saved snapshot so it can warn the user if they click Deploy without saving.
- *
- * @param device          - Selected PLC device config.
- * @param simRunning      - True when a simulation is active (enables Deploy).
- * @param onProgramChange - Callback to persist changes to the scenario document.
+ * Local state:
+ *   source    — raw ST source in the editor textarea
+ *   varRows   — variable binding table rows
+ *   activeTab — 'st' | 'ladder' (modal mode only)
+ *   statusMsg — feedback from save/deploy operations
+ *   deploying — true while awaiting the OpenPLC IPC response
  */
-export function PlcIdePanel({ device, simRunning, onProgramChange }: PlcIdePanelProps) {
-  // Initialise from existing program (decode base64 source) or use default template
+export function PlcIdePanel({
+  device,
+  simRunning,
+  onProgramChange,
+  modal = false
+}: PlcIdePanelProps) {
   const initialSource = device.plcProgram?.source
     ? atob(device.plcProgram.source)
     : DEFAULT_ST_PROGRAM
-
   const initialRows: VarRow[] =
     device.plcProgram?.variables.map((v, i) => schemaVarToRow(v, i)) ?? []
 
@@ -580,45 +485,27 @@ export function PlcIdePanel({ device, simRunning, onProgramChange }: PlcIdePanel
   const [varRows, setVarRows] = useState<VarRow[]>(initialRows)
   const [statusMsg, setStatusMsg] = useState<string | null>(null)
   const [deploying, setDeploying] = useState(false)
+  const [activeTab, setActiveTab] = useState<'st' | 'ladder'>('st')
 
-  /** Builds the PLCProgramConfig from current editor state. */
-  const buildProgram = useCallback((): PLCProgramConfig => {
-    return {
+  const buildProgram = useCallback(
+    (): PLCProgramConfig => ({
       language: 'st',
-      source: btoa(source), // base64-encode the source for JSON storage
+      source: btoa(source),
       variables: varRows.map(rowToSchemaVar)
-    }
-  }, [source, varRows])
+    }),
+    [source, varRows]
+  )
 
-  /**
-   * Saves the current editor state into the scenario document.
-   * This is the fast path — no IPC, no Docker interaction. The program
-   * will be injected into the container at next simulation start via the
-   * INITIAL_PROGRAM_B64 environment variable.
-   */
   const handleSave = useCallback(() => {
-    const program = buildProgram()
-    onProgramChange(device.nodeId, program)
+    onProgramChange(device.nodeId, buildProgram())
     setStatusMsg('Program saved. Restart simulation to deploy to PLC.')
     setTimeout(() => setStatusMsg(null), 4000)
   }, [buildProgram, device.nodeId, onProgramChange])
 
-  /**
-   * Deploys the current editor state to the running OpenPLC container via IPC.
-   *
-   * Also saves the program to the scenario document (same as handleSave) before
-   * the deploy so the scenario remains in sync with what is running in the container.
-   *
-   * Disabled when no simulation is running — the button tooltip explains why.
-   */
   const handleDeploy = useCallback(async () => {
-    // Always save first so the scenario file matches the container state
-    const program = buildProgram()
-    onProgramChange(device.nodeId, program)
-
+    onProgramChange(device.nodeId, buildProgram())
     setDeploying(true)
     setStatusMsg('Compiling and deploying…')
-
     try {
       const result = await window.electronAPI.plc.deploy(device.nodeId, source)
       if (result.ok) {
@@ -633,9 +520,93 @@ export function PlcIdePanel({ device, simRunning, onProgramChange }: PlcIdePanel
     }
   }, [buildProgram, device.nodeId, onProgramChange, source])
 
+  // ── Modal layout ─────────────────────────────────────────────────────────────
+  if (modal) {
+    return (
+      <div className="plc-ide plc-ide-modal-body">
+        {/* Left column: tabbed ST editor / Ladder viewer */}
+        <div className="plc-ide-modal-left">
+          {/* Tab bar */}
+          <div className="plc-ide-tab-bar">
+            <button
+              className={`plc-ide-tab${activeTab === 'st' ? ' active' : ''}`}
+              onClick={() => setActiveTab('st')}
+            >
+              Structured Text
+              <span className="plc-ide-tab-hint">IEC 61131-3 ST</span>
+            </button>
+            <button
+              className={`plc-ide-tab${activeTab === 'ladder' ? ' active' : ''}`}
+              onClick={() => setActiveTab('ladder')}
+            >
+              Ladder Diagram
+              <span className="plc-ide-tab-hint">read-only view</span>
+            </button>
+          </div>
+
+          {/* ST editor pane */}
+          {activeTab === 'st' && (
+            <textarea
+              className="plc-st-editor plc-st-editor-modal"
+              value={source}
+              onChange={e => setSource(e.target.value)}
+              spellCheck={false}
+              aria-label="Structured Text program source"
+            />
+          )}
+
+          {/* Ladder diagram pane */}
+          {activeTab === 'ladder' && (
+            <div className="plc-ladder-modal-pane">
+              <LadderDiagram vars={varRows} large />
+            </div>
+          )}
+        </div>
+
+        {/* Right column: variable bindings + action bar */}
+        <div className="plc-ide-modal-right">
+          <div className="plc-ide-section-header plc-ide-section-header-modal">
+            <span className="plc-ide-section-title">Variable Bindings</span>
+            <span className="plc-ide-section-hint">I/O map · IEC ↔ Protocol</span>
+          </div>
+          <div className="plc-ide-modal-vars">
+            <VariableTable rows={varRows} onChange={setVarRows} />
+          </div>
+
+          {/* Action buttons */}
+          <div className="plc-ide-actions plc-ide-actions-modal">
+            <button className="btn btn-secondary" onClick={handleSave}>
+              Save Program
+            </button>
+            <button
+              className="btn btn-run"
+              onClick={handleDeploy}
+              disabled={!simRunning || deploying}
+              title={
+                !simRunning
+                  ? 'Start simulation first to deploy'
+                  : 'Upload to running OpenPLC container'
+              }
+            >
+              {deploying ? 'Deploying…' : '▶  Deploy to PLC'}
+            </button>
+          </div>
+
+          {statusMsg && <pre className="plc-deploy-output">{statusMsg}</pre>}
+
+          {/* OpenPLC runtime info footer */}
+          <div className="plc-ide-runtime-info">
+            <span className="plc-ide-runtime-badge">OpenPLC Runtime v3</span>
+            <span>IEC 61131-3 · MATIEC compiler · {device.nodeId}</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Compact sidebar layout (default) ─────────────────────────────────────────
   return (
     <div className="plc-ide">
-      {/* ── Structured Text editor ───────────────────────────────────────── */}
       <div className="plc-ide-section">
         <div className="plc-ide-section-header">
           <span className="plc-ide-section-title">Structured Text</span>
@@ -651,7 +622,6 @@ export function PlcIdePanel({ device, simRunning, onProgramChange }: PlcIdePanel
         />
       </div>
 
-      {/* ── Ladder logic viewer ───────────────────────────────────────────── */}
       <div className="plc-ide-section">
         <div className="plc-ide-section-header">
           <span className="plc-ide-section-title">Ladder View</span>
@@ -660,7 +630,6 @@ export function PlcIdePanel({ device, simRunning, onProgramChange }: PlcIdePanel
         <LadderDiagram vars={varRows} />
       </div>
 
-      {/* ── Variable binding table ────────────────────────────────────────── */}
       <div className="plc-ide-section">
         <div className="plc-ide-section-header">
           <span className="plc-ide-section-title">Variable Bindings</span>
@@ -669,7 +638,6 @@ export function PlcIdePanel({ device, simRunning, onProgramChange }: PlcIdePanel
         <VariableTable rows={varRows} onChange={setVarRows} />
       </div>
 
-      {/* ── Action buttons ────────────────────────────────────────────────── */}
       <div className="plc-ide-actions">
         <button className="btn btn-sm btn-secondary" onClick={handleSave}>
           Save Program
@@ -686,7 +654,6 @@ export function PlcIdePanel({ device, simRunning, onProgramChange }: PlcIdePanel
         </button>
       </div>
 
-      {/* ── Compiler / deploy output ─────────────────────────────────────── */}
       {statusMsg && <pre className="plc-deploy-output">{statusMsg}</pre>}
     </div>
   )

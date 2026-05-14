@@ -1,42 +1,22 @@
 /**
  * ScadaCanvas.tsx — React Flow SCADA topology editor canvas.
  *
- * This is the central interactive component of the ICS Simulator UI. It renders
- * a pannable, zoomable canvas where users:
- *   - See four network zone regions (OT, IT, DMZ, External) as background nodes
- *   - Drag device types from the DevicePalette and drop them onto a zone
- *   - Connect devices by dragging between their Handle endpoints
- *   - Select a device node to populate the PropertiesPanel
- *   - Delete nodes/edges with the Delete key
+ * Renders a pannable, zoomable canvas structured as a Purdue ISA-95 model
+ * with four horizontal bands stacked top-to-bottom:
  *
- * State architecture:
- *   - React Flow manages its own node/edge state via useNodesState / useEdgesState
- *   - The parent (App.tsx) holds the authoritative ICSLabScenario object
- *   - ScadaCanvas translates between the two representations:
- *       scenario → nodes/edges via scenarioToNodes() / scenarioToEdges()
- *       user action → scenario via onScenarioChange() callback
+ *   ┌──────────────────────────────────────────────────┐
+ *   │  Level 5 — Enterprise / External  (y=0, h=170)   │
+ *   ├──────────────────────────────────────────────────┤
+ *   │  Level 4 — IT / Business          (y=190, h=210) │
+ *   ├──────────────────────────────────────────────────┤
+ *   │  Level 3.5 — Industrial DMZ       (y=420, h=140) │
+ *   ├──────────────────────────────────────────────────┤
+ *   │  Levels 0–2 — OT / Control        (y=580, h=320) │
+ *   └──────────────────────────────────────────────────┘
  *
- * Zone layout (canvas coordinate system):
- *   ┌────────────────────┬────────────────────┐
- *   │  OT (0,0)          │  IT (540,0)         │  ZONE_W = 500
- *   │  172.20.10.0/24    │  172.20.20.0/24     │  ZONE_H = 320
- *   ├────────────────────┼────────────────────┤  ZONE_GAP = 40
- *   │  DMZ (0,360)       │  External (540,360) │
- *   │  172.20.30.0/24    │  172.20.40.0/24     │
- *   └────────────────────┴────────────────────┘
- *
- * Drop-to-zone mapping:
- *   The drop position (in canvas coordinates) determines zone by quadrant:
- *     x < ZONE_W + GAP/2  →  left column  (OT or DMZ)
- *     x >= ZONE_W + GAP/2 →  right column (IT or External)
- *     y < ZONE_H + GAP/2  →  top row      (OT or IT)
- *     y >= ZONE_H + GAP/2 →  bottom row   (DMZ or External)
- *
- * React Flow instance ref:
- *   rfInstance.current is used for screenToFlowPosition() in onDrop. We use a ref
- *   (set via onInit) rather than useReactFlow() because this component is the one
- *   that renders <ReactFlow> — useReactFlow() must be called from a child component,
- *   which would require wrapping in <ReactFlowProvider>.
+ * Users drag device types from the DevicePalette and drop them onto a zone band.
+ * The drop y-coordinate determines zone membership. Devices are connected by
+ * dragging between Handle endpoints; Delete removes selected nodes/edges.
  */
 
 import { useCallback, useEffect, useRef } from 'react'
@@ -80,71 +60,46 @@ const edgeTypes: EdgeTypes = {
   protocolEdge: ProtocolEdge
 }
 
-// ── Zone layout constants ──────────────────────────────────────────────────────
-/** Width of each zone rectangle in canvas pixels. */
-const ZONE_W = 500
-/** Height of each zone rectangle in canvas pixels. */
-const ZONE_H = 320
-/** Gap between zone rectangles in canvas pixels. */
-const ZONE_GAP = 40
+// ── Purdue model canvas constants ──────────────────────────────────────────────
+/** Width of every zone band in canvas pixels — all zones share the same width. */
+const CANVAS_W = 1400
+/** Vertical gap between zone bands in canvas pixels. */
+const ZONE_GAP = 30
+/** Padding fraction used for every fitView call — keeps a small margin around zones. */
+const FIT_PADDING = 0.08
+
+/*
+ * Zone heights — sized so the four bands together fill most of the viewport after
+ * fitView. OT is the tallest (most field devices), DMZ the thinnest (boundary only).
+ */
+const H_EXTERNAL = 240
+const H_IT = 300
+const H_DMZ = 190
+const H_OT = 480
+
+// Zone Y origins (top of each band)
+const Y_EXTERNAL = 0
+const Y_IT = Y_EXTERNAL + H_EXTERNAL + ZONE_GAP // 270
+const Y_DMZ = Y_IT + H_IT + ZONE_GAP // 600
+const Y_OT = Y_DMZ + H_DMZ + ZONE_GAP // 820
 
 /**
- * Fixed zone background nodes that always exist on the canvas.
- *
- * ZoneNodes are non-interactive (draggable/selectable/connectable: false) and
- * sit behind device nodes (zIndex: -10). They are never added to or removed from
- * the canvas — they are always present as the visual grid structure.
+ * Fixed zone background nodes — always present on the canvas regardless of
+ * whether a scenario is loaded. They are non-interactive (draggable/selectable/
+ * connectable: false) and render behind device nodes (zIndex: -10).
  */
 const INITIAL_ZONE_NODES: ZoneNodeType[] = [
   {
-    id: 'zone-ot',
-    type: 'zoneNode',
-    position: { x: 0, y: 0 },
-    draggable: false,
-    selectable: false,
-    connectable: false,
-    focusable: false,
-    zIndex: -10,
-    data: {
-      zone: 'ot',
-      label: 'OT Network',
-      subnet: '172.20.10.0/24',
-      width: ZONE_W,
-      height: ZONE_H
-    }
-  },
-  {
-    id: 'zone-it',
-    type: 'zoneNode',
-    position: { x: ZONE_W + ZONE_GAP, y: 0 },
-    draggable: false,
-    selectable: false,
-    connectable: false,
-    focusable: false,
-    zIndex: -10,
-    data: {
-      zone: 'it',
-      label: 'IT Network',
-      subnet: '172.20.20.0/24',
-      width: ZONE_W,
-      height: ZONE_H
-    }
-  },
-  {
-    id: 'zone-dmz',
-    type: 'zoneNode',
-    position: { x: 0, y: ZONE_H + ZONE_GAP },
-    draggable: false,
-    selectable: false,
-    connectable: false,
-    focusable: false,
-    zIndex: -10,
-    data: { zone: 'dmz', label: 'DMZ', subnet: '172.20.30.0/24', width: ZONE_W, height: ZONE_H }
-  },
-  {
     id: 'zone-external',
     type: 'zoneNode',
-    position: { x: ZONE_W + ZONE_GAP, y: ZONE_H + ZONE_GAP },
+    position: { x: 0, y: Y_EXTERNAL },
+    /*
+     * width / height are set directly on the node object (not just in data) so that
+     * React Flow knows the dimensions immediately — before ResizeObserver fires.
+     * Without this, fitView computes a near-zero bounding box and zooms way out.
+     */
+    width: CANVAS_W,
+    height: H_EXTERNAL,
     draggable: false,
     selectable: false,
     connectable: false,
@@ -152,18 +107,83 @@ const INITIAL_ZONE_NODES: ZoneNodeType[] = [
     zIndex: -10,
     data: {
       zone: 'external',
-      label: 'External Network',
+      label: 'Enterprise / External Network',
       subnet: '172.20.40.0/24',
-      width: ZONE_W,
-      height: ZONE_H
+      purdueLevel: 'Level 5',
+      description: 'Internet-facing systems, red-team attack machine (Kali Linux)',
+      width: CANVAS_W,
+      height: H_EXTERNAL
+    }
+  },
+  {
+    id: 'zone-it',
+    type: 'zoneNode',
+    position: { x: 0, y: Y_IT },
+    width: CANVAS_W,
+    height: H_IT,
+    draggable: false,
+    selectable: false,
+    connectable: false,
+    focusable: false,
+    zIndex: -10,
+    data: {
+      zone: 'it',
+      label: 'IT / Business Network',
+      subnet: '172.20.20.0/24',
+      purdueLevel: 'Level 4',
+      description: 'Business applications, data historians, HMI workstations, patch servers',
+      width: CANVAS_W,
+      height: H_IT
+    }
+  },
+  {
+    id: 'zone-dmz',
+    type: 'zoneNode',
+    position: { x: 0, y: Y_DMZ },
+    width: CANVAS_W,
+    height: H_DMZ,
+    draggable: false,
+    selectable: false,
+    connectable: false,
+    focusable: false,
+    zIndex: -10,
+    data: {
+      zone: 'dmz',
+      label: 'Industrial DMZ',
+      subnet: '172.20.30.0/24',
+      purdueLevel: 'Level 3.5',
+      description: 'IT/OT boundary — firewalls, jump hosts, IDS/IPS sensors, data diodes',
+      width: CANVAS_W,
+      height: H_DMZ
+    }
+  },
+  {
+    id: 'zone-ot',
+    type: 'zoneNode',
+    position: { x: 0, y: Y_OT },
+    width: CANVAS_W,
+    height: H_OT,
+    draggable: false,
+    selectable: false,
+    connectable: false,
+    focusable: false,
+    zIndex: -10,
+    data: {
+      zone: 'ot',
+      label: 'OT / Control Network',
+      subnet: '172.20.10.0/24',
+      purdueLevel: 'Levels 0–2',
+      description:
+        'Field devices (Level 0), basic control — PLCs, RTUs, IEDs (Level 1), supervisory SCADA (Level 2)',
+      width: CANVAS_W,
+      height: H_OT
     }
   }
 ]
 
 /**
- * Default IP address assigned to newly dropped devices in each zone.
- * The .10 host address is chosen as a memorable starting point; users can edit
- * addresses in the PropertiesPanel once Phase 4 lands.
+ * Default IP address for newly dropped devices, by zone.
+ * The .10 host is a memorable starting point; users can edit in PropertiesPanel.
  */
 const DEFAULT_IP: Record<NetworkZone, string> = {
   ot: '172.20.10.10',
@@ -173,9 +193,9 @@ const DEFAULT_IP: Record<NetworkZone, string> = {
 }
 
 /**
- * Default protocol assignments for newly created devices.
- * These match the container images: Modbus devices use modbus-tcp,
- * IEDs use DNP3, infrastructure devices have no protocol.
+ * Default protocol assignments for newly created devices by category.
+ * Matches the container images: Modbus for PLCs/RTUs/field devices,
+ * DNP3 for IEDs, no protocol for infrastructure.
  */
 const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
   plc: ['modbus-tcp'],
@@ -196,7 +216,7 @@ const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
   'attack-machine': ['none']
 }
 
-/** Short display labels used on device nodes and during auto-layout. */
+/** Short display labels for device nodes. */
 const CATEGORY_LABELS: Record<DeviceCategory, string> = {
   plc: 'PLC',
   rtu: 'RTU',
@@ -217,21 +237,18 @@ const CATEGORY_LABELS: Record<DeviceCategory, string> = {
 }
 
 /**
- * Determines which network zone a canvas drop position falls in.
+ * Maps a canvas drop y-coordinate to a Purdue network zone.
  *
- * Uses the 2×2 grid coordinate system: left column is OT/DMZ, right column is IT/External;
- * top row is OT/IT, bottom row is DMZ/External. The threshold is the center of the gap
- * between zones (GAP/2 past the end of the first zone).
- *
- * @param pos - Canvas coordinates from screenToFlowPosition().
- * @returns The NetworkZone at that position.
+ * Uses horizontal band thresholds based on each zone's y origin:
+ *   y < Y_IT   → external (top band)
+ *   y < Y_DMZ  → it
+ *   y < Y_OT   → dmz
+ *   y >= Y_OT  → ot  (bottom band, default)
  */
 function getZoneForPosition(pos: { x: number; y: number }): NetworkZone {
-  const inRightCol = pos.x >= ZONE_W + ZONE_GAP / 2
-  const inBottomRow = pos.y >= ZONE_H + ZONE_GAP / 2
-  if (inRightCol && inBottomRow) return 'external'
-  if (inRightCol) return 'it'
-  if (inBottomRow) return 'dmz'
+  if (pos.y < Y_IT) return 'external'
+  if (pos.y < Y_DMZ) return 'it'
+  if (pos.y < Y_OT) return 'dmz'
   return 'ot'
 }
 
@@ -239,25 +256,19 @@ function getZoneForPosition(pos: { x: number; y: number }): NetworkZone {
  * Converts a scenario's visual layer into React Flow DeviceNode objects.
  *
  * Two paths:
- *   1. If the scenario has saved node positions (scenario.visual.nodes.length > 0),
- *      those positions are used directly. This preserves user layout after reimport.
- *   2. If there are no saved positions (e.g., a freshly imported scenario without a
- *      visual layer), devices are auto-laid out in a 3-per-row grid within their zone.
- *
- * @param scenario - The scenario to convert.
- * @returns Array of DeviceNodeType objects for useNodesState.
+ *   1. Saved positions (scenario.visual.nodes.length > 0) — restored directly.
+ *   2. No saved positions — devices auto-laid out in a 6-column grid within
+ *      their Purdue zone band. Matches the zone assignments in getZoneForPosition.
  */
 function scenarioToNodes(scenario: ICSLabScenario): DeviceNodeType[] {
   const hasVisual = scenario.visual.nodes.length > 0
 
   if (hasVisual) {
-    // Restore saved positions from the visual layer
     return scenario.visual.nodes.map(cn => ({
       id: cn.id,
       type: 'deviceNode' as const,
       position: cn.position,
       data: {
-        // Fall back to a placeholder device if the devices map is missing the node
         device: scenario.devices.devices[cn.id] ?? {
           nodeId: cn.id,
           category: 'sensor' as DeviceCategory,
@@ -270,7 +281,7 @@ function scenarioToNodes(scenario: ICSLabScenario): DeviceNodeType[] {
     }))
   }
 
-  // Auto-layout: bucket devices into zones, then place in a 3-column grid
+  // Auto-layout: bucket each device into its Purdue zone band
   const byZone: Record<NetworkZone, string[]> = { ot: [], it: [], dmz: [], external: [] }
   for (const [id, dev] of Object.entries(scenario.devices.devices)) {
     if (dev.category === 'attack-machine') byZone.external.push(id)
@@ -279,16 +290,16 @@ function scenarioToNodes(scenario: ICSLabScenario): DeviceNodeType[] {
     else byZone.ot.push(id)
   }
 
-  // Origin offsets inside each zone rectangle (padding from the zone border)
+  // Origins at top-left of each band with padding from the border
   const zoneOrigins: Record<NetworkZone, { x: number; y: number }> = {
-    ot: { x: 40, y: 60 },
-    it: { x: ZONE_W + ZONE_GAP + 40, y: 60 },
-    dmz: { x: 40, y: ZONE_H + ZONE_GAP + 60 },
-    external: { x: ZONE_W + ZONE_GAP + 40, y: ZONE_H + ZONE_GAP + 60 }
+    external: { x: 80, y: Y_EXTERNAL + 70 },
+    it: { x: 80, y: Y_IT + 75 },
+    dmz: { x: 80, y: Y_DMZ + 55 },
+    ot: { x: 80, y: Y_OT + 80 }
   }
 
   const nodes: DeviceNodeType[] = []
-  for (const zone of ['ot', 'it', 'dmz', 'external'] as NetworkZone[]) {
+  for (const zone of ['external', 'it', 'dmz', 'ot'] as NetworkZone[]) {
     const origin = zoneOrigins[zone]
     byZone[zone].forEach((id, i) => {
       const dev = scenario.devices.devices[id]
@@ -296,9 +307,9 @@ function scenarioToNodes(scenario: ICSLabScenario): DeviceNodeType[] {
         id,
         type: 'deviceNode' as const,
         position: {
-          // 3 columns × 140px wide, rows 110px tall
-          x: origin.x + (i % 3) * 140,
-          y: origin.y + Math.floor(i / 3) * 110
+          // 6 columns × 160px wide, rows 110px tall — fills the full-width bands
+          x: origin.x + (i % 6) * 160,
+          y: origin.y + Math.floor(i / 6) * 110
         },
         data: {
           device: dev,
@@ -313,14 +324,6 @@ function scenarioToNodes(scenario: ICSLabScenario): DeviceNodeType[] {
 
 /**
  * Converts a scenario's visual edge list into React Flow ProtocolEdgeType objects.
- *
- * The label field requires special handling because TypeScript's
- * `exactOptionalPropertyTypes: true` requires that optional fields are either
- * set to a value or not set at all — `label: undefined` would fail the type check.
- * We only spread the label field when the source data has one.
- *
- * @param scenario - The scenario to extract edges from.
- * @returns Array of ProtocolEdgeType objects for useEdgesState.
  */
 function scenarioToEdges(scenario: ICSLabScenario): ProtocolEdgeType[] {
   return scenario.visual.edges.map(ce => {
@@ -331,7 +334,6 @@ function scenarioToEdges(scenario: ICSLabScenario): ProtocolEdgeType[] {
       type: 'protocolEdge' as const,
       data: { protocol: ce.data.protocol }
     }
-    // Only include label in data when it is explicitly set — exactOptionalPropertyTypes
     if (ce.data.label !== undefined) {
       base.data = { protocol: ce.data.protocol, label: ce.data.label }
     }
@@ -340,57 +342,68 @@ function scenarioToEdges(scenario: ICSLabScenario): ProtocolEdgeType[] {
 }
 
 interface ScadaCanvasProps {
-  /** The current scenario state from the parent, or null for a blank canvas. */
   scenario: ICSLabScenario | null
-  /**
-   * Called when the user selects or deselects a device node.
-   * @param nodeId - The selected node's ID, or null when deselected.
-   * @param device - The selected device config, or null when deselected.
-   */
   onSelectDevice: (nodeId: string | null, device: DeviceConfig | null) => void
-  /**
-   * Called when the user makes a change that modifies the scenario (add device, add edge).
-   * Uses an updater function pattern (like setState) so the parent can merge changes.
-   */
   onScenarioChange: (updater: (s: ICSLabScenario | null) => ICSLabScenario | null) => void
 }
 
 /**
- * The main SCADA topology canvas component.
+ * The main SCADA topology canvas.
  *
- * Renders the React Flow canvas with zone backgrounds, device nodes, protocol edges,
- * and the standard canvas controls (zoom, minimap, background grid).
+ * Renders the React Flow canvas with Purdue model zone bands, device nodes,
+ * protocol edges, and standard canvas controls (zoom, minimap, dot-grid).
  */
 export function ScadaCanvas({ scenario, onSelectDevice, onScenarioChange }: ScadaCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(INITIAL_ZONE_NODES)
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
   /**
-   * Ref to the React Flow instance — needed for screenToFlowPosition() in the drop handler.
-   * Using a ref avoids the need to wrap in ReactFlowProvider to use useReactFlow().
+   * Ref to the React Flow instance — needed for screenToFlowPosition() in onDrop.
+   * Using a ref avoids wrapping in ReactFlowProvider just to call useReactFlow().
    */
   const rfInstance = useRef<ReactFlowInstance | null>(null)
 
-  // Sync canvas node/edge state when the scenario prop changes (e.g., after file import)
+  // Sync canvas state when the scenario prop changes (import, new, or canvas edit)
   useEffect(() => {
     if (!scenario) {
-      // Blank canvas: show only zone backgrounds
       setNodes(INITIAL_ZONE_NODES)
       setEdges([])
+      /*
+       * Re-center after a blank canvas reset. The fitView prop only fires on the
+       * initial component mount; ScadaCanvas is NOT re-mounted when the user clicks
+       * "New Scenario" from within the canvas view — so we need to call fitView
+       * manually here after the nodes state has settled.
+       */
+      setTimeout(() => rfInstance.current?.fitView({ padding: FIT_PADDING }), 100)
       return
     }
     const deviceNodes = scenarioToNodes(scenario)
-    // Always include zone backgrounds (they are not stored in the scenario)
     setNodes([...INITIAL_ZONE_NODES, ...deviceNodes])
     setEdges(scenarioToEdges(scenario))
   }, [scenario, setNodes, setEdges])
 
-  /**
-   * Handles new edge connections created by dragging between device handles.
-   *
-   * Defaults to modbus-tcp as the protocol for all new connections — the user
-   * can change the protocol via the edge properties panel (Phase 4).
+  /*
+   * Re-fit whenever the browser window is resized or maximized.
+   * Without this, the zones scale to the window size at mount time and stay fixed
+   * even if the window grows — making them appear small in the new larger viewport.
+   * The 150 ms debounce prevents excessive fitView calls during a live drag-resize.
    */
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>
+    const handleResize = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        rfInstance.current?.fitView({ padding: FIT_PADDING })
+      }, 150)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      clearTimeout(timer)
+    }
+  }, [])
+
+  /** New protocol edge — defaults to modbus-tcp; user can change via edge properties. */
   const onConnect: OnConnect = useCallback(
     connection => {
       const newEdge: ProtocolEdgeType = {
@@ -401,7 +414,6 @@ export function ScadaCanvas({ scenario, onSelectDevice, onScenarioChange }: Scad
       }
       setEdges(eds => addEdge(newEdge, eds))
 
-      // Mirror the new edge in the scenario's visual layer
       if (connection.source && connection.target) {
         onScenarioChange(prev => {
           if (!prev) return prev
@@ -418,12 +430,7 @@ export function ScadaCanvas({ scenario, onSelectDevice, onScenarioChange }: Scad
     [setEdges, onScenarioChange]
   )
 
-  /**
-   * Handles canvas selection changes — fires when the user clicks a node or the background.
-   *
-   * Only single device node selections populate the PropertiesPanel. Multi-selections
-   * and zone background selections clear the panel.
-   */
+  /** Only single device node selections populate the PropertiesPanel. */
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
       if (selectedNodes.length !== 1) {
@@ -431,7 +438,6 @@ export function ScadaCanvas({ scenario, onSelectDevice, onScenarioChange }: Scad
         return
       }
       const node = selectedNodes[0]
-      // Ignore zone background nodes (type === 'zoneNode')
       if (node.type !== 'deviceNode') {
         onSelectDevice(null, null)
         return
@@ -442,22 +448,14 @@ export function ScadaCanvas({ scenario, onSelectDevice, onScenarioChange }: Scad
     [onSelectDevice]
   )
 
-  /** Sets the drag-over cursor to 'copy' to indicate a valid drop target. */
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
   }, [])
 
   /**
-   * Handles device drops from the DevicePalette onto the canvas.
-   *
-   * Sequence:
-   *   1. Read category from drag data transfer (set by PaletteItem.onDragStart).
-   *   2. Convert screen drop coordinates to canvas coordinates using rfInstance.
-   *   3. Determine zone from the canvas position.
-   *   4. Create a new DeviceConfig with default IP and protocol settings.
-   *   5. Add the node to the React Flow state.
-   *   6. Update the parent scenario via onScenarioChange (creates a new scenario if null).
+   * Device drop from palette onto canvas.
+   * Determines Purdue zone from the y-coordinate of the drop position.
    */
   const onDrop = useCallback(
     (event: React.DragEvent) => {
@@ -465,14 +463,12 @@ export function ScadaCanvas({ scenario, onSelectDevice, onScenarioChange }: Scad
       const category = event.dataTransfer.getData('deviceCategory') as DeviceCategory
       if (!category || !rfInstance.current) return
 
-      // Convert browser screen coordinates to the canvas coordinate system
       const position = rfInstance.current.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY
       })
 
       const zone = getZoneForPosition(position)
-      // Use timestamp for a unique node ID — avoids collisions within a session
       const nodeId = `${category}-${Date.now()}`
       const device: DeviceConfig = {
         nodeId,
@@ -490,7 +486,6 @@ export function ScadaCanvas({ scenario, onSelectDevice, onScenarioChange }: Scad
 
       setNodes(nds => [...nds, newNode])
 
-      // Update scenario state — if no scenario exists yet, create a fresh one
       onScenarioChange(prev => {
         const base = prev ?? buildEmptyScenario()
         return {
@@ -533,24 +528,19 @@ export function ScadaCanvas({ scenario, onSelectDevice, onScenarioChange }: Scad
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: 0.15 }}
+        fitViewOptions={{ padding: FIT_PADDING }}
         defaultEdgeOptions={{ type: 'protocolEdge', animated: false }}
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Shift"
-        minZoom={0.2}
+        minZoom={0.15}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
-        {/* Dot-grid background — 20px spacing, dark gray dots on near-black background */}
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#30363d" />
-
-        {/* Zoom/pan controls — custom dark styling, no interactive toggle button */}
         <Controls
           style={{ background: '#1c2128', border: '1px solid #30363d', borderRadius: 6 }}
           showInteractive={false}
         />
-
-        {/* Minimap — colored by zone for at-a-glance topology overview */}
         <MiniMap
           style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 6 }}
           nodeColor={node => {
@@ -566,13 +556,8 @@ export function ScadaCanvas({ scenario, onSelectDevice, onScenarioChange }: Scad
 }
 
 /**
- * Creates a minimal ICSLabScenario with all four network segments defined.
- *
- * Called when the user drops their first device onto a blank canvas (no scenario
- * loaded). The resulting scenario satisfies the schema validator's segment requirement
- * and provides default subnets for the compose generator.
- *
- * @returns A valid ICSLabScenario with no devices and all four default segments.
+ * Minimal ICSLabScenario with all four Purdue network segments pre-defined.
+ * Created when the user drops their first device onto a blank canvas.
  */
 function buildEmptyScenario(): ICSLabScenario {
   return {

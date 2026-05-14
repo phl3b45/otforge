@@ -116,7 +116,7 @@ function PaletteItem({ category, label }: { category: DeviceCategory; label: str
       onDragStart={onDragStart}
       title={`Drag to canvas to add a ${label}`}
     >
-      <DeviceIcon category={category} size={20} color={color} />
+      <DeviceIcon category={category} size={28} color={color} />
       <span className="palette-item-label">{label}</span>
     </div>
   )

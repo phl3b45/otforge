@@ -16,20 +16,19 @@
  *   - OPC UA: port, namespace URI
  *   Only the sections relevant to the device's configured protocols are shown.
  *
- * PLC IDE delegation (Phase 4):
- *   When `device.category === 'plc'`, the panel renders PlcIdePanel instead of
- *   the standard property rows. PlcIdePanel provides a full Structured Text editor,
- *   variable binding table, ladder logic viewer, and deploy controls.
+ * PLC IDE delegation:
+ *   When `device.category === 'plc'`, the panel shows standard identity/protocol
+ *   rows plus an "Open PLC IDE" button. Clicking the button asks App.tsx to open
+ *   a full-screen PlcIdePanel modal (two-column ST editor + variable bindings).
  *
  * Attack machine warning:
  *   The Kali Linux container has special network placement requirements. A warning
  *   banner is shown when an attack machine is selected to explain the constraints.
  */
 
-import type { DeviceConfig, PLCProgramConfig } from '@ics-sim/schema'
+import type { DeviceConfig } from '@ics-sim/schema'
 import { DeviceIcon } from '../icons/DeviceIcons'
 import { ZONE_COLORS } from '../canvas/DeviceNode'
-import { PlcIdePanel } from './PlcIdePanel'
 
 /** Full human-readable names for the properties panel header. */
 const CATEGORY_LABELS: Record<string, string> = {
@@ -65,19 +64,12 @@ interface PropertiesPanelProps {
   /** The zone key of the selected device (e.g., "ot", "it"). Null when no device selected. */
   zone: string | null
   /**
-   * True when a simulation is actively running. Passed to PlcIdePanel to enable
-   * the Deploy button — deployment requires a live OpenPLC container.
-   */
-  simRunning: boolean
-  /**
-   * Callback for PLC program changes from the PlcIdePanel editor.
-   * Called when the user saves or deploys a program. The App component
-   * writes the update into the scenario.devices.devices[nodeId].plcProgram field.
+   * Called when the user clicks "Open PLC IDE" on a PLC device.
+   * App.tsx responds by rendering PlcIdeModal with the full two-column editor.
    *
-   * @param nodeId  - The PLC device's canvas node ID.
-   * @param program - The updated PLCProgramConfig to store in the scenario.
+   * @param device - The PLC DeviceConfig to open in the IDE.
    */
-  onProgramChange: (nodeId: string, program: PLCProgramConfig) => void
+  onOpenPlcIde: (device: DeviceConfig) => void
 }
 
 /**
@@ -94,17 +86,11 @@ interface PropertiesPanelProps {
  *   - OPC UA config (if device.opcua is defined)
  *   - Attack machine warning banner (if category === 'attack-machine')
  *
- * @param device          - Selected DeviceConfig or null.
- * @param zone            - Zone key string or null.
- * @param simRunning      - Whether a simulation is active (for Deploy button state).
- * @param onProgramChange - Callback to persist PLC program changes.
+ * @param device       - Selected DeviceConfig or null.
+ * @param zone         - Zone key string or null.
+ * @param onOpenPlcIde - Callback to open the full-screen PLC IDE modal.
  */
-export function PropertiesPanel({
-  device,
-  zone,
-  simRunning,
-  onProgramChange
-}: PropertiesPanelProps) {
+export function PropertiesPanel({ device, zone, onOpenPlcIde }: PropertiesPanelProps) {
   // Empty state — shown when no node is selected on the canvas
   if (!device) {
     return (
@@ -126,8 +112,7 @@ export function PropertiesPanel({
   const zoneLabel = zone ? (ZONE_LABELS[zone] ?? zone) : '—'
 
   return (
-    // The panel widens slightly when a PLC is selected to give the ST editor more room
-    <aside className={`properties-panel${device.category === 'plc' ? ' plc-mode' : ''}`}>
+    <aside className="properties-panel">
       {/* Header: icon + category type label (colored by zone) + node ID */}
       <div className="properties-header">
         <DeviceIcon category={device.category} size={22} color={zoneColor} />
@@ -139,10 +124,50 @@ export function PropertiesPanel({
         </div>
       </div>
 
-      {/* PLC IDE takes over the full panel body for PLC devices */}
+      {/* PLC devices: identity rows + prominent IDE launch button */}
       {device.category === 'plc' && (
         <div className="properties-body">
-          <PlcIdePanel device={device} simRunning={simRunning} onProgramChange={onProgramChange} />
+          {/* Identity section — same fields as non-PLC devices */}
+          <section className="prop-section">
+            <div className="prop-row">
+              <span className="prop-label">Node ID</span>
+              <code className="prop-value">{device.nodeId}</code>
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">Zone</span>
+              <span className="prop-value" style={{ color: zoneColor }}>
+                {zoneLabel}
+              </span>
+            </div>
+            <div className="prop-row">
+              <span className="prop-label">IP Address</span>
+              <code className="prop-value">{device.ipAddress}</code>
+            </div>
+          </section>
+
+          {/* Protocols section */}
+          <section className="prop-section">
+            <div className="prop-section-title">Protocols</div>
+            <div className="prop-tags">
+              {device.protocols.length > 0 ? (
+                device.protocols.map(p => (
+                  <span key={p} className="prop-tag">
+                    {p}
+                  </span>
+                ))
+              ) : (
+                <span className="prop-tag muted">none</span>
+              )}
+            </div>
+          </section>
+
+          {/* IDE launch — opens the full two-column ST editor in a modal overlay */}
+          <div className="prop-plc-ide-launch">
+            <button className="btn btn-primary btn-plc-ide" onClick={() => onOpenPlcIde(device)}>
+              Open PLC IDE
+            </button>
+            <span className="prop-plc-ide-hint">IEC 61131-3 ST · Ladder · OpenPLC v3</span>
+          </div>
         </div>
       )}
 

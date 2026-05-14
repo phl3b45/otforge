@@ -1,22 +1,17 @@
 /**
- * ZoneNode.tsx — React Flow background node that renders a network zone region.
+ * ZoneNode.tsx — React Flow background node that renders a Purdue-model network zone.
  *
- * The SCADA canvas uses a 2×2 grid layout:
- *   OT (top-left)     | IT (top-right)
- *   DMZ (bottom-left) | External (bottom-right)
+ * The SCADA canvas uses a Purdue ISA-95 hierarchical layout with four horizontal
+ * bands stacked top-to-bottom:
  *
- * Each zone is represented by a ZoneNode — a large, non-interactive rectangle
- * that sits behind the device nodes (zIndex: -10). Its purpose is visual only:
- *   - A translucent zone-colored background tints the area
- *   - A header bar shows the zone name and subnet address
- *   - The border color matches the zone accent from ZONE_COLORS
+ *   Level 5  — Enterprise / External Network  (attack machine, internet)
+ *   Level 4  — IT / Business Network          (historian, HMI workstations)
+ *   Level 3.5 — Industrial DMZ               (firewalls, IDS/IPS, jump hosts)
+ *   Levels 0–2 — OT / Control Network        (PLCs, RTUs, IEDs, field devices)
  *
- * Non-interactive flags (draggable: false, selectable: false, connectable: false,
- * focusable: false) prevent zone backgrounds from interfering with device node
- * interactions — clicks and drags pass through to device nodes or the canvas.
- *
- * Size is data-driven (width, height in ZoneNodeData) so the canvas can adjust
- * zone dimensions without touching this component.
+ * Each zone is a large, non-interactive rectangle (zIndex: -10) that sits behind
+ * device nodes. The header shows the Purdue level badge, zone name, description,
+ * and subnet in one row.
  */
 
 import { memo } from 'react'
@@ -32,10 +27,14 @@ import { ZONE_COLORS } from './DeviceNode'
 export type ZoneNodeData = {
   /** The zone this background represents. */
   zone: NetworkZone
-  /** Display name shown in the zone header (e.g., "OT Network", "DMZ"). */
+  /** Display name shown in the zone header (e.g., "OT / Control Network"). */
   label: string
   /** Subnet CIDR shown in the header (e.g., "172.20.10.0/24"). */
   subnet: string
+  /** Purdue ISA-95 level string, e.g., "Level 5" or "Levels 0–2". */
+  purdueLevel: string
+  /** Short description of what belongs in this zone, shown below the name. */
+  description: string
   /** Width of the zone rectangle in canvas pixels. */
   width: number
   /** Height of the zone rectangle in canvas pixels. */
@@ -46,23 +45,23 @@ export type ZoneNodeData = {
 export type ZoneNodeType = Node<ZoneNodeData, 'zoneNode'>
 
 /**
- * Background fill colors at 6% opacity — just enough to tint the area without
- * obscuring the device nodes or the dot-grid background. Full zone colors at
- * full opacity would make the canvas illegible.
+ * Background fill colors at 5% opacity — subtle tint so device nodes remain
+ * legible over the zone background. The full zone accent at full opacity would
+ * make the canvas unreadable.
  */
 const ZONE_BG: Record<NetworkZone, string> = {
-  ot: 'rgba(57, 208, 176, 0.06)',
-  it: 'rgba(56, 139, 253, 0.06)',
-  dmz: 'rgba(210, 153, 34, 0.06)',
-  external: 'rgba(248, 81, 73, 0.06)'
+  ot: 'rgba(57, 208, 176, 0.05)',
+  it: 'rgba(56, 139, 253, 0.05)',
+  dmz: 'rgba(210, 153, 34, 0.05)',
+  external: 'rgba(248, 81, 73, 0.05)'
 }
 
 /**
- * Renders a colored background rectangle that visually defines a network zone.
+ * Renders a Purdue-model zone background rectangle.
  *
- * The component receives `data` from NodeProps and uses it to size itself and
- * apply zone-specific colors. Width/height are applied inline (not via CSS class)
- * because they are dynamic values from the scenario's zone configuration.
+ * Header layout (left to right):
+ *   [LEVEL X] zone name     subnet
+ *             description
  */
 export const ZoneNode = memo(function ZoneNode({ data }: NodeProps<ZoneNodeType>) {
   const color = ZONE_COLORS[data.zone]
@@ -74,13 +73,28 @@ export const ZoneNode = memo(function ZoneNode({ data }: NodeProps<ZoneNodeType>
       style={{
         width: data.width,
         height: data.height,
-        borderColor: color, // Zone accent color for the 1px border
-        background: bg // Translucent tint fill
+        borderColor: color,
+        background: bg
       }}
     >
-      {/* Header bar: zone name on the left, subnet on the right */}
-      <div className="zone-node-header" style={{ color }}>
-        <span className="zone-node-name">{data.label}</span>
+      <div className="zone-node-header">
+        {/* Left: level badge + name + description */}
+        <div className="zone-node-left">
+          <span
+            className="zone-node-level-badge"
+            style={{ color, borderColor: `${color}55`, background: `${color}15` }}
+          >
+            {data.purdueLevel}
+          </span>
+          <div className="zone-node-labels">
+            <span className="zone-node-name" style={{ color }}>
+              {data.label}
+            </span>
+            <span className="zone-node-description">{data.description}</span>
+          </div>
+        </div>
+
+        {/* Right: subnet */}
         <span className="zone-node-subnet">{data.subnet}</span>
       </div>
     </div>

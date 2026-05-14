@@ -92,7 +92,7 @@ export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps
 
       {/* ISA-5.1 device icon, colored by zone */}
       <div className="device-node-icon" style={{ color: zoneColor }}>
-        <DeviceIcon category={data.device.category} size={28} />
+        <DeviceIcon category={data.device.category} size={56} />
       </div>
 
       {/* Label and IP address stacked below the icon */}

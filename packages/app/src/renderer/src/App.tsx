@@ -35,6 +35,7 @@ import type {
 import { ScadaCanvas } from './canvas/ScadaCanvas'
 import { DevicePalette } from './palette/DevicePalette'
 import { PropertiesPanel } from './properties/PropertiesPanel'
+import { PlcIdePanel } from './properties/PlcIdePanel'
 import './index.css'
 
 /**
@@ -329,6 +330,79 @@ function StatusBar({
   )
 }
 
+// ── PLC IDE Modal ─────────────────────────────────────────────────────────────
+
+/**
+ * Full-screen overlay modal wrapping PlcIdePanel in two-column IDE mode.
+ *
+ * Layout:
+ *   - Fixed backdrop dims and blurs the canvas beneath
+ *   - Centered panel:
+ *       Header — device node ID · "OpenPLC Runtime v3 · IEC 61131-3" label · × close
+ *       Body   — PlcIdePanel (modal=true): ST/Ladder tabs on left, var table on right
+ *
+ * Dismiss with:
+ *   - × button in the header
+ *   - Click anywhere on the dim backdrop
+ *   - Escape key (captured via window event listener)
+ *
+ * @param device          - The PLC DeviceConfig whose program is being edited.
+ * @param simRunning      - Whether a simulation is running (enables Deploy button).
+ * @param onProgramChange - Persists PLC program changes back into App state.
+ * @param onClose         - Callback to close this modal.
+ */
+function PlcIdeModal({
+  device,
+  simRunning,
+  onProgramChange,
+  onClose
+}: {
+  device: DeviceConfig
+  simRunning: boolean
+  onProgramChange: (nodeId: string, program: PLCProgramConfig) => void
+  onClose: () => void
+}) {
+  // Listen for Escape on the global window so focus doesn't need to be inside the modal
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onClose])
+
+  return (
+    <div
+      className="plc-modal-overlay"
+      onClick={e => {
+        // Only close when clicking the dim backdrop itself, not child elements
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div className="plc-modal">
+        {/* Header: device name, runtime label, close button */}
+        <div className="plc-modal-header">
+          <div className="plc-modal-title">
+            <span className="plc-modal-device-name">{device.nodeId}</span>
+            <span className="plc-modal-runtime">OpenPLC Runtime v3 · IEC 61131-3</span>
+          </div>
+          <button className="plc-modal-close" onClick={onClose} aria-label="Close PLC IDE">
+            ×
+          </button>
+        </div>
+
+        {/* Two-column IDE body rendered by PlcIdePanel in modal mode */}
+        <PlcIdePanel
+          device={device}
+          simRunning={simRunning}
+          onProgramChange={onProgramChange}
+          modal={true}
+        />
+      </div>
+    </div>
+  )
+}
+
 // ── Root App ───────────────────────────────────────────────────────────────────
 
 /** Top-level view routes. */
@@ -350,6 +424,8 @@ export default function App() {
   const [selectedZone, setSelectedZone] = useState<string | null>(null)
   const [simStatus, setSimStatus] = useState<SimStatus>('idle')
   const [containerStatuses, setContainerStatuses] = useState<ContainerStatus[]>([])
+  /** PLC device currently open in the full-screen IDE modal. Null when modal is closed. */
+  const [plcIdeDevice, setPlcIdeDevice] = useState<DeviceConfig | null>(null)
 
   useEffect(() => {
     // Fetch app metadata and Docker status concurrently on first render
@@ -492,6 +568,16 @@ export default function App() {
     setContainerStatuses([])
   }, [])
 
+  /** Opens the PLC IDE modal for the given device. Called by PropertiesPanel. */
+  const handleOpenPlcIde = useCallback((device: DeviceConfig) => {
+    setPlcIdeDevice(device)
+  }, [])
+
+  /** Closes the PLC IDE modal and returns to the normal canvas view. */
+  const handleClosePlcIde = useCallback(() => {
+    setPlcIdeDevice(null)
+  }, [])
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (view === 'launch') {
@@ -523,11 +609,19 @@ export default function App() {
         <PropertiesPanel
           device={selectedDevice}
           zone={selectedZone}
-          simRunning={simStatus === 'running'}
-          onProgramChange={handleProgramChange}
+          onOpenPlcIde={handleOpenPlcIde}
         />
       </div>
       <StatusBar docker={docker} simStatus={simStatus} containerStatuses={containerStatuses} />
+      {/* PLC IDE full-screen modal — fixed overlay rendered on top of the workspace */}
+      {plcIdeDevice && (
+        <PlcIdeModal
+          device={plcIdeDevice}
+          simRunning={simStatus === 'running'}
+          onProgramChange={handleProgramChange}
+          onClose={handleClosePlcIde}
+        />
+      )}
     </div>
   )
 }
