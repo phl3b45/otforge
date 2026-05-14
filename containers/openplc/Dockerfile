@@ -11,30 +11,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /opt
 
-# Prevent git from trying to open an interactive credential prompt.
-# Without this, git clone fails in the Docker build context because there is
-# no TTY available ("could not read Username: No such device or address").
-# The OpenPLC Runtime repository is public, so no credentials are needed —
-# this just stops git from attempting to ask for them.
-ENV GIT_TERMINAL_PROMPT=0
-
-# Clone OpenPLC Runtime (shallow clone for speed).
-# Retry up to 3 times with a 15-second back-off to handle transient GitHub
-# connectivity issues in CI environments.
-# The success flag ensures the RUN step exits non-zero if all attempts fail —
-# the previous loop silently exited 0 because 'sleep 15' was the last command
-# in the failure branch, masking the missing openplc directory downstream.
-RUN set -e; \
-    success=0; \
-    for i in 1 2 3; do \
-      if git clone --depth=1 https://github.com/thiagoralves/OpenPLC_Runtime.git openplc; then \
-        success=1; break; \
-      fi; \
-      if [ "$i" -lt 3 ]; then \
-        echo "Clone attempt $i failed, retrying in 15s..." && sleep 15; \
-      fi; \
-    done; \
-    [ "$success" -eq 1 ] || { echo "All clone attempts failed — aborting build"; exit 1; }
+# Download OpenPLC Runtime source via GitHub's archive endpoint.
+# This is more reliable than git clone in CI: GitHub's /archive/HEAD.tar.gz
+# endpoint is served by the CDN and succeeds even when git:// or smart-HTTP
+# clone connections are blocked or rate-limited by the runner's network policy.
+# curl --retry handles transient HTTP 5xx / network errors with back-off.
+# --strip-components=1 drops the top-level "OpenPLC_Runtime-<sha>/" directory
+# so the source lands directly in /opt/openplc/ without a rename step.
+RUN mkdir openplc && \
+    curl -fsSL --retry 3 --retry-delay 15 \
+        https://github.com/thiagoralves/OpenPLC_Runtime/archive/HEAD.tar.gz \
+    | tar -xz --strip-components=1 -C openplc
 
 WORKDIR /opt/openplc
 
