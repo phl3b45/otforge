@@ -18,7 +18,7 @@
  *   - Wrapped in React.memo so nodes only re-render when their data or selection
  *     state changes — important when the canvas has 15-20+ nodes
  *
- * Zone color constants (ZONE_COLORS) are exported so PropertiesPanel and ZoneNode
+ * Zone color constants (ZONE_COLORS) are exported so PropertiesPanel and LayerTabBar
  * can use the same palette without duplication.
  */
 

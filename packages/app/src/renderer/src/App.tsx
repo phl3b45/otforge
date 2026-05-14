@@ -30,10 +30,12 @@ import type {
   ICSLabScenario,
   DeviceConfig,
   ContainerStatus,
-  PLCProgramConfig
+  PLCProgramConfig,
+  NetworkZone
 } from '@ics-sim/schema'
 import { ScadaCanvas } from './canvas/ScadaCanvas'
 import { DevicePalette } from './palette/DevicePalette'
+import { LayerTabBar } from './canvas/LayerTabBar'
 import { PropertiesPanel } from './properties/PropertiesPanel'
 import { PlcIdePanel } from './properties/PlcIdePanel'
 import { AttackTerminalModal } from './terminal/AttackTerminalModal'
@@ -429,6 +431,8 @@ export default function App() {
   const [plcIdeDevice, setPlcIdeDevice] = useState<DeviceConfig | null>(null)
   /** Attack-machine device currently open in the terminal modal. Null when closed. */
   const [attackTerminalDevice, setAttackTerminalDevice] = useState<DeviceConfig | null>(null)
+  /** Active Purdue layer tab — controls which canvas, palette section, and properties are shown. */
+  const [activeLayer, setActiveLayer] = useState<NetworkZone>('ot')
 
   useEffect(() => {
     // Fetch app metadata and Docker status concurrently on first render
@@ -611,11 +615,14 @@ export default function App() {
         onStop={handleStop}
         onHome={handleHome}
       />
+      {/* Purdue model layer tabs — sit between toolbar and the 3-column workspace */}
+      <LayerTabBar activeLayer={activeLayer} scenario={scenario} onLayerChange={setActiveLayer} />
       {/* 3-column workspace: palette | canvas | properties */}
       <div className="workspace">
-        <DevicePalette />
+        <DevicePalette activeLayer={activeLayer} />
         <ScadaCanvas
           scenario={scenario}
+          activeLayer={activeLayer}
           onSelectDevice={handleSelectDevice}
           onScenarioChange={handleScenarioChange}
         />
