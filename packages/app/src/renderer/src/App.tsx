@@ -157,38 +157,33 @@ function Toolbar({
   scenario,
   simStatus,
   docker,
-  gridSize,
+  showGrid,
   onImport,
   onNew,
   onStart,
   onStop,
   onHome,
-  onGridSizeChange
+  onGridToggle
 }: {
   scenario: ICSLabScenario | null
   simStatus: SimStatus
   docker: DockerStatus | null
-  /** Current snap-grid cell size (null = off). Controlled by the toolbar picker. */
-  gridSize: number | null
+  /**
+   * Whether the 25 × 25 snap grid is currently visible.
+   * False is passed during simulation so the grid toggle disappears entirely;
+   * the underlying showGrid state in App is preserved for when idle resumes.
+   */
+  showGrid: boolean
   onImport: () => void
   onNew: () => void
   onStart: () => void
   onStop: () => void
   onHome: () => void
-  /** Called when the user changes the grid size picker. */
-  onGridSizeChange: (size: number | null) => void
+  /** Toggles the snap grid on/off. */
+  onGridToggle: () => void
 }) {
   const scenarioName = scenario?.meta.name ?? 'Untitled Scenario'
   const deviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
-
-  /** Grid size options offered in the toolbar picker. */
-  const GRID_OPTIONS: { label: string; value: number | null }[] = [
-    { label: 'No Grid', value: null },
-    { label: '25 × 25', value: 25 },
-    { label: '50 × 50', value: 50 },
-    { label: '100 × 100', value: 100 },
-    { label: '200 × 200', value: 200 }
-  ]
 
   // Pre-compute booleans to prevent TypeScript narrowing inside JSX ternaries
   const isIdle = simStatus === 'idle'
@@ -236,24 +231,20 @@ function Toolbar({
           Open
         </button>
 
-        {/* Grid snap picker — lets the user choose a cell size before placing devices.
-            The selected size enables both visual grid lines and node snap-to-grid. */}
-        <label className="toolbar-grid-label" title="Canvas snap grid cell size">
-          Grid
-          <select
-            className="toolbar-grid-picker"
-            value={gridSize ?? 'off'}
-            onChange={e =>
-              onGridSizeChange(e.target.value === 'off' ? null : Number(e.target.value))
-            }
+        {/*
+         * Grid toggle — hidden during simulation so operators aren't distracted.
+         * The grid is always 25 × 25 cells (CELL_SIZE in ScadaCanvas.tsx); there
+         * is no size picker. Filled style = on, ghost = off.
+         */}
+        {isIdle && (
+          <button
+            className={`btn btn-sm ${showGrid ? 'btn-secondary' : 'btn-ghost'}`}
+            onClick={onGridToggle}
+            title={showGrid ? 'Hide 25 × 25 snap grid' : 'Show 25 × 25 snap grid'}
           >
-            {GRID_OPTIONS.map(opt => (
-              <option key={opt.value ?? 'off'} value={opt.value ?? 'off'}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            Grid
+          </button>
+        )}
 
         <div className="toolbar-divider" />
         {/* Stop button shown while running/starting; Run button shown while idle/stopping */}
@@ -469,11 +460,11 @@ export default function App() {
   /** Active Purdue layer tab — controls which canvas, palette section, and properties are shown. */
   const [activeLayer, setActiveLayer] = useState<NetworkZone>('ot')
   /**
-   * Canvas snap-grid cell size in pixels, or null for no grid.
-   * Options match the toolbar picker: 25, 50, 100, 200 px.
-   * Stored at the App level so it persists across layer-tab switches.
+   * Whether the 25 × 25 cell snap grid is visible and active.
+   * Default true — grid appears on first launch so new users see the layout structure.
+   * Stored at the App level so the preference persists across layer-tab switches.
    */
-  const [gridSize, setGridSize] = useState<number | null>(null)
+  const [showGrid, setShowGrid] = useState<boolean>(true)
 
   useEffect(() => {
     // Fetch app metadata and Docker status concurrently on first render
@@ -585,6 +576,19 @@ export default function App() {
     })
   }, [])
 
+  /** Toggles the 25 × 25 snap grid on/off. */
+  const handleGridToggle = useCallback(() => {
+    setShowGrid(prev => !prev)
+  }, [])
+
+  /**
+   * Effective grid visibility passed to the canvas and toolbar.
+   * Grid is suppressed during simulation so operators aren't distracted by the
+   * snap-to-grid behavior while monitoring live containers. The underlying
+   * showGrid state is preserved so the grid reappears when idle resumes.
+   */
+  const effectiveShowGrid = simStatus === 'idle' ? showGrid : false
+
   /**
    * Starts the simulation:
    *   1. Transition to 'starting' (disables controls)
@@ -650,13 +654,13 @@ export default function App() {
         scenario={scenario}
         simStatus={simStatus}
         docker={docker}
-        gridSize={gridSize}
+        showGrid={effectiveShowGrid}
         onImport={handleImport}
         onNew={handleNew}
         onStart={handleStart}
         onStop={handleStop}
         onHome={handleHome}
-        onGridSizeChange={setGridSize}
+        onGridToggle={handleGridToggle}
       />
       {/* Purdue model layer tabs — sit between toolbar and the 3-column workspace */}
       <LayerTabBar activeLayer={activeLayer} scenario={scenario} onLayerChange={setActiveLayer} />
@@ -666,7 +670,7 @@ export default function App() {
         <ScadaCanvas
           scenario={scenario}
           activeLayer={activeLayer}
-          gridSize={gridSize}
+          showGrid={effectiveShowGrid}
           onSelectDevice={handleSelectDevice}
           onScenarioChange={handleScenarioChange}
         />

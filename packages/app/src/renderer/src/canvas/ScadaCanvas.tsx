@@ -107,8 +107,28 @@ const edgeTypes: EdgeTypes = {
   pipeEdge: PipeEdge
 }
 
-/** Padding fraction used for fitView calls — keeps a small margin around nodes. */
-const FIT_PADDING = 0.12
+/**
+ * Fixed cell size in flow-units (pixels at zoom = 1).
+ * Device nodes occupy exactly one cell; the snap grid and background gap both
+ * use this value so nodes always align precisely with the visible grid lines.
+ * Exported so the DeviceNode CSS and any other canvas consumers stay in sync.
+ */
+export const CELL_SIZE = 80
+
+/** Default canvas is 25 columns × 25 rows of CELL_SIZE cells. */
+const GRID_COLS = 25
+const GRID_ROWS = 25
+
+/** Total canvas extent in flow-units. Used as the fitBounds target rect. */
+const CANVAS_W = GRID_COLS * CELL_SIZE // 2000 px at zoom = 1
+const CANVAS_H = GRID_ROWS * CELL_SIZE // 2000 px at zoom = 1
+
+/**
+ * Bounding box for the full 25 × 25 canvas area.
+ * Every fitBounds call targets this rect so the initial view always shows
+ * the complete grid with a small margin.
+ */
+const CANVAS_BOUNDS = { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H }
 
 /**
  * Default IP address for newly dropped devices, by zone.
@@ -195,6 +215,10 @@ function scenarioToNodes(scenario: ICSLabScenario, activeLayer: NetworkZone): De
         id: cn.id,
         type: 'deviceNode' as const,
         position: cn.position,
+        // Pre-declare dimensions so React Flow knows node size before DOM measurement.
+        // Keeps edges positioned correctly on first render and after layer switches.
+        width: CELL_SIZE,
+        height: CELL_SIZE,
         data: {
           device: scenario.devices.devices[cn.id] ?? {
             nodeId: cn.id,
@@ -218,10 +242,14 @@ function scenarioToNodes(scenario: ICSLabScenario, activeLayer: NetworkZone): De
     return {
       id,
       type: 'deviceNode' as const,
+      // Auto-layout in a 6-column grid aligned to CELL_SIZE boundaries so nodes
+      // land precisely on grid lines when a scenario is first loaded.
       position: {
-        x: 80 + (i % 6) * 160,
-        y: 80 + Math.floor(i / 6) * 110
+        x: (i % 6) * CELL_SIZE,
+        y: Math.floor(i / 6) * CELL_SIZE
       },
+      width: CELL_SIZE,
+      height: CELL_SIZE,
       data: {
         device: dev,
         label: CATEGORY_LABELS[dev.category],
@@ -263,11 +291,12 @@ interface ScadaCanvasProps {
   /** The currently active Purdue layer — scopes which nodes and edges are visible. */
   activeLayer: NetworkZone
   /**
-   * Snap-grid cell size in pixels, or null for free placement (no grid).
-   * Enables React Flow's snapToGrid + snapGrid and switches the background
-   * to grid lines sized to the chosen cell.
+   * Whether to show and snap to the 25 × 25 cell grid.
+   * When true, enables visual grid lines (BackgroundVariant.Lines at CELL_SIZE gap)
+   * and React Flow's snap-to-grid behavior. Passed as false during simulation so
+   * the grid disappears and snap is disabled while containers are running.
    */
-  gridSize: number | null
+  showGrid: boolean
   onSelectDevice: (nodeId: string | null, device: DeviceConfig | null) => void
   onScenarioChange: (updater: (s: ICSLabScenario | null) => ICSLabScenario | null) => void
 }
@@ -282,7 +311,7 @@ interface ScadaCanvasProps {
 export function ScadaCanvas({
   scenario,
   activeLayer,
-  gridSize,
+  showGrid,
   onSelectDevice,
   onScenarioChange
 }: ScadaCanvasProps) {
@@ -305,20 +334,41 @@ export function ScadaCanvas({
    */
   const rfInstance = useRef<ReactFlowInstance | null>(null)
 
+  /**
+   * Tracks the last layer that triggered a fitView call.
+   * fitView must only run when the user switches layer tabs, NOT on every scenario
+   * mutation (node added, node dragged, edge added). Without this guard, dropping a
+   * device triggers a scenario update which fires the useEffect, which calls fitView,
+   * which re-centers the viewport — making the device appear to "snap to center".
+   */
+  const prevLayerRef = useRef<NetworkZone | null>(null)
+
   // Sync canvas state when the scenario or active layer changes
   useEffect(() => {
     if (!scenario) {
       setNodes([])
       setEdges([])
-      setTimeout(() => rfInstance.current?.fitView({ padding: FIT_PADDING, maxZoom: 0.75 }), 100)
+      // No nodes — show the full 25 × 25 canvas area so the user sees the grid
+      setTimeout(
+        () => rfInstance.current?.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 }),
+        100
+      )
+      prevLayerRef.current = null
       return
     }
     const deviceNodes = scenarioToNodes(scenario, activeLayer)
     const layerNodeIds = new Set(deviceNodes.map(n => n.id))
     setNodes(deviceNodes)
     setEdges(scenarioToEdges(scenario, activeLayer, layerNodeIds) as Edge[])
-    // Defer fitView one frame so React Flow has measured the new nodes
-    setTimeout(() => rfInstance.current?.fitView({ padding: FIT_PADDING, maxZoom: 0.75 }), 50)
+    // Only re-fit when the active layer tab changes — not on every node/edge mutation.
+    // Scenario edits (drops, drags, connections) must not re-center the viewport.
+    if (prevLayerRef.current !== activeLayer) {
+      prevLayerRef.current = activeLayer
+      setTimeout(
+        () => rfInstance.current?.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 }),
+        50
+      )
+    }
   }, [scenario, activeLayer, setNodes, setEdges])
 
   /*
@@ -331,7 +381,7 @@ export function ScadaCanvas({
     const handleResize = () => {
       clearTimeout(timer)
       timer = setTimeout(() => {
-        rfInstance.current?.fitView({ padding: FIT_PADDING, maxZoom: 0.75 })
+        rfInstance.current?.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 })
       }, 150)
     }
     window.addEventListener('resize', handleResize)
@@ -568,10 +618,19 @@ export function ScadaCanvas({
       const category = event.dataTransfer.getData('deviceCategory') as DeviceCategory
       if (!category || !rfInstance.current) return
 
-      const position = rfInstance.current.screenToFlowPosition({
+      const rawPos = rfInstance.current.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY
       })
+      // Snap to the nearest cell boundary on drop.
+      // React Flow's snapToGrid prop only activates during drag; the initial drop
+      // position must be rounded manually to keep icons on the grid.
+      const position = showGrid
+        ? {
+            x: Math.round(rawPos.x / CELL_SIZE) * CELL_SIZE,
+            y: Math.round(rawPos.y / CELL_SIZE) * CELL_SIZE
+          }
+        : rawPos
 
       const zone = activeLayer
       const nodeId = `${category}-${Date.now()}`
@@ -586,6 +645,9 @@ export function ScadaCanvas({
         id: nodeId,
         type: 'deviceNode',
         position,
+        // Pre-declare node dimensions so edges connect correctly before DOM measurement
+        width: CELL_SIZE,
+        height: CELL_SIZE,
         data: { device, label: CATEGORY_LABELS[category], zone }
       }
 
@@ -613,7 +675,7 @@ export function ScadaCanvas({
         }
       })
     },
-    [setNodes, onScenarioChange, activeLayer]
+    [setNodes, onScenarioChange, activeLayer, showGrid]
   )
 
   const isOT = activeLayer === 'ot'
@@ -639,20 +701,23 @@ export function ScadaCanvas({
         onPaneClick={cancelConnection}
         onInit={instance => {
           rfInstance.current = instance
+          // Fit the full 25 × 25 grid immediately on mount — no setTimeout needed
+          // because onInit fires exactly when the React Flow instance is ready and
+          // the canvas has its final dimensions. This prevents the flash at zoom=1
+          // that would otherwise appear before the useEffect fitBounds fires.
+          instance.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 })
         }}
         onDragOver={onDragOver}
         onDrop={onDrop}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        fitView
-        fitViewOptions={{ padding: FIT_PADDING, maxZoom: 0.75 }}
         defaultEdgeOptions={{ type: isOT ? 'pipeEdge' : 'protocolEdge', animated: false }}
         deleteKeyCode="Delete"
         multiSelectionKeyCode="Shift"
-        minZoom={0.15}
+        minZoom={0.08}
         maxZoom={2}
-        snapToGrid={gridSize !== null}
-        snapGrid={[gridSize ?? 25, gridSize ?? 25]}
+        snapToGrid={showGrid}
+        snapGrid={[CELL_SIZE, CELL_SIZE]}
         proOptions={{ hideAttribution: true }}
       >
         {/*
@@ -662,16 +727,22 @@ export function ScadaCanvas({
          *   users can see exactly where nodes will snap.
          * - Other tabs use Dots (no grid) or Lines (grid active).
          */}
-        {isOT ? (
+        {/*
+         * Background pattern — shown only when the grid toggle is on.
+         * When grid is off the canvas is plain (no dots, no lines) so the user
+         * sees a clean workspace. Snap-to-grid is also disabled via snapToGrid={showGrid}.
+         *
+         * The teal color rgba(57,208,176,0.5) is the OT zone accent at 50% opacity —
+         * clearly visible against both the navy OT background (#060d14) and the
+         * standard dark canvas (#0d1117).
+         */}
+        {showGrid && (
           <Background
             variant={BackgroundVariant.Lines}
-            gap={gridSize ?? 40}
-            color={gridSize !== null ? '#152233' : '#0f2233'}
+            gap={CELL_SIZE}
+            color="rgba(57, 208, 176, 0.5)"
+            lineWidth={1}
           />
-        ) : gridSize !== null ? (
-          <Background variant={BackgroundVariant.Lines} gap={gridSize} color="#2a3340" />
-        ) : (
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#30363d" />
         )}
         <Controls
           style={{ background: '#1c2128', border: '1px solid #30363d', borderRadius: 6 }}

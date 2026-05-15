@@ -90,12 +90,12 @@ export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps
         style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
       />
 
-      {/* ISA-5.1 device icon, colored by zone */}
+      {/* ISA-5.1 device icon, colored by zone — sized to fill the cell */}
       <div className="device-node-icon" style={{ color: zoneColor }}>
-        <DeviceIcon category={data.device.category} size={56} />
+        <DeviceIcon category={data.device.category} size={44} />
       </div>
 
-      {/* Label and IP address stacked below the icon */}
+      {/* Label and IP address, compact layout to fit the 80 × 80 cell */}
       <div className="device-node-info">
         <div className="device-node-label">{data.label}</div>
         <div className="device-node-meta">{data.device.ipAddress}</div>

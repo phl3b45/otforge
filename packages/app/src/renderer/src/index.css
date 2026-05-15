@@ -473,9 +473,19 @@ body {
 }
 
 /* Override React Flow defaults */
-.react-flow__renderer {
-  background: var(--bg-primary) !important;
-}
+/*
+ * DO NOT set background on .react-flow__renderer.
+ * The renderer is position:absolute with no z-index (z-index: auto), so it
+ * does not form a CSS stacking context. React Flow's Background component
+ * renders its grid SVG at z-index:-1, which places it in the nearest ancestor
+ * stacking context. Since the renderer has z-index:auto, the SVG is painted
+ * BEFORE the renderer's background in the stacking order — meaning any
+ * background color set here would cover the grid entirely, making it invisible.
+ *
+ * The canvas background color is already handled by .canvas-container
+ * (--bg-primary) and .canvas-ot (#060d14), which are painted by ancestor
+ * elements that sit behind the React Flow tree.
+ */
 .react-flow__controls-button {
   background: var(--bg-panel) !important;
   border-color: var(--border) !important;
@@ -568,17 +578,28 @@ body {
 
 /* ── Device node ──────────────────────────────────────────────────────────────── */
 
+/*
+ * Device node — fixed 80 × 80 px square that matches the CELL_SIZE constant
+ * in ScadaCanvas.tsx. Nodes occupy exactly one grid cell; the icon + label
+ * are fitted to the available space within the cell boundary.
+ *
+ * If CELL_SIZE changes in ScadaCanvas.tsx, update the width/height here too.
+ */
 .device-node {
   background: var(--bg-panel);
   border: 1px solid;
-  border-radius: 6px;
-  padding: 0.625rem 0.875rem;
-  min-width: 140px;
-  max-width: 175px;
+  border-radius: 4px;
+  /* Match CELL_SIZE = 80 in ScadaCanvas.tsx */
+  width: 80px;
+  height: 80px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.375rem;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 3px;
+  overflow: hidden;
   cursor: pointer;
   transition: box-shadow 0.15s;
 }
@@ -591,27 +612,33 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .device-node-info {
   text-align: center;
   width: 100%;
+  overflow: hidden;
 }
 
 .device-node-label {
-  font-size: 1rem;
+  font-size: 0.69rem;
   font-weight: 600;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.2;
 }
 
 .device-node-meta {
-  font-size: 0.875rem;
+  font-size: 0.6rem;
   color: var(--text-muted);
   font-family: 'Cascadia Code', 'Fira Code', monospace;
-  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 /* ── Protocol edge label ──────────────────────────────────────────────────────── */
@@ -1726,10 +1753,11 @@ code.prop-value {
 .canvas-ot {
   background: #060d14;
 }
-
-.canvas-ot .react-flow__renderer {
-  background: #060d14 !important;
-}
+/* .canvas-ot .react-flow__renderer background intentionally omitted —
+   see the comment above .react-flow__renderer. Setting a background here
+   would cover the grid SVG (z-index:-1) rendered by React Flow's Background
+   component. The #060d14 background is provided by .canvas-ot on the outer
+   container, which sits behind the React Flow tree. */
 
 /* ── Pipe edge label chip (OT canvas) ─────────────────────────────────────────── */
 
