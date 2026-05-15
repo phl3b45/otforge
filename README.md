@@ -181,8 +181,8 @@ Share your scenarios with the community — open a pull request against the [ics
 | — | Attack terminal (xterm.js + noVNC Xfce4 desktop) | ✅ Complete |
 | 5 | DNP3 IED auto-config + security stack UI (FirewallPanel, IDSPanel, nftables/Suricata/Zeek orchestration) | ✅ Complete |
 | — | Connection validation — Purdue Reference Model matrix (IEC 62443-3-2 / NIST SP 800-82); invalid targets dimmed + educational tooltip | ✅ Complete |
-| 6 | Monitoring panels (Grafana embed, Loki log viewer) | 🔜 Next |
-| 7 | FUXA HMI embed + student mission brief panel | 🔜 Planned |
+| 6 | Monitoring panels — Grafana ICS Lab Overview dashboard (Electron webview) + native Loki log viewer with Suricata/Zeek per-source colour coding and Promtail sidecar | ✅ Complete |
+| 7 | FUXA HMI embed + student mission brief panel | 🔜 Next |
 | 8 | Author / Student mode split + locked scenario distribution | 🔜 Planned |
 | 9 | Community scenario pack format | 🔜 Planned |
 | 10 | Conpot legacy device emulation (Siemens S7, IEC 104) | 🔜 Planned |
