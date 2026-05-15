@@ -2167,3 +2167,99 @@ code.prop-value {
   opacity: 0 !important;
   pointer-events: none !important;
 }
+
+/* ── Connection validation — invalid target dimming ───────────────────────────── */
+
+/*
+ * Applied to node wrapper divs (via node.className) when the student has picked
+ * a protocol but the node is not a valid target for that protocol from the source.
+ *
+ * React Flow adds the node's `className` to its outer wrapper, so the selector
+ * `.invalid-target .device-node` targets the inner DeviceNode div correctly.
+ *
+ * opacity 0.3 — enough to read the label but clearly "unavailable".
+ * transition — smooth fade so the dimming doesn't feel abrupt.
+ * cursor: not-allowed — extra visual cue that the device cannot receive this connection.
+ */
+.invalid-target .device-node {
+  opacity: 0.3;
+  transition: opacity 0.15s ease;
+  cursor: not-allowed !important;
+}
+
+/*
+ * Applied to the source node wrapper while the connection is pending.
+ * Adds a teal pulsing glow so the student can clearly see which device they
+ * right-clicked as the connection origin — especially useful on dense canvases.
+ */
+.connection-source .device-node {
+  box-shadow:
+    0 0 0 2px var(--accent-teal),
+    0 0 14px rgba(57, 208, 176, 0.35) !important;
+  animation: source-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes source-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px var(--accent-teal),
+      0 0 14px rgba(57, 208, 176, 0.35) !important;
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px var(--accent-teal),
+      0 0 22px rgba(57, 208, 176, 0.6) !important;
+  }
+}
+
+/* ── Invalid connection tooltip ───────────────────────────────────────────────── */
+
+/*
+ * Positioned at the cursor's clientX/clientY when the student clicks an invalid
+ * target. `transform: translate(-50%, calc(-100% - 12px))` places the tooltip
+ * above the cursor so it doesn't obscure the node being clicked.
+ *
+ * z-index: 9999 ensures it renders above the React Flow canvas and MiniMap.
+ * pointer-events: none prevents the tooltip itself from interfering with clicks.
+ * max-width: 340px keeps the message readable without spanning the canvas.
+ */
+.connection-invalid-tooltip {
+  position: fixed;
+  background: #1c2128;
+  border: 1px solid var(--accent-red);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  padding: 8px 12px;
+  max-width: 340px;
+  z-index: 9999;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+  /* Place the tooltip above the cursor with a 12 px gap */
+  transform: translate(-50%, calc(-100% - 12px));
+  animation: tooltip-fade-in 0.12s ease;
+}
+
+@keyframes tooltip-fade-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% - 6px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, calc(-100% - 12px));
+  }
+}
+
+/* Warning icon — matches the red border accent */
+.connection-invalid-tooltip-icon {
+  color: var(--accent-red);
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  margin-top: 1px;
+}

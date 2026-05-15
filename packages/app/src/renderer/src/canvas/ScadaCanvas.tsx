@@ -22,7 +22,7 @@
  * bezier ProtocolEdge connectors.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow,
   Background,
@@ -52,6 +52,7 @@ import type {
 import { DeviceNode, type DeviceNodeData, type DeviceNodeType, ZONE_COLORS } from './DeviceNode'
 import { ProtocolEdge, type ProtocolEdgeType } from './ProtocolEdge'
 import { PipeEdge, type PipeEdgeType } from './PipeEdge'
+import { getSourceProtocols, isConnectionValid, getRejectionReason } from './connectionRules'
 
 /**
  * Protocol / cable options shown in the right-click connection context menu.
@@ -329,6 +330,17 @@ export function ScadaCanvas({
   const [pendingConnection, setPendingConnection] = useState<PendingConnectionState | null>(null)
 
   /**
+   * Tooltip displayed when the student clicks an invalid target during a pending
+   * connection. Shows the rejection reason from getRejectionReason() and auto-clears
+   * after 3 seconds. Positioned at the cursor's clientX/clientY.
+   */
+  const [invalidTooltip, setInvalidTooltip] = useState<{
+    message: string
+    x: number
+    y: number
+  } | null>(null)
+
+  /**
    * Ref to the React Flow instance — needed for screenToFlowPosition() in onDrop.
    * Using a ref avoids wrapping in ReactFlowProvider just to call useReactFlow().
    */
@@ -342,6 +354,63 @@ export function ScadaCanvas({
    * which re-centers the viewport — making the device appear to "snap to center".
    */
   const prevLayerRef = useRef<NetworkZone | null>(null)
+
+  /**
+   * Timer ref for auto-dismissing the invalid connection tooltip.
+   * Stored in a ref so the previous timer can be cancelled before setting a new one
+   * (prevents stale closures from clearing a tooltip the user just triggered).
+   */
+  const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /**
+   * Context-menu protocol options filtered to only those valid for the source device.
+   * When the student right-clicks a Sensor, for example, they see only Modbus and DNP3
+   * instead of the full list — this prevents picking a protocol that would then be
+   * immediately rejected when they click the target.
+   *
+   * Falls back to the full CONNECTION_OPTIONS list when the source node cannot be
+   * resolved (defensive case — should not occur in normal usage).
+   */
+  const filteredConnectionOptions = useMemo(() => {
+    if (!contextMenu) return CONNECTION_OPTIONS
+    const sourceNode = nodes.find(n => n.id === contextMenu.nodeId)
+    if (!sourceNode) return CONNECTION_OPTIONS
+    const sourceCategory = (sourceNode.data as DeviceNodeData).device.category
+    const validProtocols = getSourceProtocols(sourceCategory)
+    return CONNECTION_OPTIONS.filter(opt => validProtocols.has(opt.protocol))
+  }, [contextMenu, nodes])
+
+  /**
+   * Nodes augmented with connection-state CSS classes:
+   *   'connection-source' — the node that was right-clicked to start the connection.
+   *                         Gets a teal glow so the student remembers which device
+   *                         they're connecting FROM.
+   *   'invalid-target'    — nodes the student cannot connect to with the selected protocol.
+   *                         Dimmed to 30% opacity and cursor changes to not-allowed.
+   *
+   * React Flow applies the node's `className` property to the wrapper div it renders,
+   * so `.invalid-target .device-node { ... }` selectors in CSS work correctly.
+   *
+   * Computed from the base `nodes` state — the underlying state stays clean so
+   * position persistence, deletion, and edge connections are not affected.
+   */
+  const displayNodes = useMemo(() => {
+    if (!pendingConnection) return nodes
+    const sourceNode = nodes.find(n => n.id === pendingConnection.sourceId)
+    if (!sourceNode) return nodes
+    const sourceCategory = (sourceNode.data as DeviceNodeData).device.category
+
+    return nodes.map(n => {
+      if (n.id === pendingConnection.sourceId) {
+        // Highlight the initiating node with a source glow
+        return { ...n, className: 'connection-source' }
+      }
+      const targetCategory = (n.data as DeviceNodeData).device.category
+      const valid = isConnectionValid(sourceCategory, targetCategory, pendingConnection.protocol)
+      // Dim nodes that cannot receive the selected protocol
+      return { ...n, className: valid ? '' : 'invalid-target' }
+    })
+  }, [nodes, pendingConnection])
 
   // Sync canvas state when the scenario or active layer changes
   useEffect(() => {
@@ -499,12 +568,17 @@ export function ScadaCanvas({
   )
 
   /**
-   * Cancels any open context menu or in-progress pending connection.
+   * Cancels any open context menu, in-progress pending connection, or invalid tooltip.
    * Bound to clicking empty canvas space, pressing Escape, and the Cancel menu item.
    */
   const cancelConnection = useCallback(() => {
     setContextMenu(null)
     setPendingConnection(null)
+    setInvalidTooltip(null)
+    if (tooltipTimerRef.current !== null) {
+      clearTimeout(tooltipTimerRef.current)
+      tooltipTimerRef.current = null
+    }
   }, [])
 
   /**
@@ -534,14 +608,22 @@ export function ScadaCanvas({
 
   /**
    * Click on a canvas device node.
-   * If a pending connection is active, creates an edge from the source (right-clicked)
-   * node to this target node using the previously selected protocol.
-   * Self-clicks cancel the pending connection rather than creating a self-loop.
+   *
+   * If a pending connection is active:
+   *   1. Self-click → cancel the connection (no self-loops).
+   *   2. Valid target → create the edge and persist it to the scenario.
+   *   3. Invalid target → show a rejection tooltip at the cursor position with an
+   *      educational explanation. The connection is NOT created and the pending state
+   *      stays active so the student can click a valid target instead.
+   *
+   * Validation uses the VALID_CONNECTIONS matrix from connectionRules.ts, which
+   * encodes the ICS Purdue Reference Model (IEC 62443-3-2 / NIST SP 800-82).
+   *
    * If no pending connection is active this is a no-op — selection is handled by
    * onSelectionChange via React Flow's built-in machinery.
    */
   const onNodeClick = useCallback(
-    (_event: React.MouseEvent, node: Node) => {
+    (event: React.MouseEvent, node: Node) => {
       if (!pendingConnection) return
 
       if (node.id === pendingConnection.sourceId) {
@@ -550,6 +632,30 @@ export function ScadaCanvas({
         return
       }
 
+      // ── Protocol / Purdue-model validation ────────────────────────────────
+      // Look up both ends of the attempted connection and check the matrix.
+      const sourceNode = nodes.find(n => n.id === pendingConnection.sourceId)
+      if (sourceNode) {
+        const sourceCategory = (sourceNode.data as DeviceNodeData).device.category
+        const targetCategory = (node.data as DeviceNodeData).device.category
+
+        if (!isConnectionValid(sourceCategory, targetCategory, pendingConnection.protocol)) {
+          // Block the connection and show a short educational tooltip at the cursor.
+          // The pending connection stays active — student can pick a valid target.
+          const message = getRejectionReason(
+            sourceCategory,
+            targetCategory,
+            pendingConnection.protocol
+          )
+          if (tooltipTimerRef.current !== null) clearTimeout(tooltipTimerRef.current)
+          setInvalidTooltip({ message, x: event.clientX, y: event.clientY })
+          // Auto-dismiss after 3 seconds so the tooltip doesn't stay forever
+          tooltipTimerRef.current = setTimeout(() => setInvalidTooltip(null), 3000)
+          return
+        }
+      }
+
+      // ── Valid connection — create the edge ────────────────────────────────
       const edgeType = activeLayer === 'ot' ? 'pipeEdge' : 'protocolEdge'
       const newEdge: Edge = {
         id: `${pendingConnection.sourceId}-${node.id}-${Date.now()}`,
@@ -574,7 +680,7 @@ export function ScadaCanvas({
 
       setPendingConnection(null)
     },
-    [pendingConnection, activeLayer, setEdges, onScenarioChange, cancelConnection]
+    [pendingConnection, nodes, activeLayer, setEdges, onScenarioChange, cancelConnection]
   )
 
   // Escape key cancels the open menu or pending connection
@@ -696,7 +802,7 @@ export function ScadaCanvas({
       className={`canvas-container${isOT ? ' canvas-ot' : ''}${pendingConnection ? ' connecting' : ''}`}
     >
       <ReactFlow
-        nodes={nodes}
+        nodes={displayNodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
@@ -778,7 +884,7 @@ export function ScadaCanvas({
         >
           <div className="connection-context-menu-title">Connect via…</div>
           <div className="connection-context-menu-sep" />
-          {CONNECTION_OPTIONS.map(opt => (
+          {filteredConnectionOptions.map(opt => (
             <button
               key={opt.protocol}
               className="connection-context-menu-item"
@@ -804,6 +910,22 @@ export function ScadaCanvas({
       {pendingConnection && (
         <div className="connection-mode-hint">
           Click a device to connect — press <kbd>Esc</kbd> to cancel
+        </div>
+      )}
+
+      {/* ── Invalid connection tooltip ────────────────────────────────────────── */}
+      {/* Appears at the cursor position when the student clicks an incompatible   */}
+      {/* target. Explains why the connection is rejected and what protocols ARE   */}
+      {/* valid, so the student learns the Purdue model without reading docs.      */}
+      {/* Auto-dismisses after 3 s; the pending connection stays active so the    */}
+      {/* student can immediately click a valid target node instead.              */}
+      {invalidTooltip && (
+        <div
+          className="connection-invalid-tooltip"
+          style={{ left: invalidTooltip.x, top: invalidTooltip.y }}
+        >
+          <span className="connection-invalid-tooltip-icon">⚠</span>
+          <span>{invalidTooltip.message}</span>
         </div>
       )}
     </div>
