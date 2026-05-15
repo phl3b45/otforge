@@ -493,54 +493,66 @@ function registerIPCHandlers(): void {
   ipcMain.handle(
     'simulation:start',
     async (_e, scenario: ICSLabScenario): Promise<SimulationStartResult> => {
-      const dockerAvailable = await dockerClient.isAvailable()
-      if (!dockerAvailable) {
-        return { ok: false, error: 'Docker Desktop is not running.' }
-      }
-
-      const projectName = toProjectName(scenario.meta.name)
-      activeProjectName = projectName
-
-      // Build PLC and attack-machine port maps with the same iteration order and base ports
-      // as compose-generator.ts so the IPC handlers can find host ports without re-parsing
-      // the generated compose file.
-      activePlcPorts.clear()
-      activeAttackPorts.clear()
-      let plcIdx = 0
-      let attackIdx = 0
-      for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
-        if (device.category === 'plc') {
-          activePlcPorts.set(nodeId, 18080 + plcIdx)
-          plcIdx++
+      // Top-level try/catch converts any thrown error into a structured { ok: false }
+      // result. Without this, an uncaught throw rejects the ipcMain handler's promise,
+      // which causes ipcRenderer.invoke() to throw on the renderer side — and since
+      // handleStart() in App.tsx had no catch block, simStatus would hang at 'starting'.
+      try {
+        const dockerAvailable = await dockerClient.isAvailable()
+        if (!dockerAvailable) {
+          return { ok: false, error: 'Docker Desktop is not running.' }
         }
-        if (device.category === 'attack-machine') {
-          // Base port 6900 matches ATTACK_NOVNC_PORT_BASE in compose-generator.ts
-          activeAttackPorts.set(nodeId, 6900 + attackIdx)
-          attackIdx++
+
+        const projectName = toProjectName(scenario.meta.name)
+        activeProjectName = projectName
+
+        // Build PLC and attack-machine port maps with the same iteration order and base ports
+        // as compose-generator.ts so the IPC handlers can find host ports without re-parsing
+        // the generated compose file.
+        activePlcPorts.clear()
+        activeAttackPorts.clear()
+        let plcIdx = 0
+        let attackIdx = 0
+        for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
+          if (device.category === 'plc') {
+            activePlcPorts.set(nodeId, 18080 + plcIdx)
+            plcIdx++
+          }
+          if (device.category === 'attack-machine') {
+            // Base port 6900 matches ATTACK_NOVNC_PORT_BASE in compose-generator.ts
+            activeAttackPorts.set(nodeId, 6900 + attackIdx)
+            attackIdx++
+          }
         }
-      }
 
-      // Write Grafana and Promtail provisioning files to the scenario directory.
-      // These must exist before generateCompose() references their paths in volume
-      // mounts, and before docker compose up starts the Grafana container.
-      const scenarioDir = pathJoin(app.getPath('userData'), 'scenarios', projectName)
-      await writeGrafanaProvisioning(scenarioDir, projectName)
+        // Write Grafana and Promtail provisioning files to the scenario directory.
+        // These must exist before generateCompose() references their paths in volume
+        // mounts, and before docker compose up starts the Grafana container.
+        const scenarioDir = pathJoin(app.getPath('userData'), 'scenarios', projectName)
+        await writeGrafanaProvisioning(scenarioDir, projectName)
 
-      const composeYaml = generateCompose(scenario, projectName, scenarioDir)
-      const result = await dockerClient.startScenario(projectName, composeYaml)
+        const composeYaml = generateCompose(scenario, projectName, scenarioDir)
+        const result = await dockerClient.startScenario(projectName, composeYaml)
 
-      if (!result.ok) {
+        if (!result.ok) {
+          activeProjectName = null
+          return { ok: false, error: result.error }
+        }
+
+        // Brief delay to allow containers to transition from "created" to "running"
+        // before we poll their status for the success report
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        const statuses = await dockerClient.getStatus(projectName)
+        const started = statuses.filter(s => s.status === 'running').map(s => s.nodeId)
+
+        return { ok: true, containersStarted: started }
+      } catch (err) {
+        // Reset active project so a retry doesn't think a simulation is already running
         activeProjectName = null
-        return { ok: false, error: result.error }
+        activePlcPorts.clear()
+        activeAttackPorts.clear()
+        return { ok: false, error: `Simulation start failed: ${(err as Error).message}` }
       }
-
-      // Brief delay to allow containers to transition from "created" to "running"
-      // before we poll their status for the success report
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      const statuses = await dockerClient.getStatus(projectName)
-      const started = statuses.filter(s => s.status === 'running').map(s => s.nodeId)
-
-      return { ok: true, containersStarted: started }
     }
   )
 

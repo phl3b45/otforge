@@ -486,6 +486,13 @@ export default function App() {
    * Collapses automatically when the simulation stops (see useEffect below).
    */
   const [showMonitor, setShowMonitor] = useState<boolean>(false)
+
+  /**
+   * Error message from the most recent failed simulation start.
+   * Shown in a dismissible banner below the toolbar. Cleared when
+   * the user retries or starts a new scenario.
+   */
+  const [simError, setSimError] = useState<string | null>(null)
   /** PLC device currently open in the full-screen IDE modal. Null when modal is closed. */
   const [plcIdeDevice, setPlcIdeDevice] = useState<DeviceConfig | null>(null)
   /** Attack-machine device currently open in the terminal modal. Null when closed. */
@@ -543,6 +550,7 @@ export default function App() {
     setSelectedZone(null)
     setSimStatus('idle')
     setContainerStatuses([])
+    setSimError(null)
     setView('canvas')
   }, [])
 
@@ -625,6 +633,28 @@ export default function App() {
     }
   }, [simStatus])
 
+  /**
+   * Polls container statuses every 3 seconds while the simulation is running.
+   *
+   * The main process never pushes container:statusUpdate events proactively, so the
+   * renderer polls simulation:status on an interval. The entire status array is
+   * replaced on each poll (simpler than merging, equally correct at 3 s cadence).
+   * The interval is cleared as soon as simStatus leaves 'running' so there are no
+   * stale polls after the simulation stops.
+   */
+  useEffect(() => {
+    if (simStatus !== 'running') return
+
+    const poll = async (): Promise<void> => {
+      const statuses = await window.electronAPI.simulation.status()
+      setContainerStatuses(statuses)
+    }
+
+    poll() // immediate first poll — don't wait 3 s for the first pill to appear
+    const id = setInterval(poll, 3000)
+    return () => clearInterval(id)
+  }, [simStatus])
+
   /** Toggles the Grafana + Live Logs monitor panel open or closed. */
   const handleMonitorToggle = useCallback(() => {
     setShowMonitor(prev => !prev)
@@ -661,16 +691,28 @@ export default function App() {
    *   1. Transition to 'starting' (disables controls)
    *   2. Call simulation:start IPC which generates compose and runs docker compose up
    *   3. Transition to 'running' on success, back to 'idle' on failure
+   *
+   * The try/catch is critical: if the main process handler throws (e.g., because
+   * writeGrafanaProvisioning or generateCompose errors), ipcRenderer.invoke() rejects
+   * and without a catch the simStatus would hang at 'starting' forever.
    */
   const handleStart = useCallback(async () => {
     if (!scenario) return
+    setSimError(null)
     setSimStatus('starting')
     setContainerStatuses([])
-    const result = await window.electronAPI.simulation.start(scenario)
-    if (result.ok) {
-      setSimStatus('running')
-    } else {
+    try {
+      const result = await window.electronAPI.simulation.start(scenario)
+      if (result.ok) {
+        setSimStatus('running')
+      } else {
+        setSimStatus('idle')
+        setSimError(result.error ?? 'Simulation failed to start.')
+      }
+    } catch (err) {
+      // IPC handler threw an unhandled exception — surface it to the user
       setSimStatus('idle')
+      setSimError(`Unexpected error: ${(err as Error).message}`)
     }
   }, [scenario])
 
@@ -731,6 +773,21 @@ export default function App() {
         onGridToggle={handleGridToggle}
         onMonitorToggle={handleMonitorToggle}
       />
+      {/*
+       * Simulation error banner — shown when the most recent start attempt failed.
+       * Includes the error message from the main process (compose error, Docker pull
+       * failure, path error, etc.) so the student/instructor can diagnose the issue.
+       * Dismissed by clicking × or by starting a new simulation.
+       */}
+      {simError && (
+        <div className="sim-error-banner">
+          <span className="sim-error-icon">⚠</span>
+          <span className="sim-error-message">{simError}</span>
+          <button className="sim-error-dismiss" onClick={() => setSimError(null)} title="Dismiss">
+            ×
+          </button>
+        </div>
+      )}
       {/* Purdue model layer tabs — sit between toolbar and the 3-column workspace */}
       <LayerTabBar activeLayer={activeLayer} scenario={scenario} onLayerChange={setActiveLayer} />
       {/* 3-column workspace: palette | canvas | properties */}
