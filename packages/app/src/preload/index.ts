@@ -158,6 +158,26 @@ const api = {
       ipcRenderer.invoke('terminal:getVncUrl', { nodeId })
   },
 
+  // ── Monitoring — Loki log query proxy (Phase 6) ──────────────────────────────
+  monitor: {
+    /**
+     * Proxies a Loki query_range request through the main process (avoids CORS).
+     * Returns the raw Loki API JSON object on success.
+     *
+     * @param query  - LogQL expression, e.g. '{job="suricata"} | json | event_type="alert"'
+     * @param fromNs - Range start as a nanosecond Unix timestamp string.
+     * @param toNs   - Range end as a nanosecond Unix timestamp string.
+     * @param limit  - Max log lines to return (default 200).
+     */
+    getLogs: (
+      query: string,
+      fromNs: string,
+      toNs: string,
+      limit?: number
+    ): Promise<{ ok: boolean; data?: unknown; error?: string }> =>
+      ipcRenderer.invoke('monitor:getLogs', { query, fromNs, toNs, limit })
+  },
+
   // ── License (Phase 12 stubs) ──────────────────────────────────────────────────
   license: {
     /** Validates a license key string. Returns dev-mode grant during development. */

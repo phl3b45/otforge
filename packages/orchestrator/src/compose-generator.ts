@@ -127,9 +127,18 @@ interface ComposeFile {
  * @param scenario    - The validated scenario document to generate compose for.
  * @param projectName - Docker Compose project name (sanitized scenario name).
  *   All container/network/volume names are prefixed with this value.
+ * @param scenarioDir - Absolute host path to the scenario directory
+ *   (<userData>/scenarios/<projectName>/). When provided, Grafana and Loki
+ *   publish their ports to the host (3000 and 3100) and Grafana provisioning
+ *   files are mounted from <scenarioDir>/grafana/. Promtail is added as a
+ *   log-shipping sidecar. Omit in tests where host paths are unavailable.
  * @returns Complete YAML string ready to write to docker-compose.yml.
  */
-export function generateCompose(scenario: ICSLabScenario, projectName: string): string {
+export function generateCompose(
+  scenario: ICSLabScenario,
+  projectName: string,
+  scenarioDir?: string
+): string {
   const services: Record<string, ComposeService> = {}
   const networks: Record<string, ComposeNetwork> = {}
   const volumes: Record<string, unknown> = {}
@@ -343,7 +352,9 @@ export function generateCompose(scenario: ICSLabScenario, projectName: string): 
   }
 
   // ── Loki — log aggregation (AGPL — pulled at runtime, not bundled) ─────────
-  // Loki ingests Eve JSON from Suricata and Zeek logs for querying in Grafana.
+  // Loki ingests EVE JSON from Suricata and Zeek logs for querying in Grafana.
+  // Port 3100 is published to the host so the Electron renderer can query the
+  // Loki HTTP API directly for the native live-log panel (Phase 6).
   volumes[`${projectName}-loki-data`] = {}
   services['loki'] = {
     image: 'grafana/loki:latest',
@@ -353,27 +364,80 @@ export function generateCompose(scenario: ICSLabScenario, projectName: string): 
     environment: undefined,
     cap_add: undefined,
     volumes: [`${projectName}-loki-data:/loki`],
+    // Publish so the Electron main process can proxy Loki API queries
+    ports: ['3100:3100'],
     deploy: { resources: { limits: { memory: '80m', cpus: '0.25' } } }
   }
 
   // ── Grafana — dashboards (AGPL — pulled at runtime, not bundled) ──────────
   // Anonymous viewer access is enabled so the embedded Electron webview panel
-  // (Phase 6) can display dashboards without a login step.
+  // can display dashboards without a login step.
+  // GF_SECURITY_ALLOW_EMBEDDING=true disables X-Frame-Options: DENY so the
+  // dashboard renders correctly in the Electron <webview> tag.
+  // Port 3000 is published to the host so the webview can reach localhost:3000.
+  // Provisioning files are mounted from the scenario directory when scenarioDir
+  // is provided — this wires the InfluxDB and Loki datasources automatically.
   volumes[`${projectName}-grafana-data`] = {}
+
+  const grafanaEnv = [
+    'GF_SECURITY_ADMIN_USER=admin',
+    'GF_SECURITY_ADMIN_PASSWORD=icslab',
+    'GF_AUTH_ANONYMOUS_ENABLED=true', // No login required in the embedded panel
+    'GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer', // Restrict anonymous sessions to read-only
+    'GF_SECURITY_ALLOW_EMBEDDING=true', // Required for Electron webview embedding
+    'GF_SERVER_ROOT_URL=http://localhost:3000', // Canonical URL for link generation
+    'GF_ANALYTICS_REPORTING_ENABLED=false' // No telemetry from lab environments
+  ]
+
+  const grafanaVolumes = [`${projectName}-grafana-data:/var/lib/grafana`]
+  if (scenarioDir) {
+    // Normalize path separators for Docker on Windows (Docker Desktop via WSL2
+    // handles forward-slashed Windows paths transparently).
+    const provDir = `${scenarioDir}/grafana/provisioning`.replace(/\\/g, '/')
+    const dashDir = `${scenarioDir}/grafana/dashboards`.replace(/\\/g, '/')
+    grafanaVolumes.push(`${provDir}:/etc/grafana/provisioning:ro`)
+    grafanaVolumes.push(`${dashDir}:/var/lib/grafana/dashboards:ro`)
+  }
+
   services['grafana'] = {
     image: 'grafana/grafana:latest',
     container_name: `${projectName}-grafana`,
     restart: 'unless-stopped',
     networks: { 'it-net': { ipv4_address: `${itBase}.12` } },
-    environment: [
-      'GF_SECURITY_ADMIN_USER=admin',
-      'GF_SECURITY_ADMIN_PASSWORD=icslab',
-      'GF_AUTH_ANONYMOUS_ENABLED=true', // Allows the embedded panel to load without login
-      'GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer' // Restrict anonymous sessions to read-only
-    ],
+    environment: grafanaEnv,
     cap_add: undefined,
-    volumes: [`${projectName}-grafana-data:/var/lib/grafana`],
+    volumes: grafanaVolumes,
+    // Publish on the standard Grafana port so the Electron webview embeds it
+    ports: ['3000:3000'],
     deploy: { resources: { limits: { memory: '150m', cpus: '0.5' } } }
+  }
+
+  // ── Promtail — log shipping sidecar (AGPL — pulled at runtime) ───────────
+  // Promtail reads Suricata EVE JSON and Zeek log files from their named Docker
+  // volumes and pushes each line to the Loki HTTP ingestion endpoint. Without
+  // Promtail, Loki would receive no log data even though both analysis tools are
+  // writing to disk.
+  //
+  // The shared named volumes (suricata-logs, zeek-logs) allow Promtail to read
+  // files that Suricata and Zeek write without any direct network connection.
+  // Promtail runs on the IT network so it can reach the Loki container at its
+  // fixed IT-zone IP.
+  if (scenarioDir) {
+    const promtailConfigPath = `${scenarioDir}/promtail/config.yaml`.replace(/\\/g, '/')
+    services['promtail'] = {
+      image: 'grafana/promtail:latest',
+      container_name: `${projectName}-promtail`,
+      restart: 'unless-stopped',
+      networks: { 'it-net': { ipv4_address: `${itBase}.14` } },
+      environment: undefined,
+      cap_add: undefined,
+      volumes: [
+        `${promtailConfigPath}:/etc/promtail/config.yaml:ro`,
+        `${projectName}-suricata-logs:/var/log/suricata:ro`, // shared read-only
+        `${projectName}-zeek-logs:/var/log/zeek:ro` // shared read-only
+      ],
+      deploy: { resources: { limits: { memory: '64m', cpus: '0.1' } } }
+    }
   }
 
   // ── FUXA — web-based HMI (MIT licensed) ──────────────────────────────────

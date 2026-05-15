@@ -379,6 +379,9 @@ body {
 .workspace {
   display: flex;
   flex: 1;
+  /* min-height: 0 prevents the flex child from refusing to shrink below its
+     content size when the monitor panel opens below it in the app-shell column */
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -2262,4 +2265,335 @@ code.prop-value {
   font-size: 0.9rem;
   flex-shrink: 0;
   margin-top: 1px;
+}
+
+/* ── Monitor Panel (Phase 6 — Grafana + Live Logs drawer) ─────────────────────
+ *
+ * The monitor panel is a fixed-height drawer rendered below the workspace when
+ * the user clicks "Monitor" in the toolbar during a running simulation.
+ *
+ * Layout (app-shell is flex-column):
+ *   Toolbar
+ *   LayerTabBar
+ *   .workspace       ← shrinks via flex (min-height:0 required above)
+ *   .monitor-panel   ← fixed height, never shrinks
+ *   StatusBar
+ *
+ * Height is fixed at 320px so the SCADA canvas above never becomes unusably small
+ * even on compact laptop screens (1366 × 768). The Grafana webview and log list
+ * both use height: 100% / flex: 1 to fill the panel completely.
+ */
+
+/* Outer container — occupies full width, fixed height, dark background */
+.monitor-panel {
+  display: flex;
+  flex-direction: column;
+  height: 320px;
+  flex-shrink: 0;
+  background: #0d1117;
+  border-top: 1px solid var(--border-color);
+}
+
+/* ── Panel header: tab bar (left) + close button (right) ─────────────────── */
+
+.monitor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  height: 36px;
+  border-bottom: 1px solid var(--border-color);
+  background: #161b22;
+  flex-shrink: 0;
+}
+
+.monitor-tabs {
+  display: flex;
+  gap: 2px;
+}
+
+/*
+ * Each tab is a ghost button. The .active variant gets a bottom border accent
+ * (instead of a background fill) to keep the chrome minimal inside the drawer.
+ */
+.monitor-tab {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s;
+  border-bottom: 2px solid transparent;
+}
+
+.monitor-tab:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.monitor-tab.active {
+  color: var(--accent-teal);
+  border-bottom-color: var(--accent-teal);
+}
+
+/* × close button — larger click target than the tooltip close buttons */
+.monitor-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.monitor-close:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Grafana webview tab ──────────────────────────────────────────────────── */
+
+/*
+ * .monitor-grafana is the flex column that holds the webview and the hint text.
+ * flex: 1 ensures it fills all remaining panel height below the header.
+ */
+.monitor-grafana {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/*
+ * The Electron <webview> tag behaves like a replaced element — it must have an
+ * explicit height to render. flex: 1 on its own is insufficient without
+ * align-self: stretch; both are set here for cross-platform reliability.
+ */
+.monitor-grafana-webview {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: none;
+  display: block;
+}
+
+/* Hint text rendered below the webview — very small, muted, italic */
+.monitor-grafana-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  margin: 0;
+  font-style: italic;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-color);
+  background: #161b22;
+}
+
+/* ── Live logs tab ────────────────────────────────────────────────────────── */
+
+/*
+ * .monitor-logs is the flex column that holds the filter toolbar (fixed) and
+ * the scrollable log list (flex: 1). It fills all height below the panel header.
+ */
+.monitor-logs {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Toolbar row: filter chips on the left, entry count on the right */
+.monitor-logs-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-color);
+  background: #161b22;
+  flex-shrink: 0;
+}
+
+.monitor-filter-group {
+  display: flex;
+  gap: 4px;
+}
+
+/*
+ * Filter chip buttons. Each source has a distinct .active accent color:
+ *   "all"      — teal (default accent)
+ *   "suricata" — red  (IPS/alert connotation)
+ *   "zeek"     — blue (network analysis connotation)
+ */
+.monitor-filter-btn {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.monitor-filter-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+/* All Sources — teal accent when active */
+.monitor-filter-btn.monitor-filter-all.active {
+  color: var(--accent-teal);
+  border-color: var(--accent-teal);
+  background: rgba(57, 208, 176, 0.08);
+}
+
+/* Suricata — red accent when active (IPS alert coloring) */
+.monitor-filter-btn.monitor-filter-suricata.active {
+  color: #f85149;
+  border-color: #f85149;
+  background: rgba(248, 81, 73, 0.08);
+}
+
+/* Zeek — blue accent when active (network analysis coloring) */
+.monitor-filter-btn.monitor-filter-zeek.active {
+  color: #58a6ff;
+  border-color: #58a6ff;
+  background: rgba(88, 166, 255, 0.08);
+}
+
+/* Entry count displayed at the right of the filter toolbar */
+.monitor-logs-count {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Scrollable log body — fills the remaining panel height.
+ * overflow-y: auto enables scrolling only when content overflows.
+ * padding-bottom gives space so the last row isn't flush with the panel edge.
+ */
+.monitor-logs-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0 8px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.72rem;
+}
+
+/* Waiting / empty state message — centered in the log body */
+.monitor-logs-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 12px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-family: inherit;
+}
+
+/* ── Log entry rows ───────────────────────────────────────────────────────── */
+
+/*
+ * Each row is a horizontal flex line: timestamp | badge | log line text.
+ * The left border accent color is set by the per-source .monitor-log-* variant
+ * so operators can identify the source at a glance without reading the badge.
+ */
+.monitor-log-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 1px 8px;
+  border-left: 2px solid transparent;
+  line-height: 1.5;
+}
+
+.monitor-log-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Suricata rows — red left border */
+.monitor-log-suricata {
+  border-left-color: rgba(248, 81, 73, 0.5);
+}
+
+/* Zeek rows — blue left border */
+.monitor-log-zeek {
+  border-left-color: rgba(88, 166, 255, 0.4);
+}
+
+/* HH:MM:SS.mmm — monospace, muted, fixed width keeps log lines aligned */
+.monitor-log-ts {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.01em;
+  /* Width covers "HH:MM:SS.mmm" (12 chars) */
+  min-width: 7.5ch;
+}
+
+/*
+ * Source badge — small pill with color-coded background.
+ * font-weight: 600 makes it legible at small sizes even in bold monospace.
+ */
+.monitor-log-badge {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 0 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+}
+
+/* Suricata badge — deep red background */
+.monitor-badge-suricata {
+  background: rgba(248, 81, 73, 0.18);
+  color: #f85149;
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+/* Zeek badge — blue background */
+.monitor-badge-zeek {
+  background: rgba(88, 166, 255, 0.12);
+  color: #58a6ff;
+  border: 1px solid rgba(88, 166, 255, 0.25);
+}
+
+/*
+ * Raw log line text — takes all remaining horizontal space.
+ * overflow: hidden + text-overflow: ellipsis truncates very long lines
+ * (e.g. full Suricata EVE JSON payloads) so one entry never wraps to multiple
+ * display rows and disrupts the uniform log-table appearance.
+ */
+.monitor-log-line {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+/* Monitor toggle button in toolbar — visible only while sim is running */
+.btn-monitor {
+  background: rgba(57, 208, 176, 0.1);
+  border: 1px solid var(--accent-teal);
+  color: var(--accent-teal);
+}
+
+.btn-monitor:hover {
+  background: rgba(57, 208, 176, 0.2);
+}
+
+/* Active state when panel is open */
+.btn-monitor.active {
+  background: rgba(57, 208, 176, 0.18);
+  box-shadow: 0 0 0 1px var(--accent-teal);
 }

@@ -48,7 +48,8 @@ import {
   estimateResources,
   checkSystemMemory,
   validateScenario,
-  toProjectName
+  toProjectName,
+  writeGrafanaProvisioning
 } from '@ics-sim/orchestrator'
 import { initDb, saveActiveScenario, loadActiveScenario, clearActiveScenario } from './db'
 
@@ -519,7 +520,13 @@ function registerIPCHandlers(): void {
         }
       }
 
-      const composeYaml = generateCompose(scenario, projectName)
+      // Write Grafana and Promtail provisioning files to the scenario directory.
+      // These must exist before generateCompose() references their paths in volume
+      // mounts, and before docker compose up starts the Grafana container.
+      const scenarioDir = pathJoin(app.getPath('userData'), 'scenarios', projectName)
+      await writeGrafanaProvisioning(scenarioDir, projectName)
+
+      const composeYaml = generateCompose(scenario, projectName, scenarioDir)
       const result = await dockerClient.startScenario(projectName, composeYaml)
 
       if (!result.ok) {
@@ -571,6 +578,64 @@ function registerIPCHandlers(): void {
     if (!activeProjectName) return []
     return dockerClient.getStatus(activeProjectName)
   })
+
+  // ── Monitoring — Loki log query proxy (Phase 6) ───────────────────────────────
+
+  /**
+   * Proxies a Loki HTTP query_range request from the renderer to the local Loki
+   * container (localhost:3100). Running the request in the main process avoids
+   * CORS and Content-Security-Policy issues that would arise if the renderer
+   * fetched directly from an HTTP origin different from its own page origin.
+   *
+   * The caller passes a LogQL query string and a time range in nanoseconds.
+   * Results are returned as the raw Loki API JSON object — the renderer is
+   * responsible for parsing the streams/values structure.
+   *
+   * @param query  - LogQL expression, e.g. '{job="suricata"} | json | event_type="alert"'
+   * @param fromNs - Range start as a nanosecond Unix timestamp string.
+   * @param toNs   - Range end as a nanosecond Unix timestamp string.
+   * @param limit  - Maximum number of log lines to return (default 200).
+   */
+  ipcMain.handle(
+    'monitor:getLogs',
+    (
+      _e,
+      {
+        query,
+        fromNs,
+        toNs,
+        limit = 200
+      }: { query: string; fromNs: string; toNs: string; limit?: number }
+    ): Promise<{ ok: boolean; data?: unknown; error?: string }> => {
+      return new Promise(resolve => {
+        const params = new URLSearchParams({
+          query,
+          start: fromNs,
+          end: toNs,
+          limit: String(limit),
+          direction: 'backward'
+        })
+        const reqUrl = `http://localhost:3100/loki/api/v1/query_range?${params}`
+        const req = http.get(reqUrl, res => {
+          let body = ''
+          res.on('data', (chunk: Buffer) => (body += chunk.toString()))
+          res.on('end', () => {
+            try {
+              resolve({ ok: true, data: JSON.parse(body) })
+            } catch {
+              resolve({ ok: false, error: 'Invalid JSON response from Loki' })
+            }
+          })
+        })
+        req.on('error', (err: Error) => resolve({ ok: false, error: err.message }))
+        // 5 s timeout — Loki should respond immediately; if not, it hasn't started yet
+        req.setTimeout(5000, () => {
+          req.destroy()
+          resolve({ ok: false, error: 'Loki request timed out — container may still be starting' })
+        })
+      })
+    }
+  )
 
   // ── PLC IDE — live program deployment (Phase 4) ───────────────────────────────
 

@@ -14,6 +14,7 @@
  *   - selectedZone:      The zone key for the selected node (for PropertiesPanel color)
  *   - simStatus:         The simulation lifecycle state machine
  *   - containerStatuses: Live container health data from Docker Compose ps
+ *   - showMonitor:       Whether the Grafana+Loki monitor panel drawer is open
  *
  * Simulation status state machine:
  *   idle ──→ starting ──→ running ──→ stopping ──→ idle
@@ -40,6 +41,7 @@ import { LayerTabBar } from './canvas/LayerTabBar'
 import { PropertiesPanel } from './properties/PropertiesPanel'
 import { PlcIdePanel } from './properties/PlcIdePanel'
 import { AttackTerminalModal } from './terminal/AttackTerminalModal'
+import { MonitorPanel } from './monitor/MonitorPanel'
 import './index.css'
 
 /**
@@ -145,26 +147,30 @@ function LaunchScreen({
  *   `simStatus` inside the branches — making `simStatus === 'stopping'` always-false
  *   on the false branch. Pre-computed booleans avoid this narrowing entirely.
  *
- * @param scenario  - Current scenario (null for blank canvas).
- * @param simStatus - Current simulation lifecycle state.
- * @param docker    - Docker status (used to enable/disable the Run button).
- * @param onImport  - Opens the file picker.
- * @param onNew     - Clears the canvas for a new scenario.
- * @param onStart   - Starts the simulation.
- * @param onStop    - Stops the simulation.
- * @param onHome    - Returns to the launch screen (disabled while running).
+ * @param scenario         - Current scenario (null for blank canvas).
+ * @param simStatus        - Current simulation lifecycle state.
+ * @param docker           - Docker status (used to enable/disable the Run button).
+ * @param showMonitor      - Whether the monitor panel drawer is currently open.
+ * @param onImport         - Opens the file picker.
+ * @param onNew            - Clears the canvas for a new scenario.
+ * @param onStart          - Starts the simulation.
+ * @param onStop           - Stops the simulation.
+ * @param onHome           - Returns to the launch screen (disabled while running).
+ * @param onMonitorToggle  - Toggles the Grafana+Loki monitor panel open/closed.
  */
 function Toolbar({
   scenario,
   simStatus,
   docker,
   showGrid,
+  showMonitor,
   onImport,
   onNew,
   onStart,
   onStop,
   onHome,
-  onGridToggle
+  onGridToggle,
+  onMonitorToggle
 }: {
   scenario: ICSLabScenario | null
   simStatus: SimStatus
@@ -175,6 +181,8 @@ function Toolbar({
    * the underlying showGrid state in App is preserved for when idle resumes.
    */
   showGrid: boolean
+  /** Whether the Grafana+Loki monitor drawer is open. Used to style the toggle button. */
+  showMonitor: boolean
   onImport: () => void
   onNew: () => void
   onStart: () => void
@@ -182,6 +190,8 @@ function Toolbar({
   onHome: () => void
   /** Toggles the snap grid on/off. */
   onGridToggle: () => void
+  /** Toggles the monitor panel open or closed. Only callable when sim is running. */
+  onMonitorToggle: () => void
 }) {
   const scenarioName = scenario?.meta.name ?? 'Untitled Scenario'
   const deviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
@@ -199,6 +209,8 @@ function Toolbar({
     : deviceCount === 0
       ? 'Add at least one device'
       : ''
+  // Monitor button is only meaningful when the simulation is running
+  const canMonitor = isRunning
 
   return (
     <header className="toolbar">
@@ -244,6 +256,21 @@ function Toolbar({
             title={showGrid ? 'Hide 25 × 25 snap grid' : 'Show 25 × 25 snap grid'}
           >
             Grid
+          </button>
+        )}
+
+        {/*
+         * Monitor toggle — only shown while simulation is running.
+         * Opens/closes the Grafana + Live Logs drawer below the canvas.
+         * .active class adds a teal ring so operators know the panel is open.
+         */}
+        {canMonitor && (
+          <button
+            className={`btn btn-sm btn-monitor ${showMonitor ? 'active' : ''}`}
+            onClick={onMonitorToggle}
+            title={showMonitor ? 'Hide monitor panel' : 'Open Grafana + Live Logs monitor'}
+          >
+            Monitor
           </button>
         )}
 
@@ -454,6 +481,11 @@ export default function App() {
   const [selectedZone, setSelectedZone] = useState<string | null>(null)
   const [simStatus, setSimStatus] = useState<SimStatus>('idle')
   const [containerStatuses, setContainerStatuses] = useState<ContainerStatus[]>([])
+  /**
+   * Whether the Grafana + Live Logs monitor panel is open.
+   * Collapses automatically when the simulation stops (see useEffect below).
+   */
+  const [showMonitor, setShowMonitor] = useState<boolean>(false)
   /** PLC device currently open in the full-screen IDE modal. Null when modal is closed. */
   const [plcIdeDevice, setPlcIdeDevice] = useState<DeviceConfig | null>(null)
   /** Attack-machine device currently open in the terminal modal. Null when closed. */
@@ -583,6 +615,27 @@ export default function App() {
   }, [])
 
   /**
+   * Collapses the monitor panel automatically when the simulation transitions
+   * out of 'running' (either stopped by the user or killed externally).
+   * This prevents the panel from persisting in an empty/error state after teardown.
+   */
+  useEffect(() => {
+    if (simStatus !== 'running') {
+      setShowMonitor(false)
+    }
+  }, [simStatus])
+
+  /** Toggles the Grafana + Live Logs monitor panel open or closed. */
+  const handleMonitorToggle = useCallback(() => {
+    setShowMonitor(prev => !prev)
+  }, [])
+
+  /** Collapses the monitor panel — wired to MonitorPanel's onClose prop. */
+  const handleCloseMonitor = useCallback(() => {
+    setShowMonitor(false)
+  }, [])
+
+  /**
    * Applies a security-layer update from FirewallPanel or IDSPanel.
    * The updater receives the current SecurityLayer and returns the modified copy.
    * Writes back into scenario.security so compose-generator.ts picks it up at
@@ -669,12 +722,14 @@ export default function App() {
         simStatus={simStatus}
         docker={docker}
         showGrid={effectiveShowGrid}
+        showMonitor={showMonitor}
         onImport={handleImport}
         onNew={handleNew}
         onStart={handleStart}
         onStop={handleStop}
         onHome={handleHome}
         onGridToggle={handleGridToggle}
+        onMonitorToggle={handleMonitorToggle}
       />
       {/* Purdue model layer tabs — sit between toolbar and the 3-column workspace */}
       <LayerTabBar activeLayer={activeLayer} scenario={scenario} onLayerChange={setActiveLayer} />
@@ -698,6 +753,13 @@ export default function App() {
           onOpenAttackTerminal={handleOpenAttackTerminal}
         />
       </div>
+      {/*
+       * Monitor panel drawer — rendered between workspace and status bar so it
+       * slides in without pushing the toolbar or status bar out of view.
+       * Unmounted entirely when closed to stop the Loki poll loop and
+       * Grafana webview network requests when the panel is not in use.
+       */}
+      {showMonitor && <MonitorPanel onClose={handleCloseMonitor} />}
       <StatusBar docker={docker} simStatus={simStatus} containerStatuses={containerStatuses} />
       {/* PLC IDE full-screen modal — fixed overlay rendered on top of the workspace */}
       {plcIdeDevice && (
