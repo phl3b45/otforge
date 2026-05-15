@@ -27,9 +27,10 @@
  *   When the simulation is not running, a note explains it must be started first.
  */
 
-import type { DeviceConfig } from '@ics-sim/schema'
+import type { DeviceConfig, SecurityLayer } from '@ics-sim/schema'
 import { DeviceIcon } from '../icons/DeviceIcons'
 import { ZONE_COLORS } from '../canvas/DeviceNode'
+import { FirewallPanel, IDSPanel } from './SecurityPanel'
 
 /** Full human-readable names for the properties panel header. */
 const CATEGORY_LABELS: Record<string, string> = {
@@ -67,6 +68,16 @@ interface PropertiesPanelProps {
   /** True when a simulation is actively running (enables terminal/IDE launch buttons). */
   simRunning: boolean
   /**
+   * Scenario-level security configuration. Null when no scenario is open.
+   * Passed to FirewallPanel and IDSPanel when a security device is selected.
+   */
+  security: SecurityLayer | null
+  /**
+   * Called when the user edits security config in FirewallPanel or IDSPanel.
+   * App.tsx applies the updater to scenario.security and re-renders.
+   */
+  onSecurityChange: (updater: (s: SecurityLayer) => SecurityLayer) => void
+  /**
    * Called when the user clicks "Open PLC IDE" on a PLC device.
    * App.tsx responds by rendering PlcIdeModal with the full two-column editor.
    */
@@ -103,6 +114,8 @@ export function PropertiesPanel({
   device,
   zone,
   simRunning,
+  security,
+  onSecurityChange,
   onOpenPlcIde,
   onOpenAttackTerminal
 }: PropertiesPanelProps) {
@@ -273,6 +286,30 @@ export function PropertiesPanel({
                 <span className="prop-label">Namespace</span>
                 <code className="prop-value">{device.opcua.namespace}</code>
               </div>
+            </section>
+          )}
+
+          {/* ── Firewall panel (Phase 5) ──────────────────────────────────────── */}
+          {/* Shown when a firewall device is selected — edits scenario.security.  */}
+          {device.category === 'firewall' && security && (
+            <FirewallPanel security={security} onSecurityChange={onSecurityChange} />
+          )}
+          {device.category === 'firewall' && !security && (
+            <section className="prop-section">
+              <p className="prop-attack-idle">
+                Open or create a scenario to configure firewall rules.
+              </p>
+            </section>
+          )}
+
+          {/* ── IDS/IPS panel (Phase 5) ───────────────────────────────────────── */}
+          {/* Shown when an ids-ips device is selected — edits scenario.security.ids. */}
+          {device.category === 'ids-ips' && security && (
+            <IDSPanel security={security} onSecurityChange={onSecurityChange} />
+          )}
+          {device.category === 'ids-ips' && !security && (
+            <section className="prop-section">
+              <p className="prop-attack-idle">Open or create a scenario to configure IDS rules.</p>
             </section>
           )}
 

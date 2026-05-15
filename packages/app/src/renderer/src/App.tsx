@@ -31,7 +31,8 @@ import type {
   DeviceConfig,
   ContainerStatus,
   PLCProgramConfig,
-  NetworkZone
+  NetworkZone,
+  SecurityLayer
 } from '@ics-sim/schema'
 import { ScadaCanvas } from './canvas/ScadaCanvas'
 import { DevicePalette } from './palette/DevicePalette'
@@ -582,6 +583,19 @@ export default function App() {
   }, [])
 
   /**
+   * Applies a security-layer update from FirewallPanel or IDSPanel.
+   * The updater receives the current SecurityLayer and returns the modified copy.
+   * Writes back into scenario.security so compose-generator.ts picks it up at
+   * simulation start. No-ops if no scenario is open.
+   */
+  const handleSecurityChange = useCallback((updater: (s: SecurityLayer) => SecurityLayer) => {
+    setScenario(prev => {
+      if (!prev) return prev
+      return { ...prev, security: updater(prev.security) }
+    })
+  }, [])
+
+  /**
    * Effective grid visibility passed to the canvas and toolbar.
    * Grid is suppressed during simulation so operators aren't distracted by the
    * snap-to-grid behavior while monitoring live containers. The underlying
@@ -678,6 +692,8 @@ export default function App() {
           device={selectedDevice}
           zone={selectedZone}
           simRunning={simStatus === 'running'}
+          security={scenario?.security ?? null}
+          onSecurityChange={handleSecurityChange}
           onOpenPlcIde={handleOpenPlcIde}
           onOpenAttackTerminal={handleOpenAttackTerminal}
         />

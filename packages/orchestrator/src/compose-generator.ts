@@ -234,6 +234,17 @@ export function generateCompose(scenario: ICSLabScenario, projectName: string): 
         'it-net': { ipv4_address: `${ZONE_DEFAULTS.it.subnet.replace('.0/24', '.254')}` },
         'dmz-net': { ipv4_address: `${ZONE_DEFAULTS.dmz.subnet.replace('.0/24', '.254')}` }
       }
+      // Inject scenario security config so the entrypoint can build the nftables ruleset.
+      // FW_DEFAULT_POLICY maps schema "deny"/"allow" to nftables "drop"/"accept".
+      // FW_RULES_JSON is the full ACLRule array serialized to JSON — parsed by jq in the entrypoint.
+      const fwEnv: string[] = services[serviceName].environment ?? []
+      fwEnv.push(
+        `FW_DEFAULT_POLICY=${scenario.security.defaultFirewallPolicy === 'allow' ? 'accept' : 'drop'}`
+      )
+      if (scenario.security.firewallRules.length > 0) {
+        fwEnv.push(`FW_RULES_JSON=${JSON.stringify(scenario.security.firewallRules)}`)
+      }
+      services[serviceName].environment = fwEnv
     }
 
     // Attack machine is always isolated on the External network.
@@ -262,6 +273,17 @@ export function generateCompose(scenario: ICSLabScenario, projectName: string): 
   // ── Suricata — inline IPS/IDS on OT and IT networks ──────────────────────
   // Placed on both OT and IT nets so it can analyze cross-zone traffic.
   // Eve JSON logs go to a named volume, then Loki reads them (Phase 6).
+  //
+  // IDS_RULESETS — comma-separated Emerging Threats ruleset IDs selected in the
+  //   IDSPanel UI (scenario.security.ids.enabledRulesets). Defaults to
+  //   "emerging-scada,emerging-modbus" when the scenario has no selection.
+  // IDS_DISABLED_SIDS — comma-separated SID numbers to suppress in threshold.conf.
+  const suricataRulesets =
+    scenario.security.ids.enabledRulesets.length > 0
+      ? scenario.security.ids.enabledRulesets.join(',')
+      : 'emerging-scada,emerging-modbus'
+  const suricataDisabledSids = scenario.security.ids.disabledRuleIds.join(',')
+
   volumes[`${projectName}-suricata-logs`] = {}
   services['suricata'] = {
     image: 'ghcr.io/iburres/ics-sim-suricata:latest',
@@ -271,7 +293,7 @@ export function generateCompose(scenario: ICSLabScenario, projectName: string): 
       'ot-net': { ipv4_address: `${otBase}.253` },
       'it-net': { ipv4_address: `${itBase}.253` }
     },
-    environment: undefined,
+    environment: [`IDS_RULESETS=${suricataRulesets}`, `IDS_DISABLED_SIDS=${suricataDisabledSids}`],
     cap_add: ['NET_ADMIN', 'NET_RAW'], // AF_PACKET mode requires raw socket access
     volumes: [`${projectName}-suricata-logs:/var/log/suricata`],
     deploy: { resources: { limits: { memory: '150m', cpus: '0.5' } } }
@@ -279,13 +301,22 @@ export function generateCompose(scenario: ICSLabScenario, projectName: string): 
 
   // ── Zeek — passive network analysis tap on OT network ────────────────────
   // Zeek monitors traffic passively; it does not block or modify packets.
+  //
+  // ZEEK_SCRIPTS — comma-separated script filenames from the Zeek site directory,
+  //   selected in the IDSPanel UI (scenario.security.ids.zeekScripts).
+  //   Defaults to "modbus.zeek,dnp3.zeek" when the scenario has no selection.
+  const zeekScripts =
+    scenario.security.ids.zeekScripts.length > 0
+      ? scenario.security.ids.zeekScripts.join(',')
+      : 'modbus.zeek,dnp3.zeek'
+
   volumes[`${projectName}-zeek-logs`] = {}
   services['zeek'] = {
     image: 'ghcr.io/iburres/ics-sim-zeek:latest',
     container_name: `${projectName}-zeek`,
     restart: 'unless-stopped',
     networks: { 'ot-net': { ipv4_address: `${otBase}.252` } },
-    environment: undefined,
+    environment: [`ZEEK_SCRIPTS=${zeekScripts}`],
     cap_add: ['NET_ADMIN', 'NET_RAW'],
     volumes: [`${projectName}-zeek-logs:/var/log/zeek`],
     deploy: { resources: { limits: { memory: '150m', cpus: '0.5' } } }

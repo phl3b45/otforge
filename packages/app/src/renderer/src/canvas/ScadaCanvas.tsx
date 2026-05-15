@@ -641,6 +641,15 @@ export function ScadaCanvas({
         protocols: DEFAULT_PROTOCOLS[category]
       }
 
+      // IED devices run the DNP3 outstation container — pre-populate default DNP3
+      // config so the PropertiesPanel shows the addresses immediately and the compose
+      // generator can inject the correct env vars without the user having to configure
+      // them first. outstationAddress 10 is a recognisable non-zero default; users can
+      // change it in PropertiesPanel. port 20000 is the IANA-registered DNP3 TCP port.
+      if (category === 'ied') {
+        device.dnp3 = { masterAddress: 1, outstationAddress: 10, port: 20000 }
+      }
+
       const newNode: DeviceNodeType = {
         id: nodeId,
         type: 'deviceNode',
