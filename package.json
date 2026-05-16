@@ -13,7 +13,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=packages/app",
+    "dev": "npm run build:packages && npm run dev --workspace=packages/app",
     "build": "npm run build --workspace=packages/schema && npm run build --workspace=packages/app",
     "build:win": "npm run build:schema && npm run build:win --workspace=packages/app",
     "build:mac": "npm run build:schema && npm run build:mac --workspace=packages/app",
