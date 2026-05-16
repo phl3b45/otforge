@@ -150,7 +150,45 @@ export class DockerClient {
       )
       return { ok: true }
     } catch (err) {
-      return { ok: false, error: (err as Error).message }
+      // Node.js exec errors include the raw command string + full stderr in .message,
+      // but the useful failure reason is buried among docker compose lifecycle lines
+      // ("Creating...", "Started...", "Stopping...", etc.). Extract it here.
+      const execErr = err as Error & { stderr?: string; stdout?: string }
+
+      // Prefer the raw stderr field (just daemon output) over .message (includes
+      // the full command string and all lifecycle noise).
+      const rawStderr = execErr.stderr ?? execErr.message
+
+      // Write the complete output to a log file for advanced diagnostics.
+      // Path is shown in the error message so users know where to look.
+      const logPath = join(scenarioDir, 'compose-error.log')
+      try {
+        const logContent =
+          `=== docker compose up stderr ===\n${rawStderr}\n\n` +
+          `=== docker compose up stdout ===\n${execErr.stdout ?? '(none)'}\n`
+        await writeFile(logPath, logContent, 'utf-8')
+      } catch {
+        /* log write failure is non-fatal */
+      }
+
+      // Extract the lines that contain the actual failure reason.
+      // Docker daemon error messages always start with "Error" or contain
+      // "failed", "invalid", "cannot", "denied", "unauthorized", "no such".
+      const errorLines = rawStderr
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => /error|failed|cannot|invalid|denied|unauthorized|no such/i.test(l))
+        .filter(Boolean)
+        // Deduplicate — docker compose sometimes repeats the same error per service
+        .filter((l, i, arr) => arr.indexOf(l) === i)
+        .slice(0, 8)
+
+      const shortError =
+        errorLines.length > 0
+          ? errorLines.join('\n')
+          : `docker compose exited with an error. Full log: ${logPath}`
+
+      return { ok: false, error: shortError }
     }
   }
 
