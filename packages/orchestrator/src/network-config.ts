@@ -29,11 +29,21 @@ import type { NetworkZone } from '@ics-sim/schema'
  * Used by the compose generator to create Docker bridge networks when the
  * scenario does not provide an explicit segment for a zone.
  */
+/**
+ * Subnet selection rationale:
+ *   The original 172.20.x.x range sits in the middle of Docker Desktop's
+ *   auto-assignment pool (172.17–172.31) and is commonly consumed by corporate
+ *   VPN clients and university network adapters, causing "Address already in use"
+ *   errors on first launch.
+ *
+ *   10.200.x.x is an RFC 1918 private range that VPN clients and institutional
+ *   networks almost never assign, making conflicts highly unlikely in lab settings.
+ */
 export const ZONE_DEFAULTS: Record<NetworkZone, { subnet: string; gateway: string }> = {
-  ot: { subnet: '172.20.10.0/24', gateway: '172.20.10.1' },
-  it: { subnet: '172.20.20.0/24', gateway: '172.20.20.1' },
-  dmz: { subnet: '172.20.30.0/24', gateway: '172.20.30.1' },
-  external: { subnet: '172.20.40.0/24', gateway: '172.20.40.1' }
+  ot: { subnet: '10.200.10.0/24', gateway: '10.200.10.1' },
+  it: { subnet: '10.200.20.0/24', gateway: '10.200.20.1' },
+  dmz: { subnet: '10.200.30.0/24', gateway: '10.200.30.1' },
+  external: { subnet: '10.200.40.0/24', gateway: '10.200.40.1' }
 }
 
 /**

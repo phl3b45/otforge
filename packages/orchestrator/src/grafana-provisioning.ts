@@ -33,10 +33,16 @@
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import yaml from 'js-yaml'
+import { zoneIpPrefix } from './network-config'
 
-/** Fixed service IPs from ZONE_DEFAULTS (it-net = 172.20.20.0/24). */
-const INFLUXDB_IP = '172.20.20.10'
-const LOKI_IP = '172.20.20.11'
+/**
+ * Service IPs derived from ZONE_DEFAULTS so they stay in sync if the subnet
+ * ever changes. InfluxDB is .10 and Loki is .11 on the IT network — matching
+ * the static assignments in compose-generator.ts.
+ */
+const IT_PREFIX = zoneIpPrefix('it')
+const INFLUXDB_IP = `${IT_PREFIX}.10`
+const LOKI_IP = `${IT_PREFIX}.11`
 
 /**
  * Writes all Grafana and Promtail provisioning files to the scenario directory.
