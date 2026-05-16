@@ -67,12 +67,18 @@ function buildEnv(): NodeJS.ProcessEnv {
 /**
  * Runs a shell command with the augmented Docker PATH environment.
  *
+ * maxBuffer is set to 50 MB (vs the Node.js default of 1 MB) because
+ * `docker compose up` writes layer-download progress to stderr during the
+ * first image pull of a scenario. Each image can produce hundreds of lines
+ * of "Pulling layer … / Pull complete" output; across 10+ images the combined
+ * stderr easily exceeds the default limit and throws "maxBuffer length exceeded".
+ *
  * @param cmd - The shell command string to execute.
  * @returns stdout and stderr strings from the command.
  * @throws If the command exits with a non-zero status.
  */
 async function run(cmd: string): Promise<{ stdout: string; stderr: string }> {
-  return execAsync(cmd, { env: buildEnv() })
+  return execAsync(cmd, { env: buildEnv(), maxBuffer: 50 * 1024 * 1024 })
 }
 
 /**
@@ -136,7 +142,12 @@ export class DockerClient {
       // recursive: true makes mkdir a no-op if the directory already exists
       await mkdir(scenarioDir, { recursive: true })
       await writeFile(composeFile, composeYaml, 'utf-8')
-      await run(`docker compose -p ${projectName} -f "${composeFile}" up -d --remove-orphans`)
+      // --quiet-pull suppresses per-layer download progress lines from stderr.
+      // Without it, pulling 10+ images on first launch generates 10–50 MB of
+      // progress output that overflows maxBuffer even at 50 MB on slow connections.
+      await run(
+        `docker compose -p ${projectName} -f "${composeFile}" up -d --remove-orphans --quiet-pull`
+      )
       return { ok: true }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
