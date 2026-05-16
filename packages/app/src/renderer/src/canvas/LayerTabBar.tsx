@@ -1,15 +1,19 @@
 /**
- * LayerTabBar.tsx — Purdue model layer navigation tabs.
+ * LayerTabBar.tsx — Purdue Reference Model layer navigation tabs.
  *
- * Renders four tabs, one per ISA-95 / Purdue level, displayed between the
- * toolbar and the 3-column workspace. The active tab determines which layer
- * the canvas, palette, and properties panel are scoped to.
+ * Renders five tabs corresponding to ISA-95 / IEC 62443-3-2 Purdue Model levels,
+ * displayed between the toolbar and the 3-column workspace. The active tab scopes
+ * the canvas, device palette, and properties panel to that Purdue layer.
  *
- * Tab order (left → right) follows the Purdue model from field level to enterprise:
- *   OT Process   — Levels 0–2: PLCs, RTUs, IEDs, field sensors/actuators
- *   DMZ          — Level 3.5:  Firewalls, jump hosts, IDS/IPS sensors
- *   IT Network   — Level 4:    Historians, HMIs, business systems
- *   External     — Level 5:    Internet-facing, red-team attack machine
+ * Tab order (left → right) follows the Purdue model from field level to internet:
+ *   OT Process     — Levels 0–2:  PLCs, RTUs, IEDs, field sensors/actuators
+ *   Control Center — Level 3:     HMIs, historians, application/database servers
+ *   Plant DMZ      — Level 3.5:   Firewalls, IDS/IPS, jump hosts, Suricata/Zeek
+ *   Enterprise     — Level 4:     Domain controllers, web/business servers, desktops
+ *   Internet DMZ   — Level 5:     Email servers, internet-facing servers
+ *
+ * The 'attacker' zone is intentionally excluded from tabs — the attack machine is
+ * launched via a dedicated toolbar button and runs in a separate OS window.
  *
  * Each tab shows:
  *   - Zone color accent (left border + active bottom underline)
@@ -25,65 +29,119 @@
 
 import type { NetworkZone, ICSLabScenario } from '@ics-sim/schema'
 
+/**
+ * The five Purdue zones that appear as navigable layer tabs.
+ * 'attacker' is a valid NetworkZone but is excluded from tabs — the red team
+ * machine has its own launcher window separate from the canvas workflow.
+ */
+type PurdueLayerZone = 'ot' | 'control' | 'plant-dmz' | 'enterprise' | 'internet-dmz'
+
 /** Display name for each Purdue layer tab. */
-const LAYER_LABELS: Record<NetworkZone, string> = {
+const LAYER_LABELS: Record<PurdueLayerZone, string> = {
   ot: 'OT Process',
-  it: 'IT Network',
-  dmz: 'DMZ',
-  external: 'External'
+  control: 'Control Center',
+  'plant-dmz': 'Plant DMZ',
+  enterprise: 'Enterprise',
+  'internet-dmz': 'Internet DMZ'
 }
 
 /** Purdue level badge text shown inside each tab. */
-const LAYER_LEVEL: Record<NetworkZone, string> = {
+const LAYER_LEVEL: Record<PurdueLayerZone, string> = {
   ot: 'L0–L2',
-  it: 'L4',
-  dmz: 'L3.5',
-  external: 'L5'
+  control: 'L3',
+  'plant-dmz': 'L3.5',
+  enterprise: 'L4',
+  'internet-dmz': 'L5'
 }
 
 /** One-line description of what belongs in each layer. */
-const LAYER_SUBLABEL: Record<NetworkZone, string> = {
+const LAYER_SUBLABEL: Record<PurdueLayerZone, string> = {
   ot: 'PLCs · RTUs · IEDs · Field devices',
-  it: 'Historians · HMIs · Business systems',
-  dmz: 'Firewalls · Jump hosts · IDS/IPS',
-  external: 'Attack machine · Internet-facing'
+  control: 'HMIs · Historians · App/DB servers',
+  'plant-dmz': 'Firewalls · IDS/IPS · Jump hosts',
+  enterprise: 'Domain ctrl · Web · Business · Desktops',
+  'internet-dmz': 'Email servers · Internet-facing servers'
 }
-
-/** Zone accent colors — match ZONE_COLORS in DeviceNode.tsx. */
-export const LAYER_COLORS: Record<NetworkZone, string> = {
-  ot: '#39d0b0',
-  it: '#388bfd',
-  dmz: '#d29922',
-  external: '#f85149'
-}
-
-/** Tab rendering order — Purdue model from field (OT) through DMZ to enterprise (External). */
-const LAYER_ORDER: NetworkZone[] = ['ot', 'dmz', 'it', 'external']
 
 /**
- * Counts devices per zone in a scenario by reading each CanvasNode's data.zone.
- * Falls back to counting from device category when no visual layer is saved.
+ * Zone accent colors — match ZONE_COLORS in DeviceNode.tsx.
+ * Exported so other components (PropertiesPanel, etc.) can reference the same palette.
+ */
+export const LAYER_COLORS: Record<NetworkZone, string> = {
+  ot: '#39d0b0',
+  control: '#388bfd',
+  'plant-dmz': '#d29922',
+  enterprise: '#a371f7',
+  'internet-dmz': '#f78166',
+  attacker: '#f85149'
+}
+
+/** Tab rendering order — Purdue model from field devices (OT) through internet (L5). */
+const LAYER_ORDER: PurdueLayerZone[] = ['ot', 'control', 'plant-dmz', 'enterprise', 'internet-dmz']
+
+/**
+ * Maps a device category to its Purdue layer for the count badge fallback.
+ * Used only when no visual layer positions have been saved yet.
+ */
+function inferLayerFromCategory(category: string): PurdueLayerZone {
+  // Level 3 Control Center devices
+  if (
+    [
+      'hmi',
+      'historian',
+      'application-server',
+      'database-server',
+      'engineering-workstation'
+    ].includes(category)
+  )
+    return 'control'
+  // Level 3.5 Plant DMZ devices
+  if (['firewall', 'ids-ips', 'switch', 'router'].includes(category)) return 'plant-dmz'
+  // Level 4 Enterprise devices
+  if (
+    ['domain-controller', 'web-server', 'business-server', 'enterprise-desktop'].includes(category)
+  )
+    return 'enterprise'
+  // Level 5 Internet DMZ devices
+  if (['email-server', 'internet-server'].includes(category)) return 'internet-dmz'
+  // attack-machine is excluded from tabs — it lives in the 'attacker' zone
+  // Default OT for all other devices (PLCs, RTUs, sensors, field devices)
+  return 'ot'
+}
+
+/**
+ * Counts devices per Purdue layer tab in a scenario.
+ *
+ * Reads each CanvasNode's data.zone when visual positions are saved.
+ * Falls back to category-based inference when no visual layer exists yet.
+ * Attack machines (zone='attacker') are excluded from all counts.
  *
  * @param scenario - The active scenario, or null.
- * @returns A map from NetworkZone to device count.
+ * @returns A map from PurdueLayerZone to device count.
  */
-function countDevicesByLayer(scenario: ICSLabScenario | null): Record<NetworkZone, number> {
-  const counts: Record<NetworkZone, number> = { ot: 0, it: 0, dmz: 0, external: 0 }
+function countDevicesByLayer(scenario: ICSLabScenario | null): Record<PurdueLayerZone, number> {
+  const counts: Record<PurdueLayerZone, number> = {
+    ot: 0,
+    control: 0,
+    'plant-dmz': 0,
+    enterprise: 0,
+    'internet-dmz': 0
+  }
   if (!scenario) return counts
 
   if (scenario.visual.nodes.length > 0) {
     // Count from saved visual layer — each node carries its zone in data.zone
     for (const node of scenario.visual.nodes) {
       const z = node.data.zone as NetworkZone
-      if (z in counts) counts[z]++
+      if (z in counts) counts[z as PurdueLayerZone]++
+      // attacker zone nodes are silently excluded from tab counts
     }
   } else {
-    // No visual data yet — infer from device category (matches ScadaCanvas auto-layout)
+    // No visual data yet — infer from device category
     for (const dev of Object.values(scenario.devices.devices)) {
-      if (dev.category === 'attack-machine') counts.external++
-      else if (dev.category === 'firewall' || dev.category === 'ids-ips') counts.dmz++
-      else if (dev.category === 'historian' || dev.category === 'hmi') counts.it++
-      else counts.ot++
+      if (dev.category === 'attack-machine') continue // excluded from tabs
+      const layer = inferLayerFromCategory(dev.category)
+      counts[layer]++
     }
   }
   return counts
@@ -96,13 +154,16 @@ interface LayerTabBarProps {
 }
 
 /**
- * Horizontal tab bar for switching between Purdue model layers.
+ * Horizontal tab bar for switching between Purdue Reference Model layers.
+ *
+ * Only the five ISA-95 Purdue zones appear as tabs. The 'attacker' zone is
+ * intentionally absent — the attack machine has its own OS window workflow.
  */
 export function LayerTabBar({ activeLayer, scenario, onLayerChange }: LayerTabBarProps) {
   const counts = countDevicesByLayer(scenario)
 
   return (
-    <nav className="layer-tab-bar" role="tablist" aria-label="Purdue model layers">
+    <nav className="layer-tab-bar" role="tablist" aria-label="Purdue Reference Model layers">
       {LAYER_ORDER.map(layer => {
         const isActive = layer === activeLayer
         const color = LAYER_COLORS[layer]
@@ -122,12 +183,12 @@ export function LayerTabBar({ activeLayer, scenario, onLayerChange }: LayerTabBa
             }
             onClick={() => onLayerChange(layer)}
           >
-            {/* Level badge */}
+            {/* Level badge — e.g. "L0–L2", "L3", "L3.5" */}
             <span className="layer-tab-level" style={{ color }}>
               {LAYER_LEVEL[layer]}
             </span>
 
-            {/* Layer name + device count */}
+            {/* Layer name + device count badge */}
             <span className="layer-tab-name">
               {LAYER_LABELS[layer]}
               {count > 0 && (

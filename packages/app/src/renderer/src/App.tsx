@@ -42,6 +42,7 @@ import { PropertiesPanel } from './properties/PropertiesPanel'
 import { PlcIdePanel } from './properties/PlcIdePanel'
 import { AttackTerminalModal } from './terminal/AttackTerminalModal'
 import { MonitorPanel } from './monitor/MonitorPanel'
+import { SettingsModal } from './settings/SettingsModal'
 import './index.css'
 
 /**
@@ -157,6 +158,10 @@ function LaunchScreen({
  * @param onStop           - Stops the simulation.
  * @param onHome           - Returns to the launch screen (disabled while running).
  * @param onMonitorToggle  - Toggles the Grafana+Loki monitor panel open/closed.
+ * @param onSettingsOpen      - Opens the Network Settings modal.
+ * @param onDelete            - Clears all devices and resets the scenario after confirmation.
+ * @param onAttackMachineAdd  - Adds an attack machine device to the current scenario.
+ * @param onAttackMachineLaunch - Opens the attack machine OS window.
  */
 function Toolbar({
   scenario,
@@ -166,11 +171,15 @@ function Toolbar({
   showMonitor,
   onImport,
   onNew,
+  onDelete,
   onStart,
   onStop,
   onHome,
   onGridToggle,
-  onMonitorToggle
+  onMonitorToggle,
+  onSettingsOpen,
+  onAttackMachineAdd,
+  onAttackMachineLaunch
 }: {
   scenario: ICSLabScenario | null
   simStatus: SimStatus
@@ -185,6 +194,8 @@ function Toolbar({
   showMonitor: boolean
   onImport: () => void
   onNew: () => void
+  /** Clears all devices and resets the current scenario after a confirmation prompt. */
+  onDelete: () => void
   onStart: () => void
   onStop: () => void
   onHome: () => void
@@ -192,6 +203,17 @@ function Toolbar({
   onGridToggle: () => void
   /** Toggles the monitor panel open or closed. Only callable when sim is running. */
   onMonitorToggle: () => void
+  /** Opens the Network Settings modal for subnet configuration. */
+  onSettingsOpen: () => void
+  /** Adds a default attack machine device to the current scenario. */
+  onAttackMachineAdd: () => void
+  /**
+   * Opens the attack machine's Xfce4 desktop in a separate OS window via noVNC.
+   * Only callable when simulation is running and an attack machine is in the scenario.
+   *
+   * @param nodeId - Canvas node ID of the attack-machine device to launch.
+   */
+  onAttackMachineLaunch: (nodeId: string) => void
 }) {
   const scenarioName = scenario?.meta.name ?? 'Untitled Scenario'
   const deviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
@@ -211,6 +233,16 @@ function Toolbar({
       : ''
   // Monitor button is only meaningful when the simulation is running
   const canMonitor = isRunning
+  // Settings button is always available (network config applies to the next simulation start)
+  const canOpenSettings = !isStarting && !isStopping
+
+  // Find any attack-machine devices in the current scenario
+  const attackDevices = scenario
+    ? Object.entries(scenario.devices.devices).filter(([, d]) => d.category === 'attack-machine')
+    : []
+  const hasAttackMachine = attackDevices.length > 0
+  // First attack machine nodeId — used by the Launch button when simulation is running
+  const firstAttackNodeId = attackDevices[0]?.[0] ?? null
 
   return (
     <header className="toolbar">
@@ -245,6 +277,21 @@ function Toolbar({
         </button>
 
         {/*
+         * Delete scenario — only visible when idle with a scenario loaded.
+         * Asks for confirmation before clearing all devices so accidental clicks
+         * don't lose unsaved work.
+         */}
+        {isIdle && scenario && (
+          <button
+            className="btn btn-sm btn-ghost btn-delete-scenario"
+            onClick={onDelete}
+            title="Clear all devices and reset this scenario"
+          >
+            Delete Scenario
+          </button>
+        )}
+
+        {/*
          * Grid toggle — hidden during simulation so operators aren't distracted.
          * The grid is always 25 × 25 cells (CELL_SIZE in ScadaCanvas.tsx); there
          * is no size picker. Filled style = on, ghost = off.
@@ -273,6 +320,59 @@ function Toolbar({
             Monitor
           </button>
         )}
+
+        {/*
+         * Attack Machine section — two-state button:
+         *   idle + no attack machine  → "Add Attack Machine" adds a default kali device
+         *   idle + attack machine     → shows "⚔ Attack Machine" as an indicator (disabled)
+         *   running + attack machine  → "Launch Attack Machine" opens a separate OS window
+         *
+         * The attack machine is intentionally excluded from the Purdue layer canvas tabs.
+         * Instructors add it here; students launch it from this button when the sim runs.
+         */}
+        {isRunning && hasAttackMachine && firstAttackNodeId ? (
+          <button
+            className="btn btn-sm btn-attack-launch"
+            onClick={() => onAttackMachineLaunch(firstAttackNodeId)}
+            title="Open Kali Linux attack machine in a separate window (can be moved to a second monitor)"
+          >
+            ⚔ Attack Machine
+          </button>
+        ) : (
+          !isRunning && (
+            <button
+              className={`btn btn-sm ${hasAttackMachine ? 'btn-attack-active' : 'btn-attack-add'}`}
+              onClick={hasAttackMachine ? undefined : onAttackMachineAdd}
+              // Only disable during transitional states when there is no machine yet.
+              // When a machine IS present the button is an indicator (no click action);
+              // keeping it enabled prevents the browser from auto-dimming the red color.
+              disabled={!hasAttackMachine && (isStarting || isStopping)}
+              title={
+                hasAttackMachine
+                  ? 'Attack machine is included in this scenario — launch it when the simulation is running'
+                  : 'Add a Kali Linux attack machine to this scenario'
+              }
+            >
+              {hasAttackMachine ? '⚔ Attack Ready' : '+ Attack Machine'}
+            </button>
+          )
+        )}
+
+        {/*
+         * Settings gear button — always visible (before the divider) so users can
+         * configure subnet preferences at any time. Disabled only during transitional
+         * states (starting / stopping) to avoid modifying settings while Docker is
+         * already reading them. Changes take effect on the next simulation start.
+         */}
+        <button
+          className="btn btn-sm btn-ghost btn-settings-gear"
+          onClick={onSettingsOpen}
+          disabled={!canOpenSettings}
+          title="Network settings — configure Docker subnet addresses"
+          aria-label="Open network settings"
+        >
+          ⚙
+        </button>
 
         <div className="toolbar-divider" />
         {/* Stop button shown while running/starting; Run button shown while idle/stopping */}
@@ -488,6 +588,14 @@ export default function App() {
   const [showMonitor, setShowMonitor] = useState<boolean>(false)
 
   /**
+   * Whether the Network Settings modal is open.
+   * The modal allows users to configure Docker subnet assignments — either
+   * auto-detected (default) or pinned to specific CIDR ranges for power users
+   * who need to avoid conflicts with VPN clients or institutional networks.
+   */
+  const [showSettings, setShowSettings] = useState<boolean>(false)
+
+  /**
    * Error message from the most recent failed simulation start.
    * Shown in a dismissible banner below the toolbar. Cleared when
    * the user retries or starts a new scenario.
@@ -553,6 +661,33 @@ export default function App() {
     setSimError(null)
     setView('canvas')
   }, [])
+
+  /**
+   * Prompts for confirmation then clears all devices from the current scenario,
+   * resetting it to an empty canvas. Leaves the scenario object in place (name
+   * and network config are preserved) so the user doesn't lose their settings.
+   * Only callable when the simulation is idle.
+   */
+  const handleDelete = useCallback(() => {
+    if (!scenario) return
+    const confirmed = window.confirm(
+      `Delete all devices in "${scenario.meta.name}"?\n\nThis cannot be undone.`
+    )
+    if (!confirmed) return
+    setScenario(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        devices: { devices: {}, connections: [] },
+        // Clear visual positions too — scenarioToNodes reads visual.nodes first,
+        // so leaving them populated keeps icons on screen even with no devices.
+        visual: { nodes: [], edges: [] }
+      }
+    })
+    setSelectedDevice(null)
+    setSelectedZone(null)
+    setSimError(null)
+  }, [scenario])
 
   /** Returns to the launch screen. Blocked while a simulation is running. */
   const handleHome = useCallback(() => {
@@ -665,6 +800,85 @@ export default function App() {
     setShowMonitor(false)
   }, [])
 
+  /** Opens the Network Settings modal. */
+  const handleSettingsOpen = useCallback(() => {
+    setShowSettings(true)
+  }, [])
+
+  /** Closes the Network Settings modal. Changes take effect on next simulation start. */
+  const handleSettingsClose = useCallback(() => {
+    setShowSettings(false)
+  }, [])
+
+  /**
+   * Adds a default attack machine device to the scenario's device list.
+   *
+   * The attack machine is NOT placed on any canvas tab (it lives in the 'attacker'
+   * zone which has no Purdue layer tab). It is added directly to scenario.devices
+   * so the compose generator creates the Kali Linux container and noVNC port mapping
+   * at simulation start. The device's IP defaults to 10.200.60.10 (attacker subnet).
+   */
+  const handleAttackMachineAdd = useCallback(() => {
+    const nodeId = `attack-machine-${Date.now()}`
+    const device = {
+      nodeId,
+      category: 'attack-machine' as const,
+      ipAddress: '10.200.60.10',
+      protocols: ['none' as const]
+    }
+    setScenario(prev => {
+      const base = prev ?? {
+        meta: {
+          formatVersion: '1.0' as const,
+          name: 'Untitled Scenario',
+          description: '',
+          sector: 'generic' as const,
+          author: '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          appVersion: '0.1.0',
+          locked: false,
+          brief: '',
+          requirements: { estimatedRamMb: 0, estimatedCpuCores: 1, containerCount: 0 }
+        },
+        visual: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+        network: { segments: [], routes: [] },
+        devices: { devices: {} },
+        security: {
+          defaultFirewallPolicy: 'deny' as const,
+          firewallRules: [],
+          ids: { enabledRulesets: [], disabledRuleIds: [], zeekScripts: [] },
+          logging: { retentionDays: 30, influxdbEnabled: true, lokiEnabled: true }
+        },
+        registry: [],
+        packLayers: []
+      }
+      return {
+        ...base,
+        devices: { devices: { ...base.devices.devices, [nodeId]: device } }
+      }
+    })
+  }, [])
+
+  /**
+   * Opens the attack machine's Kali Linux desktop in a separate Electron OS window.
+   *
+   * Calls the `attack:launchWindow` IPC handler which creates a new BrowserWindow
+   * loading the noVNC URL for the attack container's Xfce4 desktop (port 6080 →
+   * host port 6900+). The window is a native OS window so it can be dragged to a
+   * second monitor independently of the main app.
+   *
+   * @param nodeId - Canvas node ID of the attack-machine device to open.
+   */
+  const handleAttackMachineLaunch = useCallback(async (nodeId: string) => {
+    const result = await window.electronAPI.attack.launchWindow(nodeId)
+    if (!result.ok) {
+      // Surface the error in the same dismissible banner used for simulation start failures
+      // so the instructor sees a clear message rather than a blank window or VNC error page.
+      setSimError(result.error ?? 'Failed to open attack machine window.')
+    }
+  }, [])
+
   /**
    * Applies a security-layer update from FirewallPanel or IDSPanel.
    * The updater receives the current SecurityLayer and returns the modified copy.
@@ -767,11 +981,15 @@ export default function App() {
         showMonitor={showMonitor}
         onImport={handleImport}
         onNew={handleNew}
+        onDelete={handleDelete}
         onStart={handleStart}
         onStop={handleStop}
         onHome={handleHome}
         onGridToggle={handleGridToggle}
         onMonitorToggle={handleMonitorToggle}
+        onSettingsOpen={handleSettingsOpen}
+        onAttackMachineAdd={handleAttackMachineAdd}
+        onAttackMachineLaunch={handleAttackMachineLaunch}
       />
       {/*
        * Simulation error banner — shown when the most recent start attempt failed.
@@ -831,6 +1049,12 @@ export default function App() {
       {attackTerminalDevice && (
         <AttackTerminalModal device={attackTerminalDevice} onClose={handleCloseAttackTerminal} />
       )}
+      {/*
+       * Network Settings modal — fixed overlay rendered on top of everything.
+       * Unmounted entirely when closed so it re-runs detection fresh each open.
+       * Changes take effect on the next simulation start (not retroactively).
+       */}
+      {showSettings && <SettingsModal onClose={handleSettingsClose} />}
     </div>
   )
 }

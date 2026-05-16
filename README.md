@@ -16,7 +16,7 @@ ICS Simulator lets you design, deploy, and attack realistic ICS/SCADA environmen
 
 **Author a scenario** → drag PLCs, RTUs, IEDs, sensors, and network devices onto the canvas, wire them with protocol edges, write IEC 61131-3 ladder logic, configure the firewall — then click **Run**. Docker Compose spins up the full environment in seconds.
 
-**Attack the scenario** → open the embedded Kali Linux terminal or full Xfce4 desktop (Wireshark, Armitage, Metasploit) and work through the mission.
+**Attack the scenario** → launch the Kali Linux desktop (Wireshark, Metasploit, ICS-specific tools) in a dedicated OS window via KasmVNC and work through the mission.
 
 **Monitor and analyze** → live Grafana dashboards show Suricata IPS alerts and Zeek protocol logs alongside the InfluxDB process historian.
 
@@ -26,9 +26,18 @@ ICS Simulator lets you design, deploy, and attack realistic ICS/SCADA environmen
 
 ### Visual Scenario Builder
 - Drag-and-drop SCADA canvas with ISA-5.1 / IEC 81346 standard P&ID symbols
-- Four-zone Purdue Model network topology (OT / IT / DMZ / External)
-- Zone-aware firewall rule editor
+- **Six-zone Purdue Reference Model** network topology (IEC 62443-3-2 / NIST SP 800-82):
+  - **OT (L0–L2)** — PLCs, RTUs, IEDs, sensors, actuators, field devices
+  - **Control Center (L3)** — HMI, historian, engineering workstation, application/database servers
+  - **Plant DMZ (L3.5)** — Firewall, IDS/IPS, router, switch
+  - **Enterprise (L4)** — Domain controller, web/business servers, enterprise desktops
+  - **Internet DMZ (L5)** — Email servers, internet-facing servers
+  - **Red Team** — Kali Linux attack machine (isolated attacker network)
+- Zone-aware firewall rule editor with nftables enforcement
+- Self-healing IP assignment — the compose generator automatically resolves duplicate IPs on every simulation start
+- Delete Scenario button — clears all devices with a confirmation prompt
 - Export scenarios as `.icslab` files — share with students or the community
+- Network Settings modal — configure Docker subnet addresses per zone
 
 ### PLC IDE
 - Structured Text (ST) editor with syntax highlighting
@@ -36,10 +45,11 @@ ICS Simulator lets you design, deploy, and attack realistic ICS/SCADA environmen
 - Live deploy to running OpenPLC Runtime containers via the web API
 - IEC 61131-3 compliant (Ladder, ST, FBD, SFC, IL)
 
-### Attack Machine — Hybrid Terminal
-- **Terminal tab:** xterm.js interactive bash session in the Electron window
-- **Desktop tab:** Full Xfce4 desktop via embedded noVNC (Wireshark GUI, Armitage, Firefox)
-- Kali Linux with a complete ICS-focused toolkit (see below)
+### Attack Machine — Kali Linux Desktop
+- Full Kali Linux Xfce4 desktop via **KasmVNC** — opens in a dedicated OS window
+- Moveable to a second monitor for a realistic red team / blue team split-screen setup
+- Complete ICS-focused attack toolkit (see below)
+- One-click launch from the toolbar when the simulation is running
 
 ### Security Monitoring
 - Suricata IPS with Emerging Threats ICS ruleset (Modbus, DNP3, EIP anomaly detection)
@@ -73,7 +83,7 @@ Real protocol packets flow on Docker virtual networks — scanner tools and expl
 | Exploitation | Metasploit Framework, Armitage (GUI) |
 | Credentials | Hydra, Medusa, Patator, John the Ripper, Hashcat |
 | ICS/OT specific | pymodbus, dnp3-python, opcua, bacpypes3, python-snap7, impacket, ike-scan |
-| Desktop | Xfce4 via noVNC — accessible directly in the Electron app |
+| Desktop | Full Kali Xfce4 via KasmVNC — launches in a dedicated OS window |
 
 ---
 
@@ -128,26 +138,40 @@ ics-simulator/
 │   │       ├── preload/      # contextBridge API surface
 │   │       └── renderer/     # React + TypeScript UI
 │   │           └── src/
-│   │               ├── canvas/       # React Flow SCADA canvas
+│   │               ├── canvas/       # React Flow SCADA canvas + layer tabs
 │   │               ├── palette/      # Device palette (ISA-5.1 symbols)
-│   │               ├── properties/   # Device inspector panel
-│   │               ├── terminal/     # Attack terminal modal (xterm.js + noVNC)
+│   │               ├── properties/   # Device inspector + PLC IDE panel
+│   │               ├── terminal/     # Attack terminal modal (KasmVNC)
+│   │               ├── monitor/      # Grafana + Loki monitor panel
+│   │               ├── settings/     # Network subnet settings modal
 │   │               └── icons/        # SVG device icons
 │   ├── orchestrator/         # Docker Compose generator + DockerClient
 │   └── schema/               # Shared TypeScript types (ICSLabScenario, DeviceConfig…)
 ├── containers/               # Docker image source (one per device category)
-│   ├── attack-base/          # Kali Linux — attack machine
-│   ├── modbus/               # pymodbus Modbus server
-│   ├── dnp3/                 # OpenDNP3 outstation
 │   ├── openplc/              # OpenPLC Runtime
 │   ├── suricata/             # Suricata IPS with ICS rules
 │   ├── zeek/                 # Zeek network monitor
-│   ├── firewall/             # nftables firewall
-│   ├── router/               # Inter-zone router
-│   └── switch/               # Layer-2 switch
+│   └── firewall/             # nftables firewall
 └── .github/
     └── workflows/            # CI: build, Docker image publish, CodeQL, secret scan
 ```
+
+---
+
+## Network Architecture
+
+Each scenario runs six isolated Docker bridge networks matching the Purdue Reference Model:
+
+| Zone | Network | Subnet | Devices |
+|---|---|---|---|
+| OT (L0–L2) | `ot-net` | 10.200.10.0/24 | PLC, RTU, IED, sensor, actuator, pump, valve, flow meter, pressure transmitter |
+| Control Center (L3) | `control-net` | 10.200.20.0/24 | HMI, historian, engineering workstation, application server, database server |
+| Plant DMZ (L3.5) | `plant-dmz-net` | 10.200.30.0/24 | Firewall, IDS/IPS, router, switch |
+| Enterprise (L4) | `enterprise-net` | 10.200.40.0/24 | Domain controller, web server, business server, enterprise desktop |
+| Internet DMZ (L5) | `internet-dmz-net` | 10.200.50.0/24 | Email server, internet server |
+| Red Team | `attacker-net` | 10.200.60.0/24 | Kali Linux attack machine |
+
+System services (InfluxDB, Loki, Grafana, FUXA, Promtail) occupy `.240`–`.249` in their respective zone; user devices start at `.10` and increment automatically.
 
 ---
 
@@ -176,13 +200,17 @@ Share your scenarios with the community — open a pull request against the [ics
 | 0 | Electron shell, Docker check, first-launch flow | ✅ Complete |
 | 1 | Orchestration engine (Compose generator, LevelDB, resource estimator) | ✅ Complete |
 | 2 | SCADA canvas (React Flow, ISA-5.1 icons, zones, drag-drop) | ✅ Complete |
-| 3 | Container images (9 GHCR images, GitHub Actions CI/CD) | ✅ Complete |
+| 3 | Container images (GHCR images, GitHub Actions CI/CD) | ✅ Complete |
 | 4 | PLC IDE (ST editor, ladder viewer, variable bindings, live deploy) | ✅ Complete |
-| — | Attack terminal (xterm.js + noVNC Xfce4 desktop) | ✅ Complete |
-| 5 | DNP3 IED auto-config + security stack UI (FirewallPanel, IDSPanel, nftables/Suricata/Zeek orchestration) | ✅ Complete |
-| — | Connection validation — Purdue Reference Model matrix (IEC 62443-3-2 / NIST SP 800-82); invalid targets dimmed + educational tooltip | ✅ Complete |
-| 6 | Monitoring panels — Grafana ICS Lab Overview dashboard (Electron webview) + native Loki log viewer with Suricata/Zeek per-source colour coding and Promtail sidecar | ✅ Complete |
-| 7 | FUXA HMI embed + student mission brief panel | 🔜 Next |
+| — | Attack terminal → KasmVNC Kali desktop in dedicated OS window | ✅ Complete |
+| 5 | DNP3 IED auto-config + security stack UI (FirewallPanel, IDSPanel, nftables/Suricata/Zeek) | ✅ Complete |
+| — | Connection validation — Purdue Reference Model matrix (IEC 62443-3-2 / NIST SP 800-82) | ✅ Complete |
+| 6 | Monitoring panels — Grafana ICS Lab Overview + native Loki log viewer + Promtail sidecar | ✅ Complete |
+| — | Six-zone Purdue Model restructure (OT / Control / Plant DMZ / Enterprise / Internet DMZ / Attacker) | ✅ Complete |
+| — | Self-healing IP deduplication in compose generator | ✅ Complete |
+| — | Network Settings modal — per-zone subnet configuration | ✅ Complete |
+| — | Delete Scenario button with confirmation | ✅ Complete |
+| 7 | FUXA HMI embed + PLC → HMI Modbus wiring | 🔜 Next |
 | 8 | Author / Student mode split + locked scenario distribution | 🔜 Planned |
 | 9 | Community scenario pack format | 🔜 Planned |
 | 10 | Conpot legacy device emulation (Siemens S7, IEC 104) | 🔜 Planned |
@@ -206,8 +234,7 @@ This project would not be possible without these open-source tools:
 | [InfluxDB 1.8](https://github.com/influxdata/influxdb) | Time-series process historian | MIT |
 | [React Flow](https://github.com/xyflow/xyflow) | SCADA canvas | MIT |
 | [xterm.js](https://github.com/xtermjs/xterm.js) | Terminal emulator | MIT |
-| [noVNC](https://github.com/novnc/noVNC) | Browser-based VNC client | MPL-2.0 |
-| [Kali Linux](https://www.kali.org) | Penetration testing OS | Various |
+| [Kali Linux (linuxserver)](https://github.com/linuxserver/docker-kali-linux) | Penetration testing OS via KasmVNC | Various |
 
 Third-party Docker images are pulled from public registries at runtime and are not bundled in this repository.
 

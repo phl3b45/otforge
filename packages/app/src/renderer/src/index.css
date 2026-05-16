@@ -14,8 +14,8 @@
   --border: #30363d;
   --border-muted: #21262d;
   --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #484f58;
+  --text-secondary: #c9d1d9;
+  --text-muted: #8b949e;
   --accent-blue: #388bfd;
   --accent-green: #3fb950;
   --accent-red: #f85149;
@@ -2653,4 +2653,368 @@ code.prop-value {
 .btn-monitor.active {
   background: rgba(57, 208, 176, 0.18);
   box-shadow: 0 0 0 1px var(--accent-teal);
+}
+
+/* ── Settings gear button in toolbar ──────────────────────────────────────────
+ * Always visible to the left of the toolbar divider so users can configure
+ * subnet preferences without having to start a simulation first.
+ */
+.btn-settings-gear {
+  font-size: 14px;
+  padding: 4px 8px;
+  opacity: 0.8;
+}
+
+.btn-settings-gear:hover:not(:disabled) {
+  opacity: 1;
+}
+
+/* ── Attack Machine toolbar buttons ──────────────────────────────────────────
+ * Three states, each with a distinct look so the lifecycle is unmistakable:
+ *
+ *  .btn-attack-add    — sim stopped, no machine yet. Neutral secondary style with
+ *                       a red hover so it reads as "add an offensive capability."
+ *
+ *  .btn-attack-active — sim stopped, machine IS in the scenario. Full bright red
+ *                       matching btn-danger so it's clearly visible as a loaded
+ *                       indicator. pointer-events:none avoids using disabled=""
+ *                       which would let the browser dim the color automatically.
+ *
+ *  .btn-attack-launch — sim running. Identical to btn-danger — same red border,
+ *                       text, and hover fill as the Stop Simulation button.
+ */
+
+/* Delete Scenario — solid red border + text, fills red on hover */
+.btn-delete-scenario {
+  border: 1px solid var(--accent-red);
+  color: var(--accent-red);
+  background: transparent;
+}
+.btn-delete-scenario:hover {
+  background: var(--accent-red);
+  color: #fff;
+}
+
+/* "+ Attack Machine" — idle, no machine configured yet */
+.btn-attack-add {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.btn-attack-add:hover:not(:disabled) {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+}
+
+/* "⚔ Attack Ready" — idle, machine is in the scenario.
+ * Not using disabled="" so the browser does not auto-dim the color. */
+.btn-attack-active {
+  background: transparent;
+  border: 1px solid var(--accent-red);
+  color: var(--accent-red);
+  pointer-events: none;
+}
+
+/* "⚔ Attack Machine" — simulation is running; click opens the noVNC window.
+ * Intentionally identical to .btn-danger so it reads at the same visual weight
+ * as Stop Simulation — both are irreversible live-simulation actions. */
+.btn-attack-launch {
+  background: transparent;
+  border: 1px solid var(--accent-red);
+  color: var(--accent-red);
+}
+
+.btn-attack-launch:hover:not(:disabled) {
+  background: rgba(248, 81, 73, 0.1);
+}
+
+/* ── Network Settings modal ───────────────────────────────────────────────────
+ * Full-screen overlay with a centered modal box. Shares visual language with
+ * the PLC IDE modal (same dark glass panel, header/footer pattern).
+ */
+
+/* Dim backdrop — click to dismiss */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+/* Modal box */
+.settings-modal {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 520px;
+  max-width: 95vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+/* ── Modal header ────────────────────────────────────────────────────────────── */
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.settings-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-modal-icon {
+  font-size: 16px;
+  opacity: 0.85;
+}
+
+.settings-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.settings-modal-close:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Modal body ──────────────────────────────────────────────────────────────── */
+.settings-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+/* A logical section within the body — auto-detect toggle + subnet grid */
+.settings-section {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.settings-section:last-child {
+  border-bottom: none;
+}
+
+/* Section header: label+description on the left, toggle on the right */
+.settings-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-section-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.settings-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-section-description {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ── Toggle pill ─────────────────────────────────────────────────────────────── */
+.settings-toggle {
+  flex-shrink: 0;
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+  padding: 0;
+  margin-top: 2px;
+}
+
+.settings-toggle.on {
+  background: var(--accent-teal);
+}
+
+.settings-toggle.off {
+  background: var(--text-muted);
+}
+
+.settings-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Sliding knob inside the toggle */
+.settings-toggle-knob {
+  position: absolute;
+  top: 3px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: left 0.2s;
+  pointer-events: none;
+}
+
+.settings-toggle.on .settings-toggle-knob {
+  left: 21px;
+}
+
+.settings-toggle.off .settings-toggle-knob {
+  left: 3px;
+}
+
+/* ── Subnet grid ─────────────────────────────────────────────────────────────── */
+
+/* Column headers for the subnet grid */
+.settings-subnet-grid-header {
+  display: grid;
+  grid-template-columns: 56px 1fr 1fr;
+  gap: 8px;
+  padding: 0 0 6px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-subnet-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* One zone row: dot + label | subnet input | gateway input */
+.settings-subnet-row {
+  display: grid;
+  grid-template-columns: 56px 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-subnet-zone {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Colored circle matching the zone color in the canvas legend */
+.settings-zone-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.settings-zone-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+
+/* Subnet and gateway text inputs */
+.settings-subnet-input {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  padding: 5px 8px;
+  width: 100%;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+/* Read-only (auto-detect mode) — dimmed to show they're non-editable */
+.settings-subnet-input:read-only {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: default;
+}
+
+/* Editable (pinned mode) — focus ring */
+.settings-subnet-input:not(:read-only):focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  background: var(--bg-primary);
+}
+
+/* ── Subnet hint line ────────────────────────────────────────────────────────── */
+.settings-subnet-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.settings-hint-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  flex: 1;
+}
+
+.settings-detect-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  flex-shrink: 0;
+}
+
+/* ── Modal footer ────────────────────────────────────────────────────────────── */
+.settings-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+}
+
+.settings-modal-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Save error message shown in the footer when settings:set fails */
+.settings-save-error {
+  flex: 1;
+  font-size: 12px;
+  color: var(--accent-red);
 }

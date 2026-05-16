@@ -46,16 +46,20 @@ export type DeviceNodeType = Node<DeviceNodeData, 'deviceNode'>
 /**
  * Zone-to-accent-color mapping used across the canvas, palette, and properties panel.
  * Colors are chosen to match GitHub's dark theme accent palette for visual consistency:
- *   OT (Operational Technology)  — #39d0b0 (teal/green — "safe, running")
- *   IT (Information Technology)  — #388bfd (blue — "data/network")
- *   DMZ (Demilitarized Zone)     — #d29922 (amber/gold — "boundary/caution")
- *   External                      — #f85149 (red — "hostile/untrusted")
+ *   OT (Levels 0–2)         — #39d0b0 (teal/green — "safe, running field devices")
+ *   Control Center (L3)    — #388bfd (blue — "data/network/SCADA infrastructure")
+ *   Plant DMZ (L3.5)       — #d29922 (amber/gold — "security boundary/caution")
+ *   Enterprise (L4)        — #a371f7 (purple — "corporate IT systems")
+ *   Internet DMZ (L5)      — #f78166 (orange — "internet-facing, reduced trust")
+ *   Attacker (Red Team)    — #f85149 (red — "hostile/adversarial")
  */
 export const ZONE_COLORS: Record<NetworkZone, string> = {
   ot: '#39d0b0',
-  it: '#388bfd',
-  dmz: '#d29922',
-  external: '#f85149'
+  control: '#388bfd',
+  'plant-dmz': '#d29922',
+  enterprise: '#a371f7',
+  'internet-dmz': '#f78166',
+  attacker: '#f85149'
 }
 
 /**

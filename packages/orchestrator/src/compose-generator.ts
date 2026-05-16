@@ -9,15 +9,15 @@
  *   - Fixed infrastructure containers always present in every simulation:
  *       Suricata IDS/IPS, Zeek network monitor, InfluxDB historian,
  *       Loki log aggregator, Grafana dashboards, FUXA HMI
- *   - Four Docker bridge networks matching the 4-zone Purdue Model:
- *       ot-net, it-net, dmz-net, external-net
+ *   - Six Docker bridge networks matching the full Purdue Reference Model:
+ *       ot-net, control-net, plant-dmz-net, enterprise-net, internet-dmz-net, attacker-net
  *
  * Key design decisions:
  *   - All device containers get static IP addresses so protocol scripts can
  *     reference each other by a predictable address.
  *   - Resource limits (memory cap, CPU fraction) are set per container category
  *     to prevent runaway containers from starving the host system.
- *   - The firewall container is attached to ot-net, it-net, and dmz-net so it
+ *   - The firewall container is attached to ot-net, control-net, and plant-dmz-net so it
  *     can enforce inter-zone access control rules via nftables.
  *   - GPL/AGPL-licensed images (Grafana, Loki, OpenPLC) are pulled from public
  *     registries at runtime rather than bundled in the installer binary — this
@@ -40,23 +40,61 @@ import { ZONE_DEFAULTS } from './network-config'
  * PLCs use the OpenPLC Runtime image; most OT devices use the Modbus server; IEDs
  * use the pure-Python DNP3 outstation.
  */
+// Images marked "STUB" are placeholders used until the corresponding custom
+// ics-sim-* image is built and published to GHCR. Stubs use well-known public
+// images that start cleanly and join the correct Docker network; they do not
+// implement the full ICS protocol the device represents.
 const DEVICE_IMAGES: Record<DeviceCategory, string> = {
+  // ── OT Process (Levels 0–2) ────────────────────────────────────────────────
   plc: 'ghcr.io/iburres/ics-sim-openplc:latest',
-  rtu: 'ghcr.io/iburres/ics-sim-modbus:latest',
-  ied: 'ghcr.io/iburres/ics-sim-dnp3:latest',
+  // STUB: alpine provides a minimal container that starts and joins the network.
+  // Replace with ics-sim-modbus (Modbus TCP outstation) once published.
+  rtu: 'alpine:latest',
+  // STUB: Replace with ics-sim-dnp3 (DNP3 outstation) once published.
+  ied: 'alpine:latest',
+  sensor: 'alpine:latest',
+  actuator: 'alpine:latest',
+  pump: 'alpine:latest',
+  valve: 'alpine:latest',
+  'flow-meter': 'alpine:latest',
+  'pressure-transmitter': 'alpine:latest',
+  // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: 'frangoteam/fuxa:latest',
   historian: 'influxdb:1.8-alpine',
-  sensor: 'ghcr.io/iburres/ics-sim-modbus:latest',
-  actuator: 'ghcr.io/iburres/ics-sim-modbus:latest',
-  pump: 'ghcr.io/iburres/ics-sim-modbus:latest',
-  valve: 'ghcr.io/iburres/ics-sim-modbus:latest',
-  'flow-meter': 'ghcr.io/iburres/ics-sim-modbus:latest',
-  'pressure-transmitter': 'ghcr.io/iburres/ics-sim-modbus:latest',
+  // STUB: nginx:alpine serves HTTP so the container appears "up" on the network.
+  // Replace with ics-sim-appserver once published.
+  'application-server': 'nginx:alpine',
+  // STUB: Replace with ics-sim-dbserver (PostgreSQL + ICS schema) once published.
+  'database-server': 'postgres:16-alpine',
+  // linuxserver webtop: Ubuntu XFCE desktop via KasmVNC on port 3000.
+  // Replace with ics-sim-workstation once published.
+  'engineering-workstation': 'lscr.io/linuxserver/webtop:ubuntu-xfce',
+  // ── Plant DMZ (Level 3.5) ───────────────────────────────────────────────────
   firewall: 'ghcr.io/iburres/ics-sim-firewall:latest',
   'ids-ips': 'ghcr.io/iburres/ics-sim-suricata:latest',
-  switch: 'ghcr.io/iburres/ics-sim-switch:latest',
-  router: 'ghcr.io/iburres/ics-sim-router:latest',
-  'attack-machine': 'ghcr.io/iburres/ics-sim-attack-base:latest'
+  // STUB: alpine with NET_ADMIN cap acts as a placeholder network device.
+  // Replace with ics-sim-switch / ics-sim-router once published.
+  switch: 'alpine:latest',
+  router: 'alpine:latest',
+  // ── Enterprise Zone (Level 4) ───────────────────────────────────────────────
+  // STUB: Replace with ics-sim-dc (Samba AD domain controller) once published.
+  'domain-controller': 'alpine:latest',
+  // STUB: nginx:alpine serves HTTP. Replace with ics-sim-webserver once published.
+  'web-server': 'nginx:alpine',
+  // STUB: Replace with ics-sim-bizserver once published.
+  'business-server': 'nginx:alpine',
+  // linuxserver webtop: Ubuntu XFCE desktop via KasmVNC on port 3000.
+  // Replace with ics-sim-workstation once published.
+  'enterprise-desktop': 'lscr.io/linuxserver/webtop:ubuntu-xfce',
+  // ── Internet DMZ (Level 5) ───────────────────────────────────────────────────
+  // STUB: mailhog provides a lightweight SMTP+web UI for email simulation.
+  // Replace with ics-sim-mail once published.
+  'email-server': 'mailhog/mailhog:latest',
+  // STUB: nginx:alpine. Replace with ics-sim-webserver once published.
+  'internet-server': 'nginx:alpine',
+  // ── Red Team ─────────────────────────────────────────────────────────────────
+  // linuxserver/kali-linux: full Kali XFCE4 desktop with KasmVNC on port 3000.
+  'attack-machine': 'lscr.io/linuxserver/kali-linux:latest'
 }
 
 /**
@@ -67,21 +105,36 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
  * the other. The limits prevent runaway containers from consuming all host resources.
  */
 const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = {
+  // ── OT Process (Levels 0–2) ────────────────────────────────────────────────
   plc: { memory: 128, cpus: '0.5' }, // OpenPLC Runtime (Ubuntu base)
   rtu: { memory: 80, cpus: '0.25' }, // pymodbus on Alpine
   ied: { memory: 80, cpus: '0.25' }, // pure-Python DNP3 on Alpine
-  hmi: { memory: 256, cpus: '0.5' }, // FUXA Node.js HMI
-  historian: { memory: 256, cpus: '0.5' }, // InfluxDB 1.8
   sensor: { memory: 64, cpus: '0.15' },
   actuator: { memory: 64, cpus: '0.15' },
   pump: { memory: 64, cpus: '0.15' },
   valve: { memory: 64, cpus: '0.15' },
   'flow-meter': { memory: 64, cpus: '0.15' },
   'pressure-transmitter': { memory: 64, cpus: '0.15' },
+  // ── Control Center (Level 3) ────────────────────────────────────────────────
+  hmi: { memory: 256, cpus: '0.5' }, // FUXA Node.js HMI
+  historian: { memory: 256, cpus: '0.5' }, // InfluxDB 1.8
+  'application-server': { memory: 256, cpus: '0.5' }, // generic app server
+  'database-server': { memory: 256, cpus: '0.5' }, // generic database
+  'engineering-workstation': { memory: 128, cpus: '0.25' }, // lightweight workstation sim
+  // ── Plant DMZ (Level 3.5) ───────────────────────────────────────────────────
   firewall: { memory: 32, cpus: '0.25' },
   'ids-ips': { memory: 256, cpus: '0.5' },
   switch: { memory: 32, cpus: '0.1' },
   router: { memory: 32, cpus: '0.1' },
+  // ── Enterprise Zone (Level 4) ───────────────────────────────────────────────
+  'domain-controller': { memory: 256, cpus: '0.5' }, // Samba AD / directory service
+  'web-server': { memory: 128, cpus: '0.25' }, // nginx / web app
+  'business-server': { memory: 256, cpus: '0.5' }, // generic business application
+  'enterprise-desktop': { memory: 128, cpus: '0.25' }, // lightweight desktop
+  // ── Internet DMZ (Level 5) ───────────────────────────────────────────────────
+  'email-server': { memory: 128, cpus: '0.25' }, // Postfix / mail relay
+  'internet-server': { memory: 128, cpus: '0.25' }, // internet-facing web server
+  // ── Red Team ─────────────────────────────────────────────────────────────────
   // 2 GB: full Xfce4 desktop + Wireshark GUI + Armitage + Metasploit + VNC server.
   // Students are expected to have 16+ GB RAM; this budget reflects that baseline.
   'attack-machine': { memory: 2048, cpus: '2.0' }
@@ -96,8 +149,13 @@ interface ComposeService {
   environment: string[] | undefined
   volumes: string[] | undefined
   cap_add: string[] | undefined
-  /** Port mappings in "hostPort:containerPort" format. Used for PLC web UIs. */
+  /** Port mappings in "hostPort:containerPort" format. Used for PLC web UIs and attack machine. */
   ports?: string[]
+  /**
+   * Shared memory size for containers that run a GUI desktop (linuxserver Kali).
+   * Without adequate shm, the Chromium instance inside KasmVNC crashes on startup.
+   */
+  shm_size?: string
   deploy: { resources: { limits: { memory: string; cpus: string } } }
 }
 
@@ -127,18 +185,28 @@ interface ComposeFile {
  * @param scenario    - The validated scenario document to generate compose for.
  * @param projectName - Docker Compose project name (sanitized scenario name).
  *   All container/network/volume names are prefixed with this value.
- * @param scenarioDir - Absolute host path to the scenario directory
+ * @param scenarioDir   - Absolute host path to the scenario directory
  *   (<userData>/scenarios/<projectName>/). When provided, Grafana and Loki
  *   publish their ports to the host (3000 and 3100) and Grafana provisioning
  *   files are mounted from <scenarioDir>/grafana/. Promtail is added as a
  *   log-shipping sidecar. Omit in tests where host paths are unavailable.
+ * @param resolvedZones - Optional zone → subnet/gateway map produced by
+ *   findFreeSubnets() in the main process. When provided, overrides ZONE_DEFAULTS
+ *   so every Docker network and infrastructure container IP uses the conflict-free
+ *   subnets chosen at simulation start. When omitted (e.g., in tests), falls back
+ *   to ZONE_DEFAULTS unchanged.
  * @returns Complete YAML string ready to write to docker-compose.yml.
  */
 export function generateCompose(
   scenario: ICSLabScenario,
   projectName: string,
-  scenarioDir?: string
+  scenarioDir?: string,
+  resolvedZones?: Record<NetworkZone, { subnet: string; gateway: string }>
 ): string {
+  // effectiveZones is the authoritative zone → subnet/gateway map used throughout
+  // this function. It is the caller-supplied resolved map when subnet auto-detection
+  // ran, or ZONE_DEFAULTS when called from tests or scenarios without auto-detection.
+  const effectiveZones = resolvedZones ?? ZONE_DEFAULTS
   const services: Record<string, ComposeService> = {}
   const networks: Record<string, ComposeNetwork> = {}
   const volumes: Record<string, unknown> = {}
@@ -159,9 +227,17 @@ export function generateCompose(
     }
   }
 
-  // Fill in default subnets for any zones not explicitly defined in the scenario.
-  // This ensures all four zone networks always exist, even in minimal scenarios.
-  const allZones: NetworkZone[] = ['ot', 'it', 'dmz', 'external']
+  // Fill in subnets for any zones not explicitly defined in the scenario.
+  // Uses effectiveZones (resolved at runtime) rather than ZONE_DEFAULTS so that
+  // auto-detected or user-pinned subnets take effect for zones the scenario leaves unset.
+  const allZones: NetworkZone[] = [
+    'ot',
+    'control',
+    'plant-dmz',
+    'enterprise',
+    'internet-dmz',
+    'attacker'
+  ]
   for (const zone of allZones) {
     if (!segmentByZone[zone]) {
       const netName = `${zone}-net`
@@ -169,7 +245,7 @@ export function generateCompose(
         driver: 'bridge',
         ipam: {
           driver: 'default',
-          config: [{ subnet: ZONE_DEFAULTS[zone].subnet, gateway: ZONE_DEFAULTS[zone].gateway }]
+          config: [{ subnet: effectiveZones[zone].subnet, gateway: effectiveZones[zone].gateway }]
         }
       }
     }
@@ -194,6 +270,46 @@ export function generateCompose(
   const ATTACK_NOVNC_PORT_BASE = 6900
   let attackPortIndex = 0
 
+  // ── IP deduplication ────────────────────────────────────────────────────────
+  // Tracks host octets already assigned per Docker network so that stale or
+  // duplicate IPs in the scenario JSON never produce an invalid compose file.
+  // Pre-seeded with all system-service and infrastructure reservations so user
+  // devices automatically avoid them without any manual coordination.
+  //
+  // Reserved ranges per network:
+  //   .1        — bridge gateway (Docker)
+  //   .240–.249 — system services (influxdb, loki, grafana, fuxa, promtail)
+  //   .252      — zeek
+  //   .253      — suricata
+  //   .254      — firewall
+  const reservedHosts = new Set([1, 240, 241, 242, 243, 244, 252, 253, 254])
+  const usedIpsPerNet = new Map<string, Set<number>>([
+    ['ot-net', new Set(reservedHosts)],
+    ['control-net', new Set(reservedHosts)],
+    ['plant-dmz-net', new Set(reservedHosts)],
+    ['enterprise-net', new Set(reservedHosts)],
+    ['internet-dmz-net', new Set(reservedHosts)],
+    ['attacker-net', new Set(reservedHosts)]
+  ])
+
+  /**
+   * Returns a unique IP on netName for the given preferredIp.
+   * If the preferred host octet is already taken, increments until a free slot
+   * in the user-device range (.10–.239) is found and reserves it.
+   */
+  function claimIp(netName: string, preferredIp: string): string {
+    const parts = preferredIp.split('.')
+    const prefix = `${parts[0]}.${parts[1]}.${parts[2]}.`
+    let host = parseInt(parts[3], 10)
+    const used = usedIpsPerNet.get(netName) ?? new Set<number>()
+    // Clamp starting point to the user range (.10–.239)
+    if (host < 10) host = 10
+    while (used.has(host) && host < 240) host++
+    used.add(host)
+    usedIpsPerNet.set(netName, used)
+    return `${prefix}${host}`
+  }
+
   for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
     // Use a custom image if specified (for advanced scenarios), otherwise use the category default
     const image = device.dockerImage ?? DEVICE_IMAGES[device.category]
@@ -202,17 +318,27 @@ export function generateCompose(
     // Service names must be lowercase alphanumeric + hyphen for Docker Compose compatibility
     const serviceName = sanitizeServiceName(nodeId)
 
-    // Determine which zone network to attach this device to by matching its IP to a subnet
-    const zone = findZoneForIp(device.ipAddress, scenario) ?? 'ot'
+    // Determine which zone network to attach this device to. Primary lookup checks the
+    // scenario's declared network segments; secondary lookup falls back to ZONE_DEFAULTS
+    // so that devices still land on the correct network when segments is empty (e.g., a
+    // scenario created by handleAttackMachineAdd with no explicit segment definitions).
+    const zone =
+      findZoneForIp(device.ipAddress, scenario) ?? findZoneForIpInDefaults(device.ipAddress) ?? 'ot'
     const netName = `${zone}-net`
 
     const env: string[] = buildDeviceEnv(device, scenario)
+
+    // Translate the scenario IP to the effective zone subnet, then deduplicate.
+    // claimIp() guarantees uniqueness within the network even if the scenario JSON
+    // has stale or duplicate IPs — the compose file is always self-consistent.
+    const resolvedIp = resolveDeviceIp(device.ipAddress, scenario, effectiveZones)
+    const effectiveIp = claimIp(netName, resolvedIp)
 
     services[serviceName] = {
       image,
       container_name: `${projectName}-${serviceName}`,
       restart: 'unless-stopped',
-      networks: { [netName]: { ipv4_address: device.ipAddress } },
+      networks: { [netName]: { ipv4_address: effectiveIp } },
       environment: env.length > 0 ? env : undefined,
       volumes: undefined,
       cap_add: undefined,
@@ -232,16 +358,21 @@ export function generateCompose(
       plcPortIndex++
     }
 
-    // Firewall bridges all three internal zones to enforce inter-zone ACLs.
+    // Firewall bridges OT, Control Center, and Plant DMZ to enforce inter-zone ACLs.
     // NET_ADMIN is required to create and manage nftables rules.
     // NET_RAW is required for raw socket access (ICMP, packet capture).
     if (device.category === 'firewall') {
       services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
-      // Attach to OT, IT, and DMZ at the .254 address (last usable host in each /24)
+      // Attach to OT (L0-2), Control (L3), and Plant DMZ (L3.5) at .254 (last usable host in /24).
+      // Uses effectiveZones so the address stays inside the resolved (possibly auto-detected) subnet.
       services[serviceName].networks = {
-        'ot-net': { ipv4_address: `${ZONE_DEFAULTS.ot.subnet.replace('.0/24', '.254')}` },
-        'it-net': { ipv4_address: `${ZONE_DEFAULTS.it.subnet.replace('.0/24', '.254')}` },
-        'dmz-net': { ipv4_address: `${ZONE_DEFAULTS.dmz.subnet.replace('.0/24', '.254')}` }
+        'ot-net': { ipv4_address: `${effectiveZones.ot.subnet.replace('.0/24', '.254')}` },
+        'control-net': {
+          ipv4_address: `${effectiveZones.control.subnet.replace('.0/24', '.254')}`
+        },
+        'plant-dmz-net': {
+          ipv4_address: `${effectiveZones['plant-dmz'].subnet.replace('.0/24', '.254')}`
+        }
       }
       // Inject scenario security config so the entrypoint can build the nftables ruleset.
       // FW_DEFAULT_POLICY maps schema "deny"/"allow" to nftables "drop"/"accept".
@@ -256,18 +387,32 @@ export function generateCompose(
       services[serviceName].environment = fwEnv
     }
 
-    // Attack machine is always isolated on the External network.
-    // NET_ADMIN + NET_RAW enable nmap raw scans, ARP poisoning, etc.
-    // Port 6080 (noVNC WebSocket) is published to a deterministic host port so the
-    // Electron renderer can embed the Xfce4 desktop in a webview without hardcoding
-    // an address. The same port index ordering is reproduced in main/index.ts.
+    // Attack machine is always isolated on the dedicated Attacker network.
+    // It is NOT on any Purdue Model zone — it lives outside the OT/IT/Enterprise perimeter.
+    //
+    // Image: lscr.io/linuxserver/kali-linux:latest
+    //   Full Kali XFCE4 desktop served by KasmVNC over HTTP on container port 3000.
+    //   No custom image build required. PUID/PGID/TZ are required by the linuxserver
+    //   base image to create the correct non-root user inside the container.
+    //   shm_size: '1g' prevents KasmVNC's internal Chromium from crashing at startup.
+    //
+    // NET_ADMIN + NET_RAW enable nmap raw scans, ARP poisoning, tcpdump, etc.
+    //
+    // Port 3000 (KasmVNC web desktop) is published to a deterministic host port so
+    // the Electron main process can open a separate OS BrowserWindow. The same
+    // port index ordering is reproduced in main/index.ts → activeAttackPorts map.
     if (device.category === 'attack-machine') {
-      const novncHostPort = ATTACK_NOVNC_PORT_BASE + attackPortIndex
+      const webPort = ATTACK_NOVNC_PORT_BASE + attackPortIndex
       services[serviceName].networks = {
-        'external-net': { ipv4_address: device.ipAddress }
+        'attacker-net': { ipv4_address: device.ipAddress }
       }
       services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
-      services[serviceName].ports = [`${novncHostPort}:6080`]
+      services[serviceName].ports = [`${webPort}:3000`]
+      services[serviceName].shm_size = '1g'
+      // linuxserver base image requires these three vars to initialise the desktop user
+      const attackEnv = services[serviceName].environment ?? []
+      attackEnv.push('PUID=1000', 'PGID=1000', 'TZ=Etc/UTC')
+      services[serviceName].environment = attackEnv
       attackPortIndex++
     }
   }
@@ -276,8 +421,12 @@ export function generateCompose(
   // These run in every simulation regardless of scenario contents.
   // .253 and .252 are reserved host addresses in the /24 subnets.
 
-  const otBase = ZONE_DEFAULTS.ot.subnet.replace('.0/24', '')
-  const itBase = ZONE_DEFAULTS.it.subnet.replace('.0/24', '')
+  // Base prefixes for infrastructure containers — derived from effectiveZones so
+  // Suricata, Zeek, InfluxDB, Loki, Grafana, and Promtail all get IPs inside the
+  // resolved subnets (auto-detected or user-pinned), not the hard-coded defaults.
+  // Monitoring infrastructure lives on the Control Center (Level 3) network.
+  const otBase = effectiveZones.ot.subnet.replace('.0/24', '')
+  const controlBase = effectiveZones.control.subnet.replace('.0/24', '')
 
   // ── Suricata — inline IPS/IDS on OT and IT networks ──────────────────────
   // Placed on both OT and IT nets so it can analyze cross-zone traffic.
@@ -300,7 +449,7 @@ export function generateCompose(
     restart: 'unless-stopped',
     networks: {
       'ot-net': { ipv4_address: `${otBase}.253` },
-      'it-net': { ipv4_address: `${itBase}.253` }
+      'control-net': { ipv4_address: `${controlBase}.253` }
     },
     environment: [`IDS_RULESETS=${suricataRulesets}`, `IDS_DISABLED_SIDS=${suricataDisabledSids}`],
     cap_add: ['NET_ADMIN', 'NET_RAW'], // AF_PACKET mode requires raw socket access
@@ -339,7 +488,8 @@ export function generateCompose(
     image: 'influxdb:1.8-alpine',
     container_name: `${projectName}-influxdb`,
     restart: 'unless-stopped',
-    networks: { 'it-net': { ipv4_address: `${itBase}.10` } },
+    // .240–.249 reserved for infrastructure/system services; user devices start at .10
+    networks: { 'control-net': { ipv4_address: `${controlBase}.240` } },
     environment: [
       'INFLUXDB_DB=icslab',
       'INFLUXDB_ADMIN_USER=admin',
@@ -360,7 +510,7 @@ export function generateCompose(
     image: 'grafana/loki:latest',
     container_name: `${projectName}-loki`,
     restart: 'unless-stopped',
-    networks: { 'it-net': { ipv4_address: `${itBase}.11` } },
+    networks: { 'control-net': { ipv4_address: `${controlBase}.241` } },
     environment: undefined,
     cap_add: undefined,
     volumes: [`${projectName}-loki-data:/loki`],
@@ -403,7 +553,7 @@ export function generateCompose(
     image: 'grafana/grafana:latest',
     container_name: `${projectName}-grafana`,
     restart: 'unless-stopped',
-    networks: { 'it-net': { ipv4_address: `${itBase}.12` } },
+    networks: { 'control-net': { ipv4_address: `${controlBase}.242` } },
     environment: grafanaEnv,
     cap_add: undefined,
     volumes: grafanaVolumes,
@@ -428,7 +578,7 @@ export function generateCompose(
       image: 'grafana/promtail:latest',
       container_name: `${projectName}-promtail`,
       restart: 'unless-stopped',
-      networks: { 'it-net': { ipv4_address: `${itBase}.14` } },
+      networks: { 'control-net': { ipv4_address: `${controlBase}.244` } },
       environment: undefined,
       cap_add: undefined,
       volumes: [
@@ -448,7 +598,7 @@ export function generateCompose(
     image: 'frangoteam/fuxa:latest',
     container_name: `${projectName}-fuxa`,
     restart: 'unless-stopped',
-    networks: { 'it-net': { ipv4_address: `${itBase}.13` } },
+    networks: { 'control-net': { ipv4_address: `${controlBase}.243` } },
     environment: undefined,
     cap_add: undefined,
     volumes: [`${projectName}-fuxa-data:/usr/src/app/FUXA/server/_appdata`],
@@ -495,6 +645,92 @@ function findZoneForIp(ip: string, scenario: ICSLabScenario): NetworkZone | null
     if (ipInSubnet(ip, seg.subnet)) return seg.zone
   }
   return null
+}
+
+/**
+ * Determines which Purdue Model zone a device IP belongs to using the canonical
+ * ZONE_DEFAULTS subnets, independent of any scenario-declared segments.
+ *
+ * This is the fallback used when findZoneForIp returns null — most commonly when
+ * the scenario was created without explicit network segments (e.g., via
+ * handleAttackMachineAdd which initialises segments as []). Without this fallback
+ * every device would be assigned to 'ot-net' regardless of its IP address, causing
+ * Docker to reject IPs that fall outside the OT subnet (10.200.10.0/24).
+ *
+ * @param ip - The device's static IPv4 address.
+ * @returns  The NetworkZone whose ZONE_DEFAULTS subnet contains the IP, or null.
+ */
+function findZoneForIpInDefaults(ip: string): NetworkZone | null {
+  const zoneOrder: NetworkZone[] = [
+    'ot',
+    'control',
+    'plant-dmz',
+    'enterprise',
+    'internet-dmz',
+    'attacker'
+  ]
+  for (const zone of zoneOrder) {
+    if (ipInSubnet(ip, ZONE_DEFAULTS[zone].subnet)) return zone
+  }
+  return null
+}
+
+/**
+ * Translates a device's scenario IP to the corresponding IP in the effective
+ * Docker network subnet, preserving the host octet.
+ *
+ * When subnet auto-detection (or user-pinned settings) selects a different /24
+ * than the scenario's network.segments declare, Docker rejects the original IP
+ * as "address not in network". This function keeps the last octet (the host part
+ * of a /24) and replaces the first three octets with the effective prefix.
+ *
+ * Example:
+ *   scenario segment:  OT = 10.200.10.0/24
+ *   effectiveZones:    OT = 10.201.10.0/24   (auto-detect chose this to avoid conflict)
+ *   device IP:             10.200.10.15
+ *   → translated IP:       10.201.10.15       (same host octet .15, new prefix)
+ *
+ * No translation is performed when the effective subnet already matches the
+ * scenario segment. Falls back to matching against ZONE_DEFAULTS for scenarios
+ * that pre-date the full four-segment definition.
+ *
+ * @param deviceIp      - Device's IPv4 address from the scenario document.
+ * @param scenario      - Scenario whose segments identify the device's zone.
+ * @param effectiveZones - Resolved zone → subnet map (auto-detected or pinned).
+ * @returns The device's IP rewritten for the effective subnet, or the original if
+ *   no matching segment is found (conservative fallback, should not occur in practice).
+ */
+function resolveDeviceIp(
+  deviceIp: string,
+  scenario: ICSLabScenario,
+  effectiveZones: Record<NetworkZone, { subnet: string; gateway: string }>
+): string {
+  // Walk the scenario's declared segments first (most specific match)
+  for (const seg of scenario.network.segments) {
+    if (!ipInSubnet(deviceIp, seg.subnet)) continue
+    const effectiveSub = effectiveZones[seg.zone].subnet
+    if (effectiveSub === seg.subnet) return deviceIp // already in the right subnet
+    const hostOctet = deviceIp.split('.')[3]
+    return `${effectiveSub.replace('.0/24', '')}.${hostOctet}`
+  }
+  // Fallback: match against ZONE_DEFAULTS for legacy scenarios without full segment lists.
+  // Includes old zone names (it, dmz, external) so scenarios built before the 6-zone
+  // Purdue refactor continue to translate IPs correctly after an upgrade.
+  for (const zone of [
+    'ot',
+    'control',
+    'plant-dmz',
+    'enterprise',
+    'internet-dmz',
+    'attacker'
+  ] as NetworkZone[]) {
+    if (!ipInSubnet(deviceIp, ZONE_DEFAULTS[zone].subnet)) continue
+    const effectiveSub = effectiveZones[zone].subnet
+    if (effectiveSub === ZONE_DEFAULTS[zone].subnet) return deviceIp
+    const hostOctet = deviceIp.split('.')[3]
+    return `${effectiveSub.replace('.0/24', '')}.${hostOctet}`
+  }
+  return deviceIp // unrecognized subnet — pass through unchanged
 }
 
 /**

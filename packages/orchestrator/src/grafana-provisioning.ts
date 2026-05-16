@@ -24,10 +24,13 @@
  *   promtail/
  *     config.yaml                 ← Reads suricata-logs + zeek-logs, pushes to Loki
  *
- * IP addresses match the fixed ZONE_DEFAULTS assignments in compose-generator.ts:
- *   InfluxDB  → 172.20.20.10 : 8086
- *   Loki      → 172.20.20.11 : 3100
- *   Grafana   → 172.20.20.12 : 3000
+ * IP addresses match the fixed system-service assignments in compose-generator.ts.
+ * System services occupy .240–.249 so user devices (.10+) never collide with them:
+ *   InfluxDB  → 10.200.20.240 : 8086  (Control zone, Level 3)
+ *   Loki      → 10.200.20.241 : 3100  (Control zone, Level 3)
+ *   Grafana   → 10.200.20.242 : 3000  (Control zone, Level 3)
+ *   FUXA      → 10.200.20.243
+ *   Promtail  → 10.200.20.244
  */
 
 import { mkdir, writeFile } from 'fs/promises'
@@ -36,13 +39,12 @@ import yaml from 'js-yaml'
 import { zoneIpPrefix } from './network-config'
 
 /**
- * Service IPs derived from ZONE_DEFAULTS so they stay in sync if the subnet
- * ever changes. InfluxDB is .10 and Loki is .11 on the IT network — matching
- * the static assignments in compose-generator.ts.
+ * Default Control-zone prefix derived from ZONE_DEFAULTS.
+ * Used when writeGrafanaProvisioning() is called without an explicit prefix override,
+ * e.g., in unit tests that don't run subnet auto-detection.
+ * The Control zone (Level 3) hosts InfluxDB, Loki, Grafana, FUXA, and Promtail.
  */
-const IT_PREFIX = zoneIpPrefix('it')
-const INFLUXDB_IP = `${IT_PREFIX}.10`
-const LOKI_IP = `${IT_PREFIX}.11`
+const DEFAULT_CONTROL_PREFIX = zoneIpPrefix('control')
 
 /**
  * Writes all Grafana and Promtail provisioning files to the scenario directory.
@@ -51,13 +53,24 @@ const LOKI_IP = `${IT_PREFIX}.11`
  * directory must exist before this function is called (created by DockerClient
  * before writing docker-compose.yml).
  *
- * @param scenarioDir  - Absolute path to <userData>/scenarios/<projectName>/.
- * @param projectName  - Docker Compose project name (used for Promtail volume refs).
+ * @param scenarioDir    - Absolute path to <userData>/scenarios/<projectName>/.
+ * @param projectName    - Docker Compose project name (used for Promtail volume refs).
+ * @param controlSubnetPrefix - Optional override for the Control-zone (Level 3) subnet prefix
+ *   (e.g., "10.201.20" when subnet auto-detection picked 10.201.20.0/24 instead
+ *   of the default 10.200.20.0/24). InfluxDB is always .240 and Loki always .241
+ *   within this prefix. Defaults to DEFAULT_CONTROL_PREFIX when omitted.
  */
 export async function writeGrafanaProvisioning(
   scenarioDir: string,
-  projectName: string
+  projectName: string,
+  controlSubnetPrefix?: string
 ): Promise<void> {
+  // Resolve the effective Control-zone prefix — use the caller-supplied resolved value when
+  // subnet auto-detection chose a non-default range, otherwise use the static default.
+  const controlPrefix = controlSubnetPrefix ?? DEFAULT_CONTROL_PREFIX
+  // .240–.249 are reserved for system services; user devices start at .10
+  const INFLUXDB_IP = `${controlPrefix}.240`
+  const LOKI_IP = `${controlPrefix}.241`
   // ── Create directory tree ───────────────────────────────────────────────────
   const grafanaDatasourcesDir = join(scenarioDir, 'grafana', 'provisioning', 'datasources')
   const grafanaDashboardsProvDir = join(scenarioDir, 'grafana', 'provisioning', 'dashboards')

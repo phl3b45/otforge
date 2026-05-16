@@ -238,6 +238,177 @@ function RouterSvg() {
   )
 }
 
+// ── Level 3 Control Center icons ──────────────────────────────────────────────
+
+/**
+ * Application Server — rack chassis with three horizontal server unit slots,
+ * each with a status LED. Distinguishes from generic servers by the rack enclosure.
+ */
+function ApplicationServerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      <rect x="2" y="2" width="20" height="20" rx="1" />
+      <rect x="4" y="4" width="16" height="4" rx="0.5" />
+      <rect x="4" y="10" width="16" height="4" rx="0.5" />
+      <rect x="4" y="16" width="16" height="4" rx="0.5" />
+      <circle cx="18" cy="6" r="1" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="18" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+/**
+ * Database Server — three-tier cylinder representing a relational or time-series
+ * database. Two mid-section rings distinguish it from the single-ring Historian.
+ */
+function DatabaseServerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      <ellipse cx="12" cy="5" rx="8" ry="2.5" />
+      <line x1="4" y1="5" x2="4" y2="19" />
+      <line x1="20" y1="5" x2="20" y2="19" />
+      <ellipse cx="12" cy="19" rx="8" ry="2.5" />
+      <path d="M4 10 Q12 12.5 20 10" />
+      <path d="M4 14.5 Q12 17 20 14.5" />
+    </svg>
+  )
+}
+
+/**
+ * Engineering Workstation — wide monitor displaying a process/CAD screen
+ * alongside a tower unit with drive bay indicators. Represents an operator
+ * or engineer's full-sized workstation in the Control Center.
+ */
+function EngineeringWorkstationSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* Monitor */}
+      <rect x="1" y="2" width="14" height="11" rx="1" />
+      <rect x="3" y="4" width="10" height="7" rx="0.5" />
+      <line x1="6" y1="13" x2="6" y2="16" />
+      <line x1="3" y1="16" x2="9" y2="16" />
+      {/* Tower on the right */}
+      <rect x="17" y="3" width="6" height="12" rx="1" />
+      <line x1="18" y1="7" x2="22" y2="7" />
+      <line x1="18" y1="10" x2="22" y2="10" />
+      <circle cx="20" cy="13" r="0.8" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+// ── Level 4 Enterprise icons ───────────────────────────────────────────────────
+
+/**
+ * Domain Controller — hierarchical directory tree (three nodes with parent-child
+ * relationships) representing an Active Directory / LDAP authentication authority.
+ * The tree structure visually communicates centralized identity management.
+ */
+function DomainControllerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      <rect x="9" y="1" width="6" height="5" rx="1" />
+      <line x1="12" y1="6" x2="12" y2="9" />
+      <line x1="4" y1="9" x2="20" y2="9" />
+      <line x1="4" y1="9" x2="4" y2="12" />
+      <line x1="12" y1="9" x2="12" y2="12" />
+      <line x1="20" y1="9" x2="20" y2="12" />
+      <rect x="1" y="12" width="6" height="5" rx="1" />
+      <rect x="9" y="12" width="6" height="5" rx="1" />
+      <rect x="17" y="12" width="6" height="5" rx="1" />
+    </svg>
+  )
+}
+
+/**
+ * Web Server — globe with vertical meridian, equator, and two latitude arcs.
+ * The classic "world wide web" symbol immediately communicates internet/intranet
+ * web service hosting.
+ */
+function WebServerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      <circle cx="12" cy="12" r="9" />
+      <ellipse cx="12" cy="12" rx="4.5" ry="9" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <path d="M4.5 7.5 Q12 9.5 19.5 7.5" />
+      <path d="M4.5 16.5 Q12 14.5 19.5 16.5" />
+    </svg>
+  )
+}
+
+/**
+ * Business Server — multi-story office building silhouette with floor markers
+ * and a door. Represents enterprise business application servers (ERP, CRM, etc.).
+ * The building metaphor distinguishes it from rack/cylindrical server icons.
+ */
+function BusinessServerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      <rect x="3" y="2" width="18" height="20" rx="1" />
+      <line x1="3" y1="7" x2="21" y2="7" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="17" x2="21" y2="17" />
+      <rect x="10" y="18" width="4" height="4" />
+      <rect x="6" y="3.5" width="3" height="2.5" />
+      <rect x="15" y="3.5" width="3" height="2.5" />
+    </svg>
+  )
+}
+
+/**
+ * Enterprise Desktop — monitor with a keyboard tray below. Differs from HMI
+ * (process display) and the engineering workstation (tower + monitor) by showing
+ * the classic keyboard/monitor combo that defines a generic office endpoint.
+ */
+function EnterpriseDesktopSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      <rect x="2" y="2" width="20" height="13" rx="1" />
+      <rect x="4" y="4" width="14" height="8" rx="0.5" />
+      <line x1="10" y1="19" x2="14" y2="19" />
+      <line x1="12" y1="15" x2="12" y2="19" />
+      {/* Keyboard tray */}
+      <rect x="3" y="20" width="18" height="2" rx="0.5" />
+    </svg>
+  )
+}
+
+// ── Level 5 Internet DMZ icons ─────────────────────────────────────────────────
+
+/**
+ * Email Server — standard envelope shape (open or closed) representing a mail
+ * transfer agent (Postfix, Exchange, etc.). Universally recognized mail icon.
+ */
+function EmailServerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      <rect x="2" y="5" width="20" height="14" rx="1" />
+      {/* Envelope flap — open V shape going to center */}
+      <polyline points="2,6 12,14 22,6" />
+    </svg>
+  )
+}
+
+/**
+ * Internet Server — cloud shape on top of a server base with connecting legs.
+ * The cloud-over-server silhouette represents an internet-facing server exposed
+ * to the public internet (content delivery, reverse proxy, etc.).
+ */
+function InternetServerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* Cloud top */}
+      <path d="M6 13 Q4 13 4 11 Q4 8 7 8 Q8 5 12 5 Q16 5 17 8 Q20 8 20 11 Q20 13 18 13 Z" />
+      {/* Server base */}
+      <rect x="7" y="16" width="10" height="5" rx="1" />
+      <line x1="7" y1="13" x2="7" y2="16" />
+      <line x1="17" y1="13" x2="17" y2="16" />
+      <circle cx="15" cy="18.5" r="0.8" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 /**
  * Attack Machine — monitor with a crosshair/target overlay, clearly distinguishing
  * this device from the HMI. The red color (set via palette) reinforces that this is
@@ -261,23 +432,39 @@ function AttackMachineSvg() {
 /**
  * Maps each DeviceCategory to its icon component function.
  * Used by DeviceIcon to look up the correct SVG without a switch statement.
+ * Grouped by Purdue Reference Model layer for readability.
  */
 const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
+  // ── OT Process (Levels 0–2) ────────────────────────────────────────────────
   plc: PlcSvg,
   rtu: RtuSvg,
   ied: IedSvg,
-  hmi: HmiSvg,
-  historian: HistorianSvg,
   sensor: SensorSvg,
   actuator: ActuatorSvg,
   pump: PumpSvg,
   valve: ValveSvg,
   'flow-meter': FlowMeterSvg,
   'pressure-transmitter': PressureTransmitterSvg,
+  // ── Control Center (Level 3) ────────────────────────────────────────────────
+  hmi: HmiSvg,
+  historian: HistorianSvg,
+  'application-server': ApplicationServerSvg,
+  'database-server': DatabaseServerSvg,
+  'engineering-workstation': EngineeringWorkstationSvg,
+  // ── Plant DMZ (Level 3.5) ───────────────────────────────────────────────────
   firewall: FirewallSvg,
   'ids-ips': IdsIpsSvg,
   switch: SwitchSvg,
   router: RouterSvg,
+  // ── Enterprise Zone (Level 4) ───────────────────────────────────────────────
+  'domain-controller': DomainControllerSvg,
+  'web-server': WebServerSvg,
+  'business-server': BusinessServerSvg,
+  'enterprise-desktop': EnterpriseDesktopSvg,
+  // ── Internet DMZ (Level 5) ───────────────────────────────────────────────────
+  'email-server': EmailServerSvg,
+  'internet-server': InternetServerSvg,
+  // ── Red Team ─────────────────────────────────────────────────────────────────
   'attack-machine': AttackMachineSvg
 }
 

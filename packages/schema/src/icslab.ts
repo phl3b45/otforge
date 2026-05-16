@@ -15,24 +15,54 @@ export type Protocol =
   | 'iec61850'
   | 'none'
 
-export type NetworkZone = 'ot' | 'it' | 'dmz' | 'external'
+/**
+ * Network zones following the Purdue Reference Model (IEC 62443-3-2 / NIST SP 800-82).
+ *   ot           — Levels 0–2:   Field devices — PLCs, RTUs, IEDs, sensors, actuators
+ *   control      — Level 3:      Control Center/Processing LAN — HMIs, historians, app/db servers
+ *   plant-dmz    — Level 3.5:    Plant DMZ — firewalls, IDS/IPS, jump hosts
+ *   enterprise   — Level 4:      Enterprise Zone — domain controllers, business servers, desktops
+ *   internet-dmz — Level 5:      Internet DMZ — email and internet-facing servers
+ *   attacker     — Red Team:     Isolated attack machine subnet (not shown in Purdue layer tabs)
+ */
+export type NetworkZone =
+  | 'ot'
+  | 'control'
+  | 'plant-dmz'
+  | 'enterprise'
+  | 'internet-dmz'
+  | 'attacker'
 
 export type DeviceCategory =
+  // ── OT Process (Levels 0–2) ──────────────────────────────────────────────────
   | 'plc'
   | 'rtu'
   | 'ied'
-  | 'hmi'
-  | 'historian'
   | 'sensor'
   | 'actuator'
   | 'pump'
   | 'valve'
   | 'flow-meter'
   | 'pressure-transmitter'
+  // ── Control Center (Level 3) ─────────────────────────────────────────────────
+  | 'hmi'
+  | 'historian'
+  | 'application-server'
+  | 'database-server'
+  | 'engineering-workstation'
+  // ── Plant DMZ (Level 3.5) ────────────────────────────────────────────────────
   | 'firewall'
   | 'ids-ips'
   | 'switch'
   | 'router'
+  // ── Enterprise Zone (Level 4) ────────────────────────────────────────────────
+  | 'domain-controller'
+  | 'web-server'
+  | 'business-server'
+  | 'enterprise-desktop'
+  // ── Internet DMZ (Level 5) ───────────────────────────────────────────────────
+  | 'email-server'
+  | 'internet-server'
+  // ── Red Team ─────────────────────────────────────────────────────────────────
   | 'attack-machine'
 
 // ── Visual layer ─────────────────────────────────────────────────────────────
@@ -44,7 +74,7 @@ export interface CanvasPosition {
 
 export interface CanvasNode {
   id: string
-  type: string          // matches DeviceTypeDefinition.id
+  type: string // matches DeviceTypeDefinition.id
   position: CanvasPosition
   data: {
     label: string
@@ -54,8 +84,8 @@ export interface CanvasNode {
 
 export interface CanvasEdge {
   id: string
-  source: string        // node id
-  target: string        // node id
+  source: string // node id
+  target: string // node id
   data: {
     protocol: Protocol
     label?: string
@@ -76,15 +106,15 @@ export interface VisualLayer {
 
 export interface NetworkSegment {
   zone: NetworkZone
-  subnet: string        // e.g. "172.20.10.0/24"
-  gateway: string       // e.g. "172.20.10.1"
+  subnet: string // e.g. "172.20.10.0/24"
+  gateway: string // e.g. "172.20.10.1"
   dockerNetwork: string // e.g. "ics-sim-ot-net"
 }
 
 export interface StaticRoute {
   destination: string
   gateway: string
-  via: NetworkZone      // which segment the route is on
+  via: NetworkZone // which segment the route is on
 }
 
 export interface NetworkLayer {
@@ -99,7 +129,7 @@ export interface ModbusConfig {
   port: number
   unitId: number
   registers: {
-    coils?: Record<string, number>       // address → initial value (0/1)
+    coils?: Record<string, number> // address → initial value (0/1)
     discreteInputs?: Record<string, number>
     holdingRegisters?: Record<string, number>
     inputRegisters?: Record<string, number>
@@ -120,18 +150,18 @@ export interface OpcUaConfig {
 
 export interface PLCProgramConfig {
   language: 'ladder' | 'st'
-  source: string        // base64-encoded .st source file
+  source: string // base64-encoded .st source file
   variables: Array<{
     name: string
     type: string
-    address: string     // IEC 61131-3 address e.g. %IX0.0
+    address: string // IEC 61131-3 address e.g. %IX0.0
     protocol: Protocol
     protocolAddress: string
   }>
 }
 
 export interface DeviceConfig {
-  nodeId: string        // matches CanvasNode.id
+  nodeId: string // matches CanvasNode.id
   category: DeviceCategory
   ipAddress: string
   protocols: Protocol[]
@@ -139,11 +169,11 @@ export interface DeviceConfig {
   dnp3?: DNP3Config
   opcua?: OpcUaConfig
   plcProgram?: PLCProgramConfig
-  dockerImage?: string  // override default image for this device type
+  dockerImage?: string // override default image for this device type
 }
 
 export interface DeviceLayer {
-  devices: Record<string, DeviceConfig>  // keyed by nodeId
+  devices: Record<string, DeviceConfig> // keyed by nodeId
 }
 
 // ── Security layer ─────────────────────────────────────────────────────────────
@@ -161,13 +191,13 @@ export interface ACLRule {
 }
 
 export interface IDSConfig {
-  enabledRulesets: string[]             // e.g. ["emerging-scada", "emerging-modbus"]
-  disabledRuleIds: number[]             // individual Suricata SID overrides
-  zeekScripts: string[]                 // e.g. ["modbus.zeek", "dnp3.zeek"]
+  enabledRulesets: string[] // e.g. ["emerging-scada", "emerging-modbus"]
+  disabledRuleIds: number[] // individual Suricata SID overrides
+  zeekScripts: string[] // e.g. ["modbus.zeek", "dnp3.zeek"]
 }
 
 export interface SecurityLayer {
-  defaultFirewallPolicy: ACLAction      // default-deny or default-allow
+  defaultFirewallPolicy: ACLAction // default-deny or default-allow
   firewallRules: ACLRule[]
   ids: IDSConfig
   logging: {
@@ -180,22 +210,22 @@ export interface SecurityLayer {
 // ── Device type registry ───────────────────────────────────────────────────────
 
 export interface DeviceTypeDefinition {
-  id: string                           // unique key e.g. "plc-siemens-s7"
+  id: string // unique key e.g. "plc-siemens-s7"
   category: DeviceCategory
-  label: string                        // display name e.g. "Siemens S7-300 PLC"
-  iconPath: string                     // relative path to SVG icon
+  label: string // display name e.g. "Siemens S7-300 PLC"
+  iconPath: string // relative path to SVG icon
   defaultProtocols: Protocol[]
-  defaultDockerImage: string           // GHCR image reference
+  defaultDockerImage: string // GHCR image reference
   defaultPorts: number[]
-  configSchema: string                 // JSON Schema for DeviceConfig validation
-  sector?: Sector                      // null = available in all sectors
+  configSchema: string // JSON Schema for DeviceConfig validation
+  sector?: Sector // null = available in all sectors
 }
 
 // ── Scenario pack attack layer ─────────────────────────────────────────────────
 
 export interface DockerLayer {
-  image: string                        // GHCR image e.g. "ghcr.io/ics-sim/attack-oilgas:1.0"
-  extendsImage: string                 // base image this FROM-extends
+  image: string // GHCR image e.g. "ghcr.io/ics-sim/attack-oilgas:1.0"
+  extendsImage: string // base image this FROM-extends
   description: string
 }
 
@@ -215,20 +245,20 @@ export interface ICSLabMeta {
   description: string
   sector: Sector
   author: string
-  createdAt: string                    // ISO 8601
+  createdAt: string // ISO 8601
   updatedAt: string
-  appVersion: string                   // minimum ICS Simulator version required
+  appVersion: string // minimum ICS Simulator version required
   locked: boolean
-  brief: string                        // Markdown — mission objectives shown in Student mode
+  brief: string // Markdown — mission objectives shown in Student mode
   requirements: ResourceEstimate
 }
 
 export interface ICSLabScenario {
   meta: ICSLabMeta
-  visual: VisualLayer                  // omitted in locked export
+  visual: VisualLayer // omitted in locked export
   network: NetworkLayer
   devices: DeviceLayer
-  security: SecurityLayer              // omitted in locked export
-  registry: DeviceTypeDefinition[]     // pack-supplied device type extensions
-  packLayers: DockerLayer[]            // attack tool layers from scenario pack
+  security: SecurityLayer // omitted in locked export
+  registry: DeviceTypeDefinition[] // pack-supplied device type extensions
+  packLayers: DockerLayer[] // attack tool layers from scenario pack
 }

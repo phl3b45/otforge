@@ -5,12 +5,16 @@
  * available device types for the currently active Purdue layer tab. Users drag
  * items from the palette onto the canvas to add new devices to their scenario.
  *
- * Layer-aware filtering:
- *   Each Purdue layer tab shows only the device types that make sense there:
- *     OT Process  — PLCs, RTUs, IEDs, field devices (sensors, actuators, pumps, etc.)
- *     IT Network  — HMI workstations, historians, switches, routers
- *     DMZ         — Firewalls, IDS/IPS sensors, switches, routers
- *     External    — Attack machine (Kali Linux) only
+ * Layer-aware filtering (Purdue Reference Model):
+ *   OT Process (L0-L2)    — PLCs, RTUs, IEDs, field devices (sensors, actuators, pumps, etc.)
+ *   Control Center (L3)   — HMIs, historians, application servers, database servers, engineering workstations
+ *   Plant DMZ (L3.5)      — Firewalls, IDS/IPS, switches, routers
+ *   Enterprise (L4)       — Domain controllers, web servers, business servers, enterprise desktops
+ *   Internet DMZ (L5)     — Email servers, internet-facing servers
+ *
+ * Attack Machine is intentionally absent from the palette — the red team machine
+ * is added via the dedicated "Add Attack Machine" toolbar button and launched in
+ * a separate OS window when the simulation is running.
  *
  * Drag protocol:
  *   - onDragStart sets `event.dataTransfer.setData('deviceCategory', category)`
@@ -18,8 +22,8 @@
  *     assigned to the active layer (no y-coordinate zone detection needed).
  *
  * Color overrides:
- *   Attack Machine and security devices (Firewall, IDS/IPS) use distinct colors
- *   to make them visually distinguishable from benign OT/IT devices at a glance.
+ *   Security devices (Firewall, IDS/IPS) use amber to mark them as boundary devices.
+ *   Enterprise/internet devices use purple and orange matching their zone accent.
  */
 
 import type { DeviceCategory, NetworkZone } from '@ics-sim/schema'
@@ -36,12 +40,12 @@ interface PaletteSection {
 }
 
 /**
- * Master palette definition — all 16 device categories, grouped by function.
+ * Master palette definition — all device categories grouped by Purdue layer and function.
  * The `layers` array restricts which tab each section appears on.
- * Order within each section reflects typical P&ID reading order (controllers first,
- * then field devices they control, then monitoring, then infrastructure).
+ * Order within each section reflects typical design-order for that layer.
  */
 const PALETTE: PaletteSection[] = [
+  // ── OT Process (Levels 0–2) ────────────────────────────────────────────────
   {
     label: 'Control',
     layers: ['ot'],
@@ -63,34 +67,69 @@ const PALETTE: PaletteSection[] = [
       { category: 'pressure-transmitter', label: 'Pressure TX' }
     ]
   },
+  // ── Control Center (Level 3) ────────────────────────────────────────────────
   {
-    label: 'Monitoring',
-    layers: ['it'],
+    label: 'SCADA / HMI',
+    layers: ['control'],
     items: [
       { category: 'hmi', label: 'HMI' },
       { category: 'historian', label: 'Historian' }
     ]
   },
   {
-    label: 'Network',
-    layers: ['it', 'dmz'],
+    label: 'Servers',
+    layers: ['control'],
     items: [
-      { category: 'switch', label: 'Switch' },
-      { category: 'router', label: 'Router' }
+      { category: 'application-server', label: 'App Server' },
+      { category: 'database-server', label: 'DB Server' },
+      { category: 'engineering-workstation', label: 'Eng. Workstation' }
     ]
   },
+  // ── Plant DMZ (Level 3.5) ───────────────────────────────────────────────────
   {
     label: 'Security',
-    layers: ['dmz'],
+    layers: ['plant-dmz'],
     items: [
       { category: 'firewall', label: 'Firewall' },
       { category: 'ids-ips', label: 'IDS/IPS' }
     ]
   },
   {
-    label: 'Red Team',
-    layers: ['external'],
-    items: [{ category: 'attack-machine', label: 'Attack Machine' }]
+    label: 'Network',
+    layers: ['plant-dmz'],
+    items: [
+      { category: 'switch', label: 'Switch' },
+      { category: 'router', label: 'Router' }
+    ]
+  },
+  // ── Enterprise Zone (Level 4) ───────────────────────────────────────────────
+  {
+    label: 'Directory & Servers',
+    layers: ['enterprise'],
+    items: [
+      { category: 'domain-controller', label: 'Domain Controller' },
+      { category: 'web-server', label: 'Web Server' },
+      { category: 'business-server', label: 'Business Server' }
+    ]
+  },
+  {
+    label: 'Endpoints',
+    layers: ['enterprise'],
+    items: [
+      { category: 'enterprise-desktop', label: 'Enterprise Desktop' },
+      { category: 'switch', label: 'Switch' },
+      { category: 'router', label: 'Router' }
+    ]
+  },
+  // ── Internet DMZ (Level 5) ───────────────────────────────────────────────────
+  {
+    label: 'Internet-Facing',
+    layers: ['internet-dmz'],
+    items: [
+      { category: 'email-server', label: 'Email Server' },
+      { category: 'internet-server', label: 'Internet Server' },
+      { category: 'firewall', label: 'Firewall' }
+    ]
   }
 ]
 
@@ -99,9 +138,17 @@ const PALETTE: PaletteSection[] = [
  * Categories not listed here use the default muted gray (#8b949e).
  */
 const PALETTE_COLORS: Partial<Record<DeviceCategory, string>> = {
-  'attack-machine': '#f85149', // Red — hostile/adversarial device
-  firewall: '#d29922', // Amber — security boundary device
-  'ids-ips': '#d29922' // Amber — security monitoring device
+  // Security boundary devices — amber
+  firewall: '#d29922',
+  'ids-ips': '#d29922',
+  // Enterprise devices — purple
+  'domain-controller': '#a371f7',
+  'web-server': '#a371f7',
+  'business-server': '#a371f7',
+  'enterprise-desktop': '#a371f7',
+  // Internet DMZ devices — orange
+  'email-server': '#f78166',
+  'internet-server': '#f78166'
 }
 
 /**
@@ -157,10 +204,13 @@ export function DevicePalette({ activeLayer }: DevicePaletteProps) {
       <div className="palette-header">Devices</div>
       <div className="palette-sections">
         {visibleSections.map(section => (
-          <div key={section.label} className="palette-section">
+          <div
+            key={`${section.label}-${section.layers?.join('-') ?? 'all'}`}
+            className="palette-section"
+          >
             <div className="palette-section-label">{section.label}</div>
             {section.items.map(item => (
-              <PaletteItem key={item.category} {...item} />
+              <PaletteItem key={`${item.category}-${section.label}`} {...item} />
             ))}
           </div>
         ))}

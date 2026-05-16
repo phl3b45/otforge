@@ -13,8 +13,10 @@
  *     tests do not break when formatting or key ordering changes.
  *
  * Coverage target — each special-case branch in generateCompose():
- *   - Firewall multi-zone attachment + capability grants
- *   - Attack machine external-only isolation + capability grants
+ *   - All six Purdue Model zone networks emitted (ot, control, plant-dmz, enterprise,
+ *     internet-dmz, attacker) even when the scenario only defines a subset
+ *   - Firewall multi-zone attachment to ot-net + control-net + plant-dmz-net
+ *   - Attack machine attacker-net isolation + capability grants + noVNC port
  *   - PLC web UI port publishing (deterministic sequential assignment)
  *   - Protocol environment variable injection (Modbus, DNP3, OPC-UA)
  *   - PLC program pre-load via INITIAL_PROGRAM_B64
@@ -91,7 +93,7 @@ function makeScenario(
     },
     visual: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
     network: {
-      segments: segmentZones.map(s => ({ ...s, dockerNetwork: `ics-sim-${s.zone}-net` })),
+      segments: segmentZones.map(s => ({ ...s, dockerNetwork: `${s.zone}-net` })),
       routes: []
     },
     devices: { devices },
@@ -109,16 +111,18 @@ function makeScenario(
 // ── Docker networks ───────────────────────────────────────────────────────────
 
 describe('Docker networks', () => {
-  it('always emits all four zone networks even when the scenario only defines one segment', () => {
+  it('always emits all six Purdue zone networks even when the scenario only defines one segment', () => {
     const scenario = makeScenario(
-      [['plc-1', { category: 'plc', ipAddress: '172.20.10.10' }]],
-      [{ zone: 'ot', subnet: '172.20.10.0/24', gateway: '172.20.10.1' }]
+      [['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]],
+      [{ zone: 'ot', subnet: '10.200.10.0/24', gateway: '10.200.10.1' }]
     )
     const compose = gen(scenario)
     expect(compose.networks).toHaveProperty('ot-net')
-    expect(compose.networks).toHaveProperty('it-net')
-    expect(compose.networks).toHaveProperty('dmz-net')
-    expect(compose.networks).toHaveProperty('external-net')
+    expect(compose.networks).toHaveProperty('control-net')
+    expect(compose.networks).toHaveProperty('plant-dmz-net')
+    expect(compose.networks).toHaveProperty('enterprise-net')
+    expect(compose.networks).toHaveProperty('internet-dmz-net')
+    expect(compose.networks).toHaveProperty('attacker-net')
   })
 
   it('uses an explicit scenario subnet when a zone segment is provided', () => {
@@ -131,18 +135,20 @@ describe('Docker networks', () => {
     expect(compose.networks['ot-net'].ipam.config[0].gateway).toBe('10.0.1.1')
   })
 
-  it('fills in ZONE_DEFAULT subnets for zones not present in the scenario segments', () => {
-    // No segments defined — all four should come from defaults
-    const scenario = makeScenario([['plc-1', { category: 'plc', ipAddress: '172.20.10.10' }]])
+  it('fills in ZONE_DEFAULT subnets (10.200.x.0/24) for all zones not present in the scenario', () => {
+    // No segments defined — all six zones should come from ZONE_DEFAULTS
+    const scenario = makeScenario([['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]])
     const compose = gen(scenario)
-    expect(compose.networks['ot-net'].ipam.config[0].subnet).toBe('172.20.10.0/24')
-    expect(compose.networks['it-net'].ipam.config[0].subnet).toBe('172.20.20.0/24')
-    expect(compose.networks['dmz-net'].ipam.config[0].subnet).toBe('172.20.30.0/24')
-    expect(compose.networks['external-net'].ipam.config[0].subnet).toBe('172.20.40.0/24')
+    expect(compose.networks['ot-net'].ipam.config[0].subnet).toBe('10.200.10.0/24')
+    expect(compose.networks['control-net'].ipam.config[0].subnet).toBe('10.200.20.0/24')
+    expect(compose.networks['plant-dmz-net'].ipam.config[0].subnet).toBe('10.200.30.0/24')
+    expect(compose.networks['enterprise-net'].ipam.config[0].subnet).toBe('10.200.40.0/24')
+    expect(compose.networks['internet-dmz-net'].ipam.config[0].subnet).toBe('10.200.50.0/24')
+    expect(compose.networks['attacker-net'].ipam.config[0].subnet).toBe('10.200.60.0/24')
   })
 
   it('sets driver to "bridge" for all zone networks', () => {
-    const compose = gen(makeScenario([['s1', { category: 'sensor', ipAddress: '172.20.10.10' }]]))
+    const compose = gen(makeScenario([['s1', { category: 'sensor', ipAddress: '10.200.10.10' }]]))
     for (const net of Object.values(compose.networks)) {
       expect(net.driver).toBe('bridge')
     }
@@ -153,18 +159,18 @@ describe('Docker networks', () => {
 
 describe('image assignment', () => {
   it('uses the GHCR OpenPLC image for PLC devices', () => {
-    const compose = gen(makeScenario([['plc-1', { category: 'plc', ipAddress: '172.20.10.10' }]]))
+    const compose = gen(makeScenario([['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]]))
     expect(compose.services['plc-1'].image).toMatch(/ics-sim-openplc/)
   })
 
-  it('uses the Modbus server image for RTU devices', () => {
-    const compose = gen(makeScenario([['rtu-1', { category: 'rtu', ipAddress: '172.20.10.10' }]]))
-    expect(compose.services['rtu-1'].image).toMatch(/ics-sim-modbus/)
+  it('uses the alpine stub image for RTU devices (until ics-sim-modbus is published)', () => {
+    const compose = gen(makeScenario([['rtu-1', { category: 'rtu', ipAddress: '10.200.10.10' }]]))
+    expect(compose.services['rtu-1'].image).toBe('alpine:latest')
   })
 
-  it('uses the DNP3 outstation image for IED devices', () => {
-    const compose = gen(makeScenario([['ied-1', { category: 'ied', ipAddress: '172.20.10.10' }]]))
-    expect(compose.services['ied-1'].image).toMatch(/ics-sim-dnp3/)
+  it('uses the alpine stub image for IED devices (until ics-sim-dnp3 is published)', () => {
+    const compose = gen(makeScenario([['ied-1', { category: 'ied', ipAddress: '10.200.10.10' }]]))
+    expect(compose.services['ied-1'].image).toBe('alpine:latest')
   })
 
   it('uses a custom dockerImage override when provided on the device', () => {
@@ -174,7 +180,7 @@ describe('image assignment', () => {
           'plc-custom',
           {
             category: 'plc',
-            ipAddress: '172.20.10.10',
+            ipAddress: '10.200.10.10',
             dockerImage: 'my.registry.com/custom-plc:v2'
           }
         ]
@@ -187,14 +193,14 @@ describe('image assignment', () => {
 describe('service name and container name', () => {
   it('lowercases node IDs and replaces underscores with hyphens', () => {
     const compose = gen(
-      makeScenario([['PLC_Main_Unit', { category: 'plc', ipAddress: '172.20.10.10' }]])
+      makeScenario([['PLC_Main_Unit', { category: 'plc', ipAddress: '10.200.10.10' }]])
     )
     expect(compose.services).toHaveProperty('plc-main-unit')
   })
 
   it('prefixes container_name with the project name', () => {
     const compose = gen(
-      makeScenario([['plc-1', { category: 'plc', ipAddress: '172.20.10.10' }]]),
+      makeScenario([['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]]),
       'my-project'
     )
     expect(compose.services['plc-1'].container_name).toBe('my-project-plc-1')
@@ -202,7 +208,7 @@ describe('service name and container name', () => {
 
   it('sets project name from the projectName argument', () => {
     const compose = gen(
-      makeScenario([['s1', { category: 'sensor', ipAddress: '172.20.10.10' }]]),
+      makeScenario([['s1', { category: 'sensor', ipAddress: '10.200.10.10' }]]),
       'ics-sim-water-plant'
     )
     expect(compose.name).toBe('ics-sim-water-plant')
@@ -211,18 +217,18 @@ describe('service name and container name', () => {
 
 describe('resource limits', () => {
   it('assigns 128m memory limit to PLC devices (OpenPLC needs Ubuntu + build tools)', () => {
-    const compose = gen(makeScenario([['plc-1', { category: 'plc', ipAddress: '172.20.10.10' }]]))
+    const compose = gen(makeScenario([['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]]))
     expect(compose.services['plc-1'].deploy.resources.limits.memory).toBe('128m')
   })
 
   it('assigns 80m memory limit to RTU devices (pymodbus on Alpine)', () => {
-    const compose = gen(makeScenario([['rtu-1', { category: 'rtu', ipAddress: '172.20.10.10' }]]))
+    const compose = gen(makeScenario([['rtu-1', { category: 'rtu', ipAddress: '10.200.10.10' }]]))
     expect(compose.services['rtu-1'].deploy.resources.limits.memory).toBe('80m')
   })
 
   it('assigns 2048m memory limit to attack machine (Kali + Xfce4 desktop + Metasploit)', () => {
     const compose = gen(
-      makeScenario([['kali-1', { category: 'attack-machine', ipAddress: '172.20.40.10' }]])
+      makeScenario([['kali-1', { category: 'attack-machine', ipAddress: '10.200.60.10' }]])
     )
     expect(compose.services['kali-1'].deploy.resources.limits.memory).toBe('2048m')
   })
@@ -231,22 +237,32 @@ describe('resource limits', () => {
 describe('network attachment', () => {
   it('attaches a device to the zone that contains its IP address', () => {
     const scenario = makeScenario(
-      [['plc-1', { category: 'plc', ipAddress: '172.20.10.10' }]],
-      [{ zone: 'ot', subnet: '172.20.10.0/24', gateway: '172.20.10.1' }]
+      [['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]],
+      [{ zone: 'ot', subnet: '10.200.10.0/24', gateway: '10.200.10.1' }]
     )
     const compose = gen(scenario)
     expect(compose.services['plc-1'].networks).toHaveProperty('ot-net')
-    expect(compose.services['plc-1'].networks['ot-net'].ipv4_address).toBe('172.20.10.10')
+    expect(compose.services['plc-1'].networks['ot-net'].ipv4_address).toBe('10.200.10.10')
+  })
+
+  it('attaches a control-zone device to control-net', () => {
+    const scenario = makeScenario(
+      [['hmi-1', { category: 'hmi', ipAddress: '10.200.20.10' }]],
+      [{ zone: 'control', subnet: '10.200.20.0/24', gateway: '10.200.20.1' }]
+    )
+    const compose = gen(scenario)
+    expect(compose.services['hmi-1'].networks).toHaveProperty('control-net')
+    expect(compose.services['hmi-1'].networks['control-net'].ipv4_address).toBe('10.200.20.10')
   })
 
   it('falls back to ot-net when the device IP does not match any defined segment', () => {
-    const scenario = makeScenario([['plc-1', { category: 'plc', ipAddress: '172.20.10.10' }]])
+    const scenario = makeScenario([['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]])
     const compose = gen(scenario)
     expect(compose.services['plc-1'].networks).toHaveProperty('ot-net')
   })
 
   it('sets restart to "unless-stopped" for all device services', () => {
-    const compose = gen(makeScenario([['s1', { category: 'sensor', ipAddress: '172.20.10.10' }]]))
+    const compose = gen(makeScenario([['s1', { category: 'sensor', ipAddress: '10.200.10.10' }]]))
     expect(compose.services['s1'].restart).toBe('unless-stopped')
   })
 })
@@ -254,20 +270,31 @@ describe('network attachment', () => {
 // ── Special device categories ─────────────────────────────────────────────────
 
 describe('firewall device', () => {
-  // Firewall must bridge OT/IT/DMZ at the same time to enforce inter-zone ACLs
+  /**
+   * Firewall bridges OT (L0-L2), Control Center (L3), and Plant DMZ (L3.5)
+   * simultaneously to enforce inter-zone ACLs via nftables rules.
+   * It must NOT be on the attacker network — the Red Team zone is intentionally
+   * separated from the Purdue zone stack.
+   */
   const firewallCompose = () =>
-    gen(makeScenario([['fw-1', { category: 'firewall', ipAddress: '172.20.10.254' }]]))
+    gen(makeScenario([['fw-1', { category: 'firewall', ipAddress: '10.200.10.254' }]]))
 
-  it('attaches to ot-net, it-net, and dmz-net simultaneously', () => {
+  it('attaches to ot-net, control-net, and plant-dmz-net simultaneously', () => {
     const nets = Object.keys(firewallCompose().services['fw-1'].networks)
     expect(nets).toContain('ot-net')
-    expect(nets).toContain('it-net')
-    expect(nets).toContain('dmz-net')
+    expect(nets).toContain('control-net')
+    expect(nets).toContain('plant-dmz-net')
   })
 
-  it('does NOT attach to external-net', () => {
+  it('does NOT attach to attacker-net', () => {
     const nets = Object.keys(firewallCompose().services['fw-1'].networks)
-    expect(nets).not.toContain('external-net')
+    expect(nets).not.toContain('attacker-net')
+  })
+
+  it('does NOT attach to enterprise-net or internet-dmz-net', () => {
+    const nets = Object.keys(firewallCompose().services['fw-1'].networks)
+    expect(nets).not.toContain('enterprise-net')
+    expect(nets).not.toContain('internet-dmz-net')
   })
 
   it('grants NET_ADMIN for nftables rule management', () => {
@@ -280,13 +307,18 @@ describe('firewall device', () => {
 })
 
 describe('attack-machine device', () => {
-  // Kali must be on External only — it must not reach OT/IT directly
+  /**
+   * The Kali Linux attack machine must be isolated on attacker-net ONLY.
+   * It must not reach OT, Control Center, Plant DMZ, Enterprise, or Internet DMZ
+   * directly — the intent is that students must pivot through vulnerabilities
+   * to reach inner zones, not simply connect to them by default.
+   */
   const attackCompose = () =>
-    gen(makeScenario([['kali-1', { category: 'attack-machine', ipAddress: '172.20.40.10' }]]))
+    gen(makeScenario([['kali-1', { category: 'attack-machine', ipAddress: '10.200.60.10' }]]))
 
-  it('attaches ONLY to external-net, never to OT, IT, or DMZ', () => {
+  it('attaches ONLY to attacker-net — never to any Purdue zone network', () => {
     const nets = Object.keys(attackCompose().services['kali-1'].networks)
-    expect(nets).toEqual(['external-net'])
+    expect(nets).toEqual(['attacker-net'])
   })
 
   it('grants NET_ADMIN and NET_RAW for nmap raw scans and ARP operations', () => {
@@ -294,10 +326,25 @@ describe('attack-machine device', () => {
     expect(attackCompose().services['kali-1'].cap_add).toContain('NET_RAW')
   })
 
-  it('preserves the static IP on external-net', () => {
-    expect(attackCompose().services['kali-1'].networks['external-net'].ipv4_address).toBe(
-      '172.20.40.10'
+  it('preserves the static IP on attacker-net', () => {
+    expect(attackCompose().services['kali-1'].networks['attacker-net'].ipv4_address).toBe(
+      '10.200.60.10'
     )
+  })
+
+  it('publishes KasmVNC port 3000 on deterministic host port 6900 for the first attack machine', () => {
+    expect(attackCompose().services['kali-1'].ports).toContain('6900:3000')
+  })
+
+  it('assigns sequential host ports to multiple attack machines — 6900, 6901, etc.', () => {
+    const compose = gen(
+      makeScenario([
+        ['kali-1', { category: 'attack-machine', ipAddress: '10.200.60.10' }],
+        ['kali-2', { category: 'attack-machine', ipAddress: '10.200.60.11' }]
+      ])
+    )
+    expect(compose.services['kali-1'].ports).toContain('6900:3000')
+    expect(compose.services['kali-2'].ports).toContain('6901:3000')
   })
 })
 
@@ -305,7 +352,7 @@ describe('attack-machine device', () => {
 
 describe('PLC port publishing', () => {
   it('publishes OpenPLC web UI on host port 18080 for the first PLC', () => {
-    const compose = gen(makeScenario([['plc-1', { category: 'plc', ipAddress: '172.20.10.10' }]]))
+    const compose = gen(makeScenario([['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]]))
     expect(compose.services['plc-1'].ports).toContain('18080:8080')
   })
 
@@ -314,8 +361,8 @@ describe('PLC port publishing', () => {
     // mirroring the same ordering used by main/index.ts to build activePlcPorts.
     const compose = gen(
       makeScenario([
-        ['plc-1', { category: 'plc', ipAddress: '172.20.10.10' }],
-        ['plc-2', { category: 'plc', ipAddress: '172.20.10.11' }]
+        ['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }],
+        ['plc-2', { category: 'plc', ipAddress: '10.200.10.11' }]
       ])
     )
     expect(compose.services['plc-1'].ports).toContain('18080:8080')
@@ -323,7 +370,7 @@ describe('PLC port publishing', () => {
   })
 
   it('does not publish any ports for non-PLC devices', () => {
-    const compose = gen(makeScenario([['rtu-1', { category: 'rtu', ipAddress: '172.20.10.10' }]]))
+    const compose = gen(makeScenario([['rtu-1', { category: 'rtu', ipAddress: '10.200.10.10' }]]))
     expect(compose.services['rtu-1'].ports).toBeUndefined()
   })
 })
@@ -332,7 +379,7 @@ describe('PLC port publishing', () => {
 
 describe('environment variable injection', () => {
   it('always injects DEVICE_ID and DEVICE_CATEGORY for every device', () => {
-    const compose = gen(makeScenario([['plc-1', { category: 'plc', ipAddress: '172.20.10.10' }]]))
+    const compose = gen(makeScenario([['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]]))
     const env = compose.services['plc-1'].environment ?? []
     expect(env).toContain('DEVICE_ID=plc-1')
     expect(env).toContain('DEVICE_CATEGORY=plc')
@@ -345,7 +392,7 @@ describe('environment variable injection', () => {
           'rtu-1',
           {
             category: 'rtu',
-            ipAddress: '172.20.10.10',
+            ipAddress: '10.200.10.10',
             modbus: { mode: 'tcp', port: 502, unitId: 5, registers: {} }
           }
         ]
@@ -364,7 +411,7 @@ describe('environment variable injection', () => {
           'ied-1',
           {
             category: 'ied',
-            ipAddress: '172.20.10.10',
+            ipAddress: '10.200.10.10',
             dnp3: { masterAddress: 1, outstationAddress: 10, port: 20000 }
           }
         ]
@@ -383,7 +430,7 @@ describe('environment variable injection', () => {
           'plc-1',
           {
             category: 'plc',
-            ipAddress: '172.20.10.10',
+            ipAddress: '10.200.10.10',
             opcua: { port: 4840, namespace: 'urn:icslab:plc', nodes: [] }
           }
         ]
@@ -402,7 +449,7 @@ describe('environment variable injection', () => {
           'plc-1',
           {
             category: 'plc',
-            ipAddress: '172.20.10.10',
+            ipAddress: '10.200.10.10',
             plcProgram: {
               language: 'st',
               source: b64,
@@ -432,7 +479,7 @@ describe('environment variable injection', () => {
           'plc-1',
           {
             category: 'plc',
-            ipAddress: '172.20.10.10',
+            ipAddress: '10.200.10.10',
             plcProgram: {
               language: 'st',
               source: b64,
@@ -462,7 +509,7 @@ describe('environment variable injection', () => {
   })
 
   it('does NOT inject INITIAL_PROGRAM_B64 when plcProgram has no source', () => {
-    const compose = gen(makeScenario([['plc-1', { category: 'plc', ipAddress: '172.20.10.10' }]]))
+    const compose = gen(makeScenario([['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]]))
     const env = compose.services['plc-1'].environment ?? []
     expect(env.some(v => v.startsWith('INITIAL_PROGRAM_B64'))).toBe(false)
   })
@@ -473,7 +520,7 @@ describe('environment variable injection', () => {
 describe('fixed infrastructure services', () => {
   // Infrastructure runs in every simulation regardless of scenario contents.
   // Using a single-sensor scenario as the minimal base.
-  const infraScenario = makeScenario([['s1', { category: 'sensor', ipAddress: '172.20.10.10' }]])
+  const infraScenario = makeScenario([['s1', { category: 'sensor', ipAddress: '10.200.10.10' }]])
 
   it('always includes Suricata IDS/IPS', () => {
     expect(gen(infraScenario).services).toHaveProperty('suricata')
@@ -509,9 +556,24 @@ describe('fixed infrastructure services', () => {
     expect(compose.volumes).toHaveProperty('my-proj-fuxa-data')
   })
 
+  it('places infrastructure services on control-net (Level 3 — Control Center)', () => {
+    const compose = gen(infraScenario)
+    // InfluxDB, Loki, Grafana, FUXA all live in the Control Center zone (L3)
+    expect(compose.services['influxdb'].networks).toHaveProperty('control-net')
+    expect(compose.services['loki'].networks).toHaveProperty('control-net')
+    expect(compose.services['grafana'].networks).toHaveProperty('control-net')
+    expect(compose.services['fuxa'].networks).toHaveProperty('control-net')
+  })
+
   it('grants Suricata NET_ADMIN + NET_RAW for AF_PACKET raw socket capture', () => {
     const compose = gen(infraScenario)
     expect(compose.services['suricata'].cap_add).toContain('NET_ADMIN')
     expect(compose.services['suricata'].cap_add).toContain('NET_RAW')
+  })
+
+  it('attaches Suricata to both ot-net and control-net to monitor cross-zone traffic', () => {
+    const compose = gen(infraScenario)
+    expect(compose.services['suricata'].networks).toHaveProperty('ot-net')
+    expect(compose.services['suricata'].networks).toHaveProperty('control-net')
   })
 })

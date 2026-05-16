@@ -210,6 +210,58 @@ const api = {
       ipcRenderer.invoke('plc:status', { nodeId })
   },
 
+  // ── Network settings ──────────────────────────────────────────────────────────
+  settings: {
+    /**
+     * Returns the current NetworkSettings from <userData>/settings.json.
+     * Returns { autoDetect: true } when the file does not exist yet (first launch).
+     */
+    get: (): Promise<NetworkSettings> => ipcRenderer.invoke('settings:get'),
+
+    /**
+     * Persists updated NetworkSettings to <userData>/settings.json.
+     * Called when the user clicks Save in the Settings modal.
+     *
+     * @param settings - Updated settings from the renderer's form state.
+     * @returns { ok: true } on success, { ok: false, error } on write failure.
+     */
+    set: (settings: NetworkSettings): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('settings:set', settings),
+
+    /**
+     * Runs subnet auto-detection against the current host interfaces and returns
+     * the proposed zone → subnet/gateway map without writing to disk.
+     *
+     * Used by the Settings modal "Detect" button so users can preview the chosen
+     * subnets before deciding whether to save them as pinned values.
+     *
+     * @returns { ok: true, zones } on success — zones has all four zone keys.
+     */
+    detectSubnets: (): Promise<{
+      ok: boolean
+      zones?: Record<string, { subnet: string; gateway: string }>
+    }> => ipcRenderer.invoke('settings:detectSubnets')
+  },
+
+  // ── Attack Machine window ────────────────────────────────────────────────────
+  attack: {
+    /**
+     * Opens the attack machine's Kali Linux Xfce4 desktop in a separate Electron
+     * BrowserWindow that loads the noVNC WebSocket interface. The window is a native
+     * OS window that can be freely moved to a second monitor, resized, or minimised
+     * independently of the main simulator window.
+     *
+     * Only callable while the simulation is running. If the attack-machine container
+     * has not yet been assigned a noVNC host port by the compose generator, the call
+     * returns { ok: false, error } instead of opening a window.
+     *
+     * @param nodeId - Canvas node ID of the attack-machine device.
+     * @returns { ok: true } on success, { ok: false, error } on failure.
+     */
+    launchWindow: (nodeId: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('attack:launchWindow', { nodeId })
+  },
+
   // ── One-way push events from main → renderer ──────────────────────────────────
   // These listeners attach to ipcRenderer events and return an unsubscribe function
   // so the renderer can clean up in a useEffect return.
@@ -261,6 +313,23 @@ const api = {
 
 // Expose the API to the renderer under window.electronAPI
 contextBridge.exposeInMainWorld('electronAPI', api)
+
+/**
+ * Persisted network configuration for Docker subnet assignment.
+ *
+ * This type must stay structurally identical to the NetworkSettings interface
+ * in main/index.ts and the local type in SettingsModal.tsx (TypeScript structural
+ * typing means they're compatible, but keeping them in sync avoids confusion).
+ *
+ * autoDetect:    When true, findFreeSubnets() picks conflict-free /24 subnets at
+ *                simulation start. When false, pinnedSubnets are used instead.
+ * pinnedSubnets: User-configured zone → subnet/gateway map. All four zones should
+ *                be present; missing zones fall back to ZONE_DEFAULTS in the main process.
+ */
+export interface NetworkSettings {
+  autoDetect: boolean
+  pinnedSubnets?: Record<string, { subnet: string; gateway: string }>
+}
 
 /**
  * TypeScript type for `window.electronAPI`.

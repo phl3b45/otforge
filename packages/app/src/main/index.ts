@@ -42,6 +42,7 @@ import { promisify } from 'util'
 import { join as pathJoin } from 'path'
 import os from 'os'
 import http from 'http'
+import net from 'net'
 import {
   generateCompose,
   DockerClient,
@@ -49,11 +50,151 @@ import {
   checkSystemMemory,
   validateScenario,
   toProjectName,
-  writeGrafanaProvisioning
+  writeGrafanaProvisioning,
+  findFreeSubnets,
+  ZONE_DEFAULTS
 } from '@ics-sim/orchestrator'
+import type { NetworkZone } from '@ics-sim/schema'
 import { initDb, saveActiveScenario, loadActiveScenario, clearActiveScenario } from './db'
 
 const execAsync = promisify(exec)
+
+// ── Network settings ───────────────────────────────────────────────────────────
+
+/**
+ * Persisted network configuration for Docker subnet assignment.
+ *
+ * Stored as JSON at <userData>/settings.json. Controls whether the simulator
+ * auto-detects non-conflicting subnets at each simulation start or uses a
+ * user-pinned set of subnets instead.
+ *
+ * autoDetect:     When true (default), findFreeSubnets() scans os.networkInterfaces()
+ *                 at every simulation start and picks /24 subnets in the 10.200–10.210.x
+ *                 range that don't conflict with any existing host interface.
+ *
+ * pinnedSubnets:  Used only when autoDetect is false. The renderer's Settings modal
+ *                 populates this from user-edited subnet inputs. Should include all six
+ *                 zones (ot, control, plant-dmz, enterprise, internet-dmz, attacker).
+ */
+interface NetworkSettings {
+  autoDetect: boolean
+  pinnedSubnets?: Record<string, { subnet: string; gateway: string }>
+}
+
+/**
+ * Returns the absolute path to the settings JSON file.
+ * Computed at call time (not module load) so app.getPath() is always ready.
+ */
+function settingsPath(): string {
+  return pathJoin(app.getPath('userData'), 'settings.json')
+}
+
+/**
+ * Reads the stored NetworkSettings from disk.
+ *
+ * Returns a safe default ({ autoDetect: true }) if the file does not exist yet
+ * (first launch, or user deleted the file) or cannot be parsed. This guarantees
+ * the app always has a valid settings object to work with.
+ */
+async function readSettings(): Promise<NetworkSettings> {
+  try {
+    const raw = JSON.parse(await readFile(settingsPath(), 'utf-8'))
+    // Merge with default so any added fields in future versions get defaults
+    return { autoDetect: true, ...raw }
+  } catch {
+    // File absent on first launch, or corrupted — fall back to auto-detect
+    return { autoDetect: true }
+  }
+}
+
+/**
+ * Persists a NetworkSettings object to <userData>/settings.json.
+ * The file is created if it does not exist (mkdir not needed — userData always exists).
+ *
+ * @param settings - The settings to write.
+ */
+async function writeSettings(settings: NetworkSettings): Promise<void> {
+  await writeFile(settingsPath(), JSON.stringify(settings, null, 2), 'utf-8')
+}
+
+/**
+ * Scans the host's network interfaces via os.networkInterfaces() and returns
+ * a deduplicated list of CIDR strings normalized to network base addresses.
+ *
+ * Normalization: os.networkInterfaces() returns addr.cidr as the host address
+ * with prefix length (e.g., "192.168.1.100/24"). We convert this to the network
+ * base ("192.168.1.0/24") so findFreeSubnets() can correctly detect whether a
+ * candidate subnet overlaps with an existing interface's range — even when the
+ * existing interface uses a broad mask like /8 or /16.
+ *
+ * Internal loopback addresses (127.0.0.1, ::1) are excluded.
+ * Single-host /32 addresses are excluded (they don't define a subnet to avoid).
+ *
+ * @returns Array of unique network-base CIDR strings (e.g., ["192.168.1.0/24", "10.8.0.0/16"]).
+ */
+function getInUseCidrs(): string[] {
+  const cidrs: string[] = []
+  for (const iface of Object.values(os.networkInterfaces())) {
+    if (!iface) continue
+    for (const addr of iface) {
+      // Skip IPv6 (Docker networks are IPv4), loopback, and addresses without CIDR notation
+      if (addr.family !== 'IPv4' || addr.internal || !addr.cidr) continue
+      const [ip, bits] = addr.cidr.split('/')
+      const prefix = parseInt(bits)
+      // /32 means a single host address — not a routable subnet to avoid
+      if (prefix === 32) continue
+      // Compute the network base by zeroing host bits using bitwise AND with the mask
+      const mask = prefix === 0 ? 0 : ~((1 << (32 - prefix)) - 1) >>> 0
+      const ipInt =
+        ip.split('.').reduce((acc: number, o: string) => (acc << 8) + parseInt(o), 0) >>> 0
+      const netInt = (ipInt & mask) >>> 0
+      const net = [
+        (netInt >>> 24) & 0xff,
+        (netInt >>> 16) & 0xff,
+        (netInt >>> 8) & 0xff,
+        netInt & 0xff
+      ].join('.')
+      cidrs.push(`${net}/${bits}`)
+    }
+  }
+  // Deduplicate — multiple interfaces can share the same network segment
+  return [...new Set(cidrs)]
+}
+
+/**
+ * Resolves the Docker zone-to-subnet map to use for the next simulation.
+ *
+ * Logic:
+ *   1. Read settings.json.
+ *   2. If autoDetect is false AND pinnedSubnets covers all four zones, use pinned subnets.
+ *   3. Otherwise, run findFreeSubnets() against the current host interface list.
+ *
+ * The returned map is passed to generateCompose() and writeGrafanaProvisioning()
+ * so every container IP and every Grafana datasource URL uses the same subnets.
+ *
+ * @returns Promise resolving to a complete zone → { subnet, gateway } map.
+ */
+async function resolveZones(): Promise<Record<NetworkZone, { subnet: string; gateway: string }>> {
+  const settings = await readSettings()
+
+  if (!settings.autoDetect && settings.pinnedSubnets) {
+    // Use pinned values, falling back to ZONE_DEFAULTS for any missing zone.
+    // This guards against partially-filled pinnedSubnets from older settings files
+    // (e.g., saved before the 6-zone Purdue refactor added plant-dmz/enterprise/internet-dmz).
+    const pins = settings.pinnedSubnets
+    return {
+      ot: { ...(pins.ot ?? ZONE_DEFAULTS.ot) },
+      control: { ...(pins.control ?? ZONE_DEFAULTS.control) },
+      'plant-dmz': { ...(pins['plant-dmz'] ?? ZONE_DEFAULTS['plant-dmz']) },
+      enterprise: { ...(pins.enterprise ?? ZONE_DEFAULTS.enterprise) },
+      'internet-dmz': { ...(pins['internet-dmz'] ?? ZONE_DEFAULTS['internet-dmz']) },
+      attacker: { ...(pins.attacker ?? ZONE_DEFAULTS.attacker) }
+    }
+  }
+
+  // Auto-detect: walk os.networkInterfaces() and pick non-conflicting /24 subnets
+  return findFreeSubnets(getInUseCidrs())
+}
 
 /**
  * Platform-specific directories where Docker CLI binaries may live.
@@ -189,11 +330,11 @@ let activeProjectName: string | null = null
 const activePlcPorts = new Map<string, number>()
 
 /**
- * Maps attack-machine device nodeIds to their published noVNC host ports.
+ * Maps attack-machine device nodeIds to their published host ports.
  * Populated on simulation start with the same index ordering as the compose
- * generator's ATTACK_NOVNC_PORT_BASE=6900 logic.
+ * generator's ATTACK_NOVNC_PORT_BASE=6900 logic (host port → container port 3000).
  *
- * Used by terminal:getVncUrl to build the noVNC URL for the Electron webview.
+ * Used by attack:launchWindow and terminal:getVncUrl to build the KasmVNC URL.
  */
 const activeAttackPorts = new Map<string, number>()
 
@@ -525,13 +666,30 @@ function registerIPCHandlers(): void {
           }
         }
 
+        // Resolve Docker subnets for all four network zones.
+        //
+        // resolveZones() reads settings.json: if autoDetect is true (default), it
+        // calls findFreeSubnets(getInUseCidrs()) to pick /24 subnets in 10.200–10.210.x
+        // that don't conflict with any current host network interface. If the user has
+        // pinned specific subnets via the Settings modal, those are used instead.
+        //
+        // The resolved map is threaded into writeGrafanaProvisioning() (so Grafana
+        // datasource URLs point to the correct InfluxDB/Loki IPs) and generateCompose()
+        // (so every Docker bridge network and container static IP falls inside the
+        // resolved subnets).
+        const zones = await resolveZones()
+        // Monitoring infrastructure (InfluxDB, Loki, Grafana, FUXA) lives on the
+        // Control Center (Level 3) network. Pass its prefix so Grafana datasource
+        // URLs in the provisioning files point to the resolved subnet.
+        const controlBase = zones.control.subnet.replace('.0/24', '')
+
         // Write Grafana and Promtail provisioning files to the scenario directory.
         // These must exist before generateCompose() references their paths in volume
         // mounts, and before docker compose up starts the Grafana container.
         const scenarioDir = pathJoin(app.getPath('userData'), 'scenarios', projectName)
-        await writeGrafanaProvisioning(scenarioDir, projectName)
+        await writeGrafanaProvisioning(scenarioDir, projectName, controlBase)
 
-        const composeYaml = generateCompose(scenario, projectName, scenarioDir)
+        const composeYaml = generateCompose(scenario, projectName, scenarioDir, zones)
         const result = await dockerClient.startScenario(projectName, composeYaml)
 
         if (!result.ok) {
@@ -831,10 +989,9 @@ function registerIPCHandlers(): void {
     if (!port) {
       return { error: 'No noVNC port found — is the simulation running?' }
     }
-    // noVNC's index page auto-connects when the `autoconnect=true` query param is set.
-    // `resize=scale` makes it fill the webview width without scrollbars.
-    // No password param — VNC runs with SecurityTypes None (no auth) inside Docker's network.
-    return { url: `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale` }
+    // The linuxserver/kali-linux image serves KasmVNC at the root path on port 3000.
+    // No path suffix, no query params needed — KasmVNC auto-connects on page load.
+    return { url: `http://localhost:${port}/` }
   })
 
   // ── License (Phase 12 stubs) ──────────────────────────────────────────────────
@@ -864,12 +1021,179 @@ function registerIPCHandlers(): void {
   })
 
   // ── System info ───────────────────────────────────────────────────────────────
-  /** Returns host memory and CPU info for the resource estimator display. */
+  /** Returns host memory and CPU count for the resource estimator display. */
   ipcMain.handle('system:meminfo', async () => ({
     totalMb: Math.round(os.totalmem() / 1024 / 1024),
     freeMb: Math.round(os.freemem() / 1024 / 1024),
     cpus: os.cpus().length
   }))
+
+  // ── Network settings ──────────────────────────────────────────────────────────
+
+  /**
+   * Returns the current NetworkSettings from <userData>/settings.json.
+   * Returns { autoDetect: true } on first launch (file not yet created).
+   */
+  ipcMain.handle('settings:get', async (): Promise<NetworkSettings> => {
+    return readSettings()
+  })
+
+  /**
+   * Persists updated NetworkSettings to <userData>/settings.json.
+   * Called when the user clicks Save in the Settings modal.
+   *
+   * @param settings - Updated settings object from the renderer.
+   * @returns { ok: true } on success, { ok: false, error } on write failure.
+   */
+  ipcMain.handle(
+    'settings:set',
+    async (_e, settings: NetworkSettings): Promise<{ ok: boolean; error?: string }> => {
+      try {
+        await writeSettings(settings)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    }
+  )
+
+  /**
+   * Runs subnet auto-detection against the current host network interfaces and
+   * returns the computed zone → subnet/gateway map.
+   *
+   * Called by the Settings modal "Detect" button so users can preview which
+   * subnets would be chosen before enabling auto-detect or saving pinned values.
+   *
+   * Does NOT write to settings.json — the user must click Save to persist.
+   *
+   * @returns { ok: true, zones } on success where zones is the full zone map.
+   */
+  ipcMain.handle(
+    'settings:detectSubnets',
+    (): { ok: boolean; zones?: Record<string, { subnet: string; gateway: string }> } => {
+      try {
+        const zones = findFreeSubnets(getInUseCidrs())
+        return { ok: true, zones }
+      } catch {
+        return { ok: false }
+      }
+    }
+  )
+
+  // ── Attack Machine window ──────────────────────────────────────────────────────
+
+  /**
+   * Opens the attack machine's Kali Linux Xfce4 desktop in a separate Electron
+   * BrowserWindow loading the container's noVNC WebSocket interface.
+   *
+   * The window is a fully independent OS-level window: it can be moved to a second
+   * monitor, resized, and operated independently of the main ICS Simulator window.
+   * This is intentional — instructors typically put the attack machine on a
+   * projector or second display while students view the SCADA canvas on the main screen.
+   *
+   * noVNC URL parameters:
+   *   autoconnect=true — immediately connects to the VNC server without a button click
+   *   resize=scale     — scales the Kali desktop to fill the window without scrollbars
+   *   No password param — VNC runs with SecurityTypes None inside Docker's isolated network
+   *
+   * Window security:
+   *   sandbox: true + nodeIntegration: false — the noVNC page runs in a fully sandboxed
+   *   renderer with no Electron or Node.js access. This is safe because the noVNC page
+   *   is served by the Kali container over localhost; it cannot reach the host filesystem.
+   *
+   * @param nodeId - Canvas node ID of the attack-machine device to open.
+   * @returns { ok: true } on success, { ok: false, error } if the simulation is not
+   *   running or the device's port mapping was not found.
+   */
+  ipcMain.handle(
+    'attack:launchWindow',
+    async (_e, { nodeId }: { nodeId: string }): Promise<{ ok: boolean; error?: string }> => {
+      const port = activeAttackPorts.get(nodeId)
+      if (!port) {
+        return {
+          ok: false,
+          error: 'No noVNC port found for this attack machine — is the simulation running?'
+        }
+      }
+
+      // Probe the noVNC websockify port before opening the window.
+      // If the container is still starting (image pull, OS boot, VNC server init),
+      // the port will be closed and we return a clear message instead of opening a
+      // window that immediately shows a "Connection refused" or noVNC error page.
+      const ready = await isPortOpen(port)
+      if (!ready) {
+        return {
+          ok: false,
+          error:
+            `Attack machine is not ready yet (port ${port} is not open). ` +
+            'The container may still be pulling its image or starting the VNC server — ' +
+            'wait a few seconds and try again.'
+        }
+      }
+
+      // KasmVNC (linuxserver/kali-linux) serves the XFCE4 desktop at the root path.
+      const vncUrl = `http://localhost:${port}/`
+
+      const attackWindow = new BrowserWindow({
+        width: 1280,
+        height: 900,
+        minWidth: 800,
+        minHeight: 600,
+        title: `Attack Machine — ${nodeId}`,
+        autoHideMenuBar: true,
+        // Dark red background flash-prevention (Kali's default terminal colors)
+        backgroundColor: '#1a0000',
+        webPreferences: {
+          // Full sandbox — the noVNC page needs no Electron APIs
+          sandbox: true,
+          contextIsolation: true,
+          nodeIntegration: false,
+          // webviewTag off — the noVNC page renders directly in the window
+          webviewTag: false
+        }
+      })
+
+      attackWindow.loadURL(vncUrl)
+
+      // Prevent the noVNC page from opening any additional windows
+      attackWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
+      return { ok: true }
+    }
+  )
+}
+
+// ── TCP port connectivity helper ──────────────────────────────────────────────
+
+/**
+ * Probes whether a TCP port on localhost is accepting connections.
+ *
+ * Used by the `attack:launchWindow` handler to verify the attack machine's
+ * noVNC websockify server is ready before opening the BrowserWindow. Without
+ * this check, the window opens to an immediate "Connection refused" or noVNC
+ * "Unable to connect" error if the container is still starting up.
+ *
+ * @param port    - Host port to probe (e.g., 6900 for the first attack machine).
+ * @param timeout - Milliseconds to wait before declaring the port closed (default 2000).
+ * @returns true if the port accepted a TCP connection; false otherwise.
+ */
+function isPortOpen(port: number, timeout = 2000): Promise<boolean> {
+  return new Promise(resolve => {
+    const socket = net.createConnection({ port, host: 'localhost' })
+    const timer = setTimeout(() => {
+      socket.destroy()
+      resolve(false)
+    }, timeout)
+    socket.on('connect', () => {
+      clearTimeout(timer)
+      socket.destroy()
+      resolve(true)
+    })
+    socket.on('error', () => {
+      clearTimeout(timer)
+      resolve(false)
+    })
+  })
 }
 
 // ── OpenPLC HTTP API helpers ───────────────────────────────────────────────────

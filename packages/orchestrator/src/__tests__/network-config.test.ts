@@ -1,16 +1,19 @@
 /**
- * network-config.test.ts — Unit tests for the four-zone network architecture.
+ * network-config.test.ts — Unit tests for the six-zone Purdue Reference Model
+ * network architecture (IEC 62443-3-2 / NIST SP 800-82).
  *
- * The 172.20.x.x address space is the architectural backbone of the simulator.
+ * The 10.200.x.x address space is the architectural backbone of the simulator.
  * Every device, infrastructure container, and Docker network references these
  * subnets. These tests lock in the exact values so that accidental edits to
  * ZONE_DEFAULTS immediately break CI before any containers get wrong IPs.
  *
  * Purdue Model zone mapping used throughout the simulator:
- *   OT  (Operational Technology) — PLCs, RTUs, sensors, actuators
- *   IT  (Information Technology) — Historian, HMI, Grafana, Loki
- *   DMZ (Demilitarized Zone)     — IDS/IPS, network monitoring tap
- *   External                     — Attack machine (isolated, out-of-band)
+ *   ot           (L0-L2)  — PLCs, RTUs, IEDs, sensors, actuators
+ *   control      (L3)     — HMIs, historians, application/DB servers, Grafana, Loki
+ *   plant-dmz    (L3.5)   — Firewalls, IDS/IPS, Suricata, Zeek, jump hosts
+ *   enterprise   (L4)     — Domain controllers, web/business servers, desktops
+ *   internet-dmz (L5)     — Email servers, internet-facing servers
+ *   attacker     (Red Team) — Attack machine (Kali Linux) — isolated subnet
  */
 
 import { describe, it, expect } from 'vitest'
@@ -19,37 +22,49 @@ import { ZONE_DEFAULTS, dockerNetworkName, zoneIpPrefix } from '../network-confi
 // ── ZONE_DEFAULTS ─────────────────────────────────────────────────────────────
 
 describe('ZONE_DEFAULTS', () => {
-  it('defines entries for all four Purdue Model zones', () => {
+  it('defines entries for all six Purdue Reference Model zones', () => {
     const zones = Object.keys(ZONE_DEFAULTS)
     expect(zones).toContain('ot')
-    expect(zones).toContain('it')
-    expect(zones).toContain('dmz')
-    expect(zones).toContain('external')
+    expect(zones).toContain('control')
+    expect(zones).toContain('plant-dmz')
+    expect(zones).toContain('enterprise')
+    expect(zones).toContain('internet-dmz')
+    expect(zones).toContain('attacker')
   })
 
-  it('assigns the OT zone to 172.20.10.0/24 with gateway .1', () => {
-    expect(ZONE_DEFAULTS.ot.subnet).toBe('172.20.10.0/24')
-    expect(ZONE_DEFAULTS.ot.gateway).toBe('172.20.10.1')
+  it('assigns the OT zone (L0-L2) to 10.200.10.0/24 with gateway .1', () => {
+    expect(ZONE_DEFAULTS.ot.subnet).toBe('10.200.10.0/24')
+    expect(ZONE_DEFAULTS.ot.gateway).toBe('10.200.10.1')
   })
 
-  it('assigns the IT zone to 172.20.20.0/24 with gateway .1', () => {
-    expect(ZONE_DEFAULTS.it.subnet).toBe('172.20.20.0/24')
-    expect(ZONE_DEFAULTS.it.gateway).toBe('172.20.20.1')
+  it('assigns the Control Center zone (L3) to 10.200.20.0/24 with gateway .1', () => {
+    expect(ZONE_DEFAULTS.control.subnet).toBe('10.200.20.0/24')
+    expect(ZONE_DEFAULTS.control.gateway).toBe('10.200.20.1')
   })
 
-  it('assigns the DMZ zone to 172.20.30.0/24 with gateway .1', () => {
-    expect(ZONE_DEFAULTS.dmz.subnet).toBe('172.20.30.0/24')
-    expect(ZONE_DEFAULTS.dmz.gateway).toBe('172.20.30.1')
+  it('assigns the Plant DMZ zone (L3.5) to 10.200.30.0/24 with gateway .1', () => {
+    expect(ZONE_DEFAULTS['plant-dmz'].subnet).toBe('10.200.30.0/24')
+    expect(ZONE_DEFAULTS['plant-dmz'].gateway).toBe('10.200.30.1')
   })
 
-  it('assigns the External zone to 172.20.40.0/24 with gateway .1', () => {
-    expect(ZONE_DEFAULTS.external.subnet).toBe('172.20.40.0/24')
-    expect(ZONE_DEFAULTS.external.gateway).toBe('172.20.40.1')
+  it('assigns the Enterprise zone (L4) to 10.200.40.0/24 with gateway .1', () => {
+    expect(ZONE_DEFAULTS.enterprise.subnet).toBe('10.200.40.0/24')
+    expect(ZONE_DEFAULTS.enterprise.gateway).toBe('10.200.40.1')
   })
 
-  it('uses the private 172.20.x.x range — avoiding common 10.x and 192.168.x conflicts', () => {
+  it('assigns the Internet DMZ zone (L5) to 10.200.50.0/24 with gateway .1', () => {
+    expect(ZONE_DEFAULTS['internet-dmz'].subnet).toBe('10.200.50.0/24')
+    expect(ZONE_DEFAULTS['internet-dmz'].gateway).toBe('10.200.50.1')
+  })
+
+  it('assigns the Attacker zone (Red Team) to 10.200.60.0/24 with gateway .1', () => {
+    expect(ZONE_DEFAULTS.attacker.subnet).toBe('10.200.60.0/24')
+    expect(ZONE_DEFAULTS.attacker.gateway).toBe('10.200.60.1')
+  })
+
+  it('uses the 10.200.x.x range — above the common 10.0–10.100.x ranges used by VPNs', () => {
     for (const zone of Object.values(ZONE_DEFAULTS)) {
-      expect(zone.subnet).toMatch(/^172\.20\./)
+      expect(zone.subnet).toMatch(/^10\.200\./)
     }
   })
 
@@ -75,16 +90,16 @@ describe('dockerNetworkName', () => {
     expect(dockerNetworkName('ics-sim-demo', 'ot')).toBe('ics-sim-demo_ot-net')
   })
 
-  it('works for all four zones', () => {
-    const zones = ['ot', 'it', 'dmz', 'external'] as const
+  it('works for all six Purdue zones', () => {
+    const zones = ['ot', 'control', 'plant-dmz', 'enterprise', 'internet-dmz', 'attacker'] as const
     for (const zone of zones) {
       expect(dockerNetworkName('proj', zone)).toBe(`proj_${zone}-net`)
     }
   })
 
   it('preserves the project name exactly — no additional sanitization', () => {
-    expect(dockerNetworkName('ics-sim-water-treatment-plant', 'it')).toBe(
-      'ics-sim-water-treatment-plant_it-net'
+    expect(dockerNetworkName('ics-sim-water-treatment-plant', 'control')).toBe(
+      'ics-sim-water-treatment-plant_control-net'
     )
   })
 })
@@ -92,14 +107,16 @@ describe('dockerNetworkName', () => {
 // ── zoneIpPrefix ──────────────────────────────────────────────────────────────
 
 describe('zoneIpPrefix', () => {
-  it('returns "172.20.10" for the OT zone', () => {
-    expect(zoneIpPrefix('ot')).toBe('172.20.10')
+  it('returns "10.200.10" for the OT zone', () => {
+    expect(zoneIpPrefix('ot')).toBe('10.200.10')
   })
 
-  it('returns the correct prefix for each zone', () => {
-    expect(zoneIpPrefix('it')).toBe('172.20.20')
-    expect(zoneIpPrefix('dmz')).toBe('172.20.30')
-    expect(zoneIpPrefix('external')).toBe('172.20.40')
+  it('returns the correct prefix for each Purdue zone', () => {
+    expect(zoneIpPrefix('control')).toBe('10.200.20')
+    expect(zoneIpPrefix('plant-dmz')).toBe('10.200.30')
+    expect(zoneIpPrefix('enterprise')).toBe('10.200.40')
+    expect(zoneIpPrefix('internet-dmz')).toBe('10.200.50')
+    expect(zoneIpPrefix('attacker')).toBe('10.200.60')
   })
 
   it('strips the ".0/24" CIDR suffix', () => {

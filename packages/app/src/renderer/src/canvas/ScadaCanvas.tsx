@@ -133,36 +133,93 @@ const CANVAS_BOUNDS = { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H }
 
 /**
  * Default IP address for newly dropped devices, by zone.
- * The .10 host is a memorable starting point; users can edit in PropertiesPanel.
+ *
+ * Must match ZONE_DEFAULTS in packages/orchestrator/src/network-config.ts — both
+ * use 10.200.x.x so devices land inside the Docker bridge network on first drop.
+ * Users can override in PropertiesPanel; the compose generator will also translate
+ * these IPs if subnet auto-detection picks a different range at simulation start.
+ *
+ * Third octets: OT=10, Control=20, PlantDMZ=30, Enterprise=40, InternetDMZ=50, Attacker=60
  */
 const DEFAULT_IP: Record<NetworkZone, string> = {
-  ot: '172.20.10.10',
-  it: '172.20.20.10',
-  dmz: '172.20.30.10',
-  external: '172.20.40.10'
+  ot: '10.200.10.10',
+  control: '10.200.20.10',
+  'plant-dmz': '10.200.30.10',
+  enterprise: '10.200.40.10',
+  'internet-dmz': '10.200.50.10',
+  attacker: '10.200.60.10'
+}
+
+/**
+ * Returns the lowest unused host address in the given zone, starting from .10.
+ *
+ * Looks at every device currently in the scenario, collects the host octets
+ * (last octet) of IPs that share the same /24 prefix as the zone default, and
+ * increments until it finds a gap. This prevents duplicate IPs when two or more
+ * devices are dropped onto the same zone — Docker rejects any compose file that
+ * assigns the same IP to multiple containers on the same bridge network.
+ *
+ * @param zone    - The Purdue zone the new device will join.
+ * @param devices - All devices already present in the scenario.
+ * @returns A unique IPv4 string within the zone's /24 subnet, e.g. "10.200.10.11".
+ */
+function nextAvailableIp(zone: NetworkZone, devices: Record<string, DeviceConfig>): string {
+  const base = DEFAULT_IP[zone] // e.g. "10.200.10.10"
+  const prefix = base.substring(0, base.lastIndexOf('.') + 1) // e.g. "10.200.10."
+
+  // Collect host octets already in use on this zone's subnet
+  const used = new Set<number>()
+  for (const d of Object.values(devices)) {
+    if (d.ipAddress.startsWith(prefix)) {
+      const host = parseInt(d.ipAddress.split('.')[3], 10)
+      if (!isNaN(host)) used.add(host)
+    }
+  }
+
+  // .10–.239 are available for user devices.
+  // .240–.249 are reserved for system services (influxdb, loki, grafana, fuxa, promtail).
+  // .250–.254 are reserved for network infrastructure (zeek .252, suricata .253, firewall .254).
+  let host = 10
+  while (used.has(host) && host < 240) host++
+  return `${prefix}${host}`
 }
 
 /**
  * Default protocol assignments for newly created devices by category.
  * Matches the container images: Modbus for PLCs/RTUs/field devices,
- * DNP3 for IEDs, no protocol for infrastructure.
+ * DNP3 for IEDs, no protocol for infrastructure and IT devices.
  */
 const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
+  // ── OT Process ──────────────────────────────────────────────────────────────
   plc: ['modbus-tcp'],
   rtu: ['modbus-rtu'],
   ied: ['dnp3'],
-  hmi: ['none'],
-  historian: ['none'],
   sensor: ['modbus-tcp'],
   actuator: ['modbus-tcp'],
   pump: ['modbus-tcp'],
   valve: ['modbus-tcp'],
   'flow-meter': ['modbus-tcp'],
   'pressure-transmitter': ['modbus-tcp'],
+  // ── Control Center (L3) ─────────────────────────────────────────────────────
+  hmi: ['none'],
+  historian: ['none'],
+  'application-server': ['none'],
+  'database-server': ['none'],
+  'engineering-workstation': ['none'],
+  // ── Plant DMZ (L3.5) ────────────────────────────────────────────────────────
   firewall: ['none'],
   'ids-ips': ['none'],
   switch: ['none'],
   router: ['none'],
+  // ── Enterprise (L4) ─────────────────────────────────────────────────────────
+  'domain-controller': ['none'],
+  'web-server': ['none'],
+  'business-server': ['none'],
+  'enterprise-desktop': ['none'],
+  // ── Internet DMZ (L5) ───────────────────────────────────────────────────────
+  'email-server': ['none'],
+  'internet-server': ['none'],
+  // ── Red Team ─────────────────────────────────────────────────────────────────
   'attack-machine': ['none']
 }
 
@@ -171,29 +228,60 @@ const CATEGORY_LABELS: Record<DeviceCategory, string> = {
   plc: 'PLC',
   rtu: 'RTU',
   ied: 'IED',
-  hmi: 'HMI',
-  historian: 'Historian',
   sensor: 'Sensor',
   actuator: 'Actuator',
   pump: 'Pump',
   valve: 'Valve',
   'flow-meter': 'Flow Meter',
   'pressure-transmitter': 'Pressure TX',
+  hmi: 'HMI',
+  historian: 'Historian',
+  'application-server': 'App Server',
+  'database-server': 'DB Server',
+  'engineering-workstation': 'Eng. WS',
   firewall: 'Firewall',
   'ids-ips': 'IDS/IPS',
   switch: 'Switch',
   router: 'Router',
+  'domain-controller': 'Domain Ctrl',
+  'web-server': 'Web Server',
+  'business-server': 'Biz Server',
+  'enterprise-desktop': 'Desktop',
+  'email-server': 'Email Server',
+  'internet-server': 'Internet Srv',
   'attack-machine': 'Attack Machine'
 }
 
 /**
  * Maps a device category to its default Purdue zone.
- * Used during auto-layout when no visual positions have been saved yet.
+ * Used during auto-layout when no visual positions have been saved yet,
+ * and when the canvas needs to infer the zone of a newly dropped device.
  */
 function categoryToZone(category: DeviceCategory): NetworkZone {
-  if (category === 'attack-machine') return 'external'
-  if (category === 'firewall' || category === 'ids-ips') return 'dmz'
-  if (category === 'historian' || category === 'hmi') return 'it'
+  // Red Team — isolated subnet, not shown in any Purdue layer tab
+  if (category === 'attack-machine') return 'attacker'
+  // Level 4 Enterprise Zone
+  if (
+    ['domain-controller', 'web-server', 'business-server', 'enterprise-desktop'].includes(category)
+  )
+    return 'enterprise'
+  // Level 5 Internet DMZ
+  if (['email-server', 'internet-server'].includes(category)) return 'internet-dmz'
+  // Level 3.5 Plant DMZ (firewall and IDS/IPS go here; switch/router can appear in multiple zones
+  // but default to plant-dmz as the primary network boundary layer)
+  if (category === 'firewall' || category === 'ids-ips') return 'plant-dmz'
+  // Level 3 Control Center
+  if (
+    [
+      'hmi',
+      'historian',
+      'application-server',
+      'database-server',
+      'engineering-workstation'
+    ].includes(category)
+  )
+    return 'control'
+  // Level 0–2 OT (PLCs, RTUs, sensors, actuators, switches, routers on the field network)
   return 'ot'
 }
 
@@ -740,10 +828,13 @@ export function ScadaCanvas({
 
       const zone = activeLayer
       const nodeId = `${category}-${Date.now()}`
+      // Assign the lowest unused IP in the zone so multiple devices on the same
+      // network don't collide — Docker rejects compose files with duplicate IPs.
+      const existingDevices = scenario?.devices.devices ?? {}
       const device: DeviceConfig = {
         nodeId,
         category,
-        ipAddress: DEFAULT_IP[zone],
+        ipAddress: nextAvailableIp(zone, existingDevices),
         protocols: DEFAULT_PROTOCOLS[category]
       }
 
@@ -790,7 +881,7 @@ export function ScadaCanvas({
         }
       })
     },
-    [setNodes, onScenarioChange, activeLayer, showGrid]
+    [setNodes, onScenarioChange, activeLayer, showGrid, scenario]
   )
 
   const isOT = activeLayer === 'ot'
@@ -953,20 +1044,36 @@ function buildEmptyScenario(): ICSLabScenario {
     },
     visual: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
     network: {
+      // Subnets match ZONE_DEFAULTS in network-config.ts (10.200.x.x).
+      // The compose generator translates these at simulation start if subnet
+      // auto-detection picks a different range to avoid host interface conflicts.
+      // The 'attacker' zone is omitted here — it is created automatically by the
+      // compose generator when an attack-machine device is present in the scenario.
       segments: [
-        { zone: 'ot', subnet: '172.20.10.0/24', gateway: '172.20.10.1', dockerNetwork: 'ot-net' },
-        { zone: 'it', subnet: '172.20.20.0/24', gateway: '172.20.20.1', dockerNetwork: 'it-net' },
+        { zone: 'ot', subnet: '10.200.10.0/24', gateway: '10.200.10.1', dockerNetwork: 'ot-net' },
         {
-          zone: 'dmz',
-          subnet: '172.20.30.0/24',
-          gateway: '172.20.30.1',
-          dockerNetwork: 'dmz-net'
+          zone: 'control',
+          subnet: '10.200.20.0/24',
+          gateway: '10.200.20.1',
+          dockerNetwork: 'control-net'
         },
         {
-          zone: 'external',
-          subnet: '172.20.40.0/24',
-          gateway: '172.20.40.1',
-          dockerNetwork: 'external-net'
+          zone: 'plant-dmz',
+          subnet: '10.200.30.0/24',
+          gateway: '10.200.30.1',
+          dockerNetwork: 'plant-dmz-net'
+        },
+        {
+          zone: 'enterprise',
+          subnet: '10.200.40.0/24',
+          gateway: '10.200.40.1',
+          dockerNetwork: 'enterprise-net'
+        },
+        {
+          zone: 'internet-dmz',
+          subnet: '10.200.50.0/24',
+          gateway: '10.200.50.1',
+          dockerNetwork: 'internet-dmz-net'
         }
       ],
       routes: []
