@@ -150,6 +150,17 @@ export class DockerClient {
       )
       return { ok: true }
     } catch (err) {
+      // Tear down any partial state left by the failed `up` — containers, volumes,
+      // and especially networks. Without this cleanup the subnet addresses remain
+      // allocated and the next attempt fails with "Address already in use".
+      // This runs best-effort: if the compose file was never written (e.g., mkdir
+      // failed) the down command will also fail, which is fine — we just swallow it.
+      try {
+        await run(`docker compose -p ${projectName} -f "${composeFile}" down --volumes`)
+      } catch {
+        /* best-effort — ignore cleanup failures */
+      }
+
       // Node.js exec errors include the raw command string + full stderr in .message,
       // but the useful failure reason is buried among docker compose lifecycle lines
       // ("Creating...", "Started...", "Stopping...", etc.). Extract it here.
