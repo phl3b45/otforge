@@ -35,7 +35,10 @@ import type {
   LicenseValidationResult,
   ICSLabScenario,
   PLCDeployResult,
-  PLCRuntimeStatus
+  PLCRuntimeStatus,
+  PackInstallResult,
+  PackListResult,
+  PackUninstallResult
 } from '@ics-sim/schema'
 
 /**
@@ -257,6 +260,44 @@ const api = {
      *   running or FUXA is not yet accepting connections on port 1881.
      */
     open: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('hmi:open')
+  },
+
+  // ── Community scenario packs (Phase 9) ───────────────────────────────────────
+  packs: {
+    /**
+     * Opens a native file picker for .icspack ZIP files, extracts the pack to
+     * <userData>/packs/<packId>/, validates the manifest, and returns the resolved
+     * InstalledPack with pre-loaded icon data URLs ready for display.
+     *
+     * Overwrites any previously installed pack with the same id (version upgrade).
+     *
+     * @returns PackInstallResult with the new InstalledPack on success.
+     */
+    install: (): Promise<PackInstallResult> => ipcRenderer.invoke('pack:install'),
+
+    /**
+     * Returns all packs currently installed in <userData>/packs/.
+     * Device type icons are pre-loaded as base64 data URLs — no file I/O in renderer.
+     */
+    list: (): Promise<PackListResult> => ipcRenderer.invoke('pack:list'),
+
+    /**
+     * Removes an installed pack and all its assets from disk.
+     *
+     * @param packId - The pack id string from its manifest (folder name in packs dir).
+     */
+    uninstall: (packId: string): Promise<PackUninstallResult> =>
+      ipcRenderer.invoke('pack:uninstall', { packId }),
+
+    /**
+     * Loads a bundled .icslab scenario from the given pack and returns it as a
+     * ScenarioImportResult so the renderer can open it immediately.
+     *
+     * @param packId       - Pack id from the manifest.
+     * @param relativePath - Scenario path relative to the pack root (from manifest.scenarios).
+     */
+    openScenario: (packId: string, relativePath: string): Promise<ScenarioImportResult> =>
+      ipcRenderer.invoke('pack:openScenario', { packId, relativePath })
   },
 
   // ── Attack Machine window ────────────────────────────────────────────────────

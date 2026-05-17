@@ -392,6 +392,13 @@ interface ScadaCanvasProps {
    * Pan, zoom, and node selection (for PropertiesPanel) still work.
    */
   readOnly?: boolean
+  /**
+   * Flat list of all pack-contributed device types from installed community packs.
+   * When a device is dropped from the pack palette section, the canvas looks up the
+   * matching entry here to resolve the custom Docker image and canonical label.
+   * Passed down from App so the canvas doesn't need to call the IPC directly.
+   */
+  packDeviceTypes?: import('@ics-sim/schema').ResolvedPackDeviceType[]
   onSelectDevice: (nodeId: string | null, device: DeviceConfig | null) => void
   onScenarioChange: (updater: (s: ICSLabScenario | null) => ICSLabScenario | null) => void
 }
@@ -408,6 +415,7 @@ export function ScadaCanvas({
   activeLayer,
   showGrid,
   readOnly = false,
+  packDeviceTypes = [],
   onSelectDevice,
   onScenarioChange
 }: ScadaCanvasProps) {
@@ -822,6 +830,12 @@ export function ScadaCanvas({
    * Device drop from palette onto canvas.
    * Zone assignment comes from activeLayer — no y-coordinate lookup needed.
    * No-op in readOnly mode (Student mode).
+   *
+   * Handles two drop sources:
+   *   1. Built-in palette items — only `deviceCategory` drag data is set.
+   *   2. Pack palette items — both `deviceCategory` and `packDeviceTypeId` are set.
+   *      The `packDeviceTypeId` format is `<packId>:<typeId>`. The canvas resolves
+   *      it against `packDeviceTypes` to get the custom Docker image and label.
    */
   const onDrop = useCallback(
     (event: React.DragEvent) => {
@@ -829,6 +843,12 @@ export function ScadaCanvas({
       if (readOnly) return
       const category = event.dataTransfer.getData('deviceCategory') as DeviceCategory
       if (!category || !rfInstance.current) return
+
+      // Check if this is a pack device type drop
+      const packDeviceTypeId = event.dataTransfer.getData('packDeviceTypeId') || null
+      const packDeviceType = packDeviceTypeId
+        ? (packDeviceTypes.find(dt => `${dt.packId}:${dt.id}` === packDeviceTypeId) ?? null)
+        : null
 
       const rawPos = rfInstance.current.screenToFlowPosition({
         x: event.clientX,
@@ -853,7 +873,13 @@ export function ScadaCanvas({
         nodeId,
         category,
         ipAddress: nextAvailableIp(zone, existingDevices),
-        protocols: DEFAULT_PROTOCOLS[category]
+        // Pack device types supply their own default protocols; built-ins use the map.
+        protocols: packDeviceType?.defaultProtocols ?? DEFAULT_PROTOCOLS[category],
+        // dockerImage override: pack device types specify the exact image to use.
+        // This is read by compose-generator.ts to substitute the default category image.
+        ...(packDeviceType?.defaultDockerImage
+          ? { dockerImage: packDeviceType.defaultDockerImage }
+          : {})
       }
 
       // IED devices run the DNP3 outstation container — pre-populate default DNP3
@@ -865,6 +891,9 @@ export function ScadaCanvas({
         device.dnp3 = { masterAddress: 1, outstationAddress: 10, port: 20000 }
       }
 
+      // Use the pack device type's label if available; fall back to the built-in label.
+      const nodeLabel = packDeviceType?.label ?? CATEGORY_LABELS[category]
+
       const newNode: DeviceNodeType = {
         id: nodeId,
         type: 'deviceNode',
@@ -872,7 +901,7 @@ export function ScadaCanvas({
         // Pre-declare node dimensions so edges connect correctly before DOM measurement
         width: CELL_SIZE,
         height: CELL_SIZE,
-        data: { device, label: CATEGORY_LABELS[category], zone }
+        data: { device, label: nodeLabel, zone }
       }
 
       setNodes(nds => [...nds, newNode])
@@ -889,7 +918,7 @@ export function ScadaCanvas({
                 id: nodeId,
                 type: category,
                 position,
-                data: { label: CATEGORY_LABELS[category], zone }
+                data: { label: nodeLabel, zone }
               }
             ]
           },
@@ -899,7 +928,7 @@ export function ScadaCanvas({
         }
       })
     },
-    [setNodes, onScenarioChange, activeLayer, showGrid, scenario, readOnly]
+    [setNodes, onScenarioChange, activeLayer, showGrid, scenario, readOnly, packDeviceTypes]
   )
 
   const isOT = activeLayer === 'ot'

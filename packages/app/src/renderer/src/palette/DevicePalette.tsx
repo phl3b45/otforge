@@ -26,7 +26,7 @@
  *   Enterprise/internet devices use purple and orange matching their zone accent.
  */
 
-import type { DeviceCategory, NetworkZone } from '@ics-sim/schema'
+import type { DeviceCategory, NetworkZone, ResolvedPackDeviceType } from '@ics-sim/schema'
 import { DeviceIcon } from '../icons/DeviceIcons'
 
 /** Describes a group of related palette items shown under a section header. */
@@ -182,6 +182,49 @@ function PaletteItem({ category, label }: { category: DeviceCategory; label: str
   )
 }
 
+/**
+ * A draggable palette item contributed by a community scenario pack.
+ *
+ * Pack device types use the same drag protocol as built-in types, but also set
+ * `packDeviceTypeId` (format: `packId:typeId`) so the canvas drop handler can
+ * look up the custom Docker image and label from the installed pack.
+ *
+ * @param deviceType - The resolved pack device type (icon pre-loaded as data URL).
+ */
+function PackPaletteItem({ deviceType }: { deviceType: ResolvedPackDeviceType }) {
+  function onDragStart(event: React.DragEvent) {
+    event.dataTransfer.setData('deviceCategory', deviceType.category)
+    // Composite key so the canvas can look up the full device type definition
+    event.dataTransfer.setData('packDeviceTypeId', `${deviceType.packId}:${deviceType.id}`)
+    event.dataTransfer.effectAllowed = 'copy'
+  }
+
+  return (
+    <div
+      className="palette-item palette-item-pack"
+      draggable
+      onDragStart={onDragStart}
+      title={`Pack device: ${deviceType.label} (${deviceType.packId})`}
+    >
+      {deviceType.iconDataUrl ? (
+        /* Custom SVG icon supplied by the pack */
+        <img
+          className="palette-item-pack-icon"
+          src={deviceType.iconDataUrl}
+          alt={deviceType.label}
+        />
+      ) : (
+        /* Fall back to the standard category icon when no pack icon is provided */
+        <DeviceIcon category={deviceType.category} size={28} color="#58a6ff" />
+      )}
+      <div className="palette-item-pack-labels">
+        <span className="palette-item-label">{deviceType.label}</span>
+        <span className="palette-item-pack-badge">{deviceType.packId}</span>
+      </div>
+    </div>
+  )
+}
+
 interface DevicePaletteProps {
   /** The currently active Purdue layer — controls which sections are shown. */
   activeLayer: NetworkZone
@@ -190,22 +233,42 @@ interface DevicePaletteProps {
    * Used in Student mode where the MissionPanel occupies the left sidebar instead.
    */
   readOnly?: boolean
+  /**
+   * Custom device types contributed by installed community packs.
+   * Only types whose `sector` matches the active layer's zone (or whose sector is
+   * undefined) are shown. Rendered as a separate "Pack Devices" section at the
+   * bottom of the palette when any matching types are present.
+   */
+  packDeviceTypes?: ResolvedPackDeviceType[]
 }
 
 /**
  * Renders the device palette sidebar filtered to the active Purdue layer.
  *
  * Iterates over PALETTE sections, skipping any that don't include the current
- * layer in their `layers` array. A hint text at the bottom reminds new users
- * of the drag interaction.
+ * layer in their `layers` array. Pack device types for the current layer are
+ * shown beneath the built-in sections in a "Pack Devices" group.
+ * A hint text at the bottom reminds new users of the drag interaction.
  */
-export function DevicePalette({ activeLayer, readOnly = false }: DevicePaletteProps) {
+export function DevicePalette({
+  activeLayer,
+  readOnly = false,
+  packDeviceTypes = []
+}: DevicePaletteProps) {
   // In Student mode the MissionPanel occupies this column; hide the palette entirely.
   if (readOnly) return null
 
   const visibleSections = PALETTE.filter(
     section => !section.layers || section.layers.includes(activeLayer)
   )
+
+  // Filter pack device types to those whose category belongs to the active layer.
+  // Uses the same zone-category mapping as the built-in palette sections so pack
+  // devices always appear on the correct Purdue layer tab.
+  const layerCategories = new Set(
+    PALETTE.filter(s => s.layers?.includes(activeLayer)).flatMap(s => s.items.map(i => i.category))
+  )
+  const visiblePackTypes = packDeviceTypes.filter(dt => layerCategories.has(dt.category))
 
   return (
     <aside className="device-palette">
@@ -222,6 +285,16 @@ export function DevicePalette({ activeLayer, readOnly = false }: DevicePalettePr
             ))}
           </div>
         ))}
+
+        {/* Pack device types section — only rendered when packs add types for this layer */}
+        {visiblePackTypes.length > 0 && (
+          <div className="palette-section palette-section-pack">
+            <div className="palette-section-label palette-section-label-pack">Pack Devices</div>
+            {visiblePackTypes.map(dt => (
+              <PackPaletteItem key={`${dt.packId}:${dt.id}`} deviceType={dt} />
+            ))}
+          </div>
+        )}
       </div>
       <div className="palette-hint">Drag devices onto the canvas</div>
     </aside>

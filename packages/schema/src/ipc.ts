@@ -3,6 +3,7 @@
 // Event channels (one-way push from main) use the 'on:' prefix.
 
 import type { ICSLabScenario, ResourceEstimate } from './icslab'
+import type { InstalledPack } from './icspack'
 
 // ── Request / Response types ───────────────────────────────────────────────────
 
@@ -61,6 +62,32 @@ export interface AppInfo {
   nodeVersion: string
   electronVersion: string
   platform: 'win32' | 'darwin' | 'linux'
+}
+
+// ── Scenario pack (Phase 9) ────────────────────────────────────────────────────
+
+/**
+ * Result of installing a community scenario pack from a .icspack ZIP file.
+ * On success, `pack` contains the fully-resolved InstalledPack ready for use.
+ */
+export interface PackInstallResult {
+  ok: boolean
+  pack?: InstalledPack
+  error?: string
+}
+
+/**
+ * List of all packs currently installed in <userData>/packs/.
+ * Empty array when no packs are installed.
+ */
+export interface PackListResult {
+  packs: InstalledPack[]
+}
+
+/** Result of uninstalling a pack — removes all bundled assets from disk. */
+export interface PackUninstallResult {
+  ok: boolean
+  error?: string
 }
 
 // ── PLC IDE (Phase 4) ──────────────────────────────────────────────────────────
@@ -134,6 +161,35 @@ export interface IPCChannels {
    * device's container. Used by the IDE panel to show run/stopped status.
    */
   'plc:status': [{ nodeId: string }, PLCRuntimeStatus]
+
+  // Community scenario packs (Phase 9)
+  /**
+   * Opens a native file picker for .icspack files, extracts the ZIP to
+   * <userData>/packs/<packId>/, validates the manifest, and returns the
+   * resolved InstalledPack with pre-loaded icon data URLs.
+   */
+  'pack:install': [void, PackInstallResult]
+
+  /**
+   * Scans <userData>/packs/ and returns every installed pack with its
+   * resolved device types and scenario metas.
+   */
+  'pack:list': [void, PackListResult]
+
+  /**
+   * Deletes the pack directory at <userData>/packs/<packId>/ and all its contents.
+   * @param packId - The pack.id from the pack manifest.
+   */
+  'pack:uninstall': [{ packId: string }, PackUninstallResult]
+
+  /**
+   * Loads a bundled .icslab scenario from inside the given pack, validates it,
+   * and returns it as a ScenarioImportResult so the renderer can open it directly.
+   *
+   * @param packId       - The pack whose scenario to load.
+   * @param relativePath - Relative path from the pack root (matches manifest.scenarios entry).
+   */
+  'pack:openScenario': [{ packId: string; relativePath: string }, ScenarioImportResult]
 }
 
 // ── One-way event channels (main → renderer) ───────────────────────────────────

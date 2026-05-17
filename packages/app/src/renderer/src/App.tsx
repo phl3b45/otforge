@@ -34,7 +34,9 @@ import type {
   ContainerStatus,
   PLCProgramConfig,
   NetworkZone,
-  SecurityLayer
+  SecurityLayer,
+  InstalledPack,
+  ResolvedPackDeviceType
 } from '@ics-sim/schema'
 import { ScadaCanvas } from './canvas/ScadaCanvas'
 import { DevicePalette } from './palette/DevicePalette'
@@ -47,6 +49,7 @@ import { SettingsModal } from './settings/SettingsModal'
 import { MetadataModal } from './metadata/MetadataModal'
 import { ExportModal } from './export/ExportModal'
 import { MissionPanel } from './mission/MissionPanel'
+import { PackManagerModal } from './packs/PackManagerModal'
 import './index.css'
 
 /**
@@ -170,6 +173,8 @@ function LaunchScreen({
  * @param onHmiOpen          - Opens the FUXA HMI in a separate OS window.
  * @param onMetadataOpen     - Opens the Scenario Metadata editor modal (Author mode only).
  * @param onExportOpen       - Opens the Export dialog (Author mode only).
+ * @param onPacksOpen        - Opens the Pack Manager (Author mode only).
+ * @param installedPackCount - Number of installed packs shown as a badge on the Packs button.
  */
 function Toolbar({
   scenario,
@@ -178,6 +183,7 @@ function Toolbar({
   showGrid,
   showMonitor,
   appMode,
+  installedPackCount,
   onImport,
   onNew,
   onDelete,
@@ -191,7 +197,8 @@ function Toolbar({
   onAttackMachineLaunch,
   onHmiOpen,
   onMetadataOpen,
-  onExportOpen
+  onExportOpen,
+  onPacksOpen
 }: {
   scenario: ICSLabScenario | null
   simStatus: SimStatus
@@ -206,6 +213,8 @@ function Toolbar({
   showMonitor: boolean
   /** Current app mode — 'author' for unlocked scenarios, 'student' for locked ones. */
   appMode: 'author' | 'student'
+  /** Number of currently installed packs — shown as a small badge on the Packs button. */
+  installedPackCount: number
   onImport: () => void
   onNew: () => void
   /** Clears all devices and resets the current scenario after a confirmation prompt. */
@@ -238,6 +247,8 @@ function Toolbar({
   onMetadataOpen: () => void
   /** Opens the Export dialog. Only available in Author mode while idle. */
   onExportOpen: () => void
+  /** Opens the Pack Manager. Always available in Author mode. */
+  onPacksOpen: () => void
 }) {
   const scenarioName = scenario?.meta.name ?? 'Untitled Scenario'
   const deviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
@@ -330,6 +341,23 @@ function Toolbar({
             title="Export scenario as Author Copy or Student Copy"
           >
             Export
+          </button>
+        )}
+
+        {/*
+         * Pack Manager — install and manage community scenario packs (.icspack files).
+         * Available in Author mode only (students see a read-only canvas with no palette).
+         * A small numeric badge shows how many packs are installed so instructors know
+         * at a glance whether they have any packs loaded.
+         */}
+        {appMode === 'author' && (
+          <button
+            className="btn btn-sm btn-ghost btn-packs"
+            onClick={onPacksOpen}
+            title="Manage community scenario packs (.icspack files)"
+          >
+            Packs
+            {installedPackCount > 0 && <span className="packs-badge">{installedPackCount}</span>}
           </button>
         )}
 
@@ -674,6 +702,16 @@ export default function App() {
   /** Whether the Export dialog modal is open (Author mode only). */
   const [showExportModal, setShowExportModal] = useState<boolean>(false)
 
+  /** Whether the Pack Manager modal is open. */
+  const [showPackManager, setShowPackManager] = useState<boolean>(false)
+
+  /**
+   * All community scenario packs currently installed in <userData>/packs/.
+   * Loaded on mount via pack:list IPC and refreshed after any install/uninstall.
+   * Empty array on first launch.
+   */
+  const [installedPacks, setInstalledPacks] = useState<InstalledPack[]>([])
+
   /**
    * Current app mode derived from the scenario's locked flag.
    *   'author'  — scenario is unlocked; full editor UI is available.
@@ -701,13 +739,16 @@ export default function App() {
   const [showGrid, setShowGrid] = useState<boolean>(true)
 
   useEffect(() => {
-    // Fetch app metadata and Docker status concurrently on first render
-    Promise.all([window.electronAPI.app.info(), window.electronAPI.docker.check()]).then(
-      ([info, dockerStatus]) => {
-        setAppInfo(info)
-        setDocker(dockerStatus)
-      }
-    )
+    // Fetch app metadata, Docker status, and installed packs concurrently on first render
+    Promise.all([
+      window.electronAPI.app.info(),
+      window.electronAPI.docker.check(),
+      window.electronAPI.packs.list()
+    ]).then(([info, dockerStatus, packList]) => {
+      setAppInfo(info)
+      setDocker(dockerStatus)
+      setInstalledPacks(packList.packs)
+    })
 
     // Subscribe to live container status push events from the main process
     const unsubStatus = window.electronAPI.on.containerStatusUpdate(status => {
@@ -930,6 +971,49 @@ export default function App() {
     setShowExportModal(false)
   }, [])
 
+  /** Opens the Pack Manager modal. */
+  const handlePacksOpen = useCallback(() => {
+    setShowPackManager(true)
+  }, [])
+
+  /** Closes the Pack Manager modal. */
+  const handlePacksClose = useCallback(() => {
+    setShowPackManager(false)
+  }, [])
+
+  /**
+   * Refreshes the installed packs list after an install or uninstall operation.
+   * Called by PackManagerModal via its onPacksChange prop.
+   *
+   * @param updated - The new pack array returned by the modal after mutation.
+   */
+  const handlePacksChange = useCallback((updated: InstalledPack[]) => {
+    setInstalledPacks(updated)
+  }, [])
+
+  /**
+   * Opens a scenario bundled inside a community pack and transitions to the canvas.
+   *
+   * Calls the pack:openScenario IPC handler which reads the .icslab file from the
+   * pack directory, validates it, and returns it as a ScenarioImportResult. If the
+   * import succeeds, the scenario replaces whatever is currently open on the canvas.
+   * The Pack Manager modal closes immediately after the user clicks Open.
+   *
+   * @param packId       - Pack id from the manifest.
+   * @param relativePath - Path to the .icslab file relative to the pack root.
+   */
+  const handlePackOpenScenario = useCallback(async (packId: string, relativePath: string) => {
+    setShowPackManager(false) // close the modal before navigating
+    const result = await window.electronAPI.packs.openScenario(packId, relativePath)
+    if (result.scenario) {
+      setScenario(result.scenario)
+      setView('canvas')
+      setSelectedDevice(null)
+      setSelectedZone(null)
+      setSimError(null)
+    }
+  }, [])
+
   /**
    * Adds a default attack machine device to the scenario's device list.
    *
@@ -1039,6 +1123,14 @@ export default function App() {
   const effectiveShowGrid = simStatus === 'idle' ? showGrid : false
 
   /**
+   * Flat list of all pack device types contributed by installed community packs.
+   * Derived by flattening the deviceTypes array from every InstalledPack.
+   * Passed to DevicePalette (for the "Pack Devices" section) and ScadaCanvas
+   * (so the drop handler can resolve custom Docker images and labels).
+   */
+  const allPackDeviceTypes: ResolvedPackDeviceType[] = installedPacks.flatMap(p => p.deviceTypes)
+
+  /**
    * Starts the simulation:
    *   1. Transition to 'starting' (disables controls)
    *   2. Call simulation:start IPC which generates compose and runs docker compose up
@@ -1118,6 +1210,7 @@ export default function App() {
         showGrid={effectiveShowGrid}
         showMonitor={showMonitor}
         appMode={appMode}
+        installedPackCount={installedPacks.length}
         onImport={handleImport}
         onNew={handleNew}
         onDelete={handleDelete}
@@ -1132,6 +1225,7 @@ export default function App() {
         onHmiOpen={handleHmiOpen}
         onMetadataOpen={handleMetadataOpen}
         onExportOpen={handleExportOpen}
+        onPacksOpen={handlePacksOpen}
       />
       {/*
        * Simulation error banner — shown when the most recent start attempt failed.
@@ -1164,13 +1258,18 @@ export default function App() {
             brief={scenario.meta.brief}
           />
         ) : (
-          <DevicePalette activeLayer={activeLayer} readOnly={appMode === 'student'} />
+          <DevicePalette
+            activeLayer={activeLayer}
+            readOnly={appMode === 'student'}
+            packDeviceTypes={allPackDeviceTypes}
+          />
         )}
         <ScadaCanvas
           scenario={scenario}
           activeLayer={activeLayer}
           showGrid={effectiveShowGrid}
           readOnly={appMode === 'student'}
+          packDeviceTypes={allPackDeviceTypes}
           onSelectDevice={handleSelectDevice}
           onScenarioChange={handleScenarioChange}
         />
@@ -1233,6 +1332,20 @@ export default function App() {
        */}
       {showExportModal && scenario && (
         <ExportModal scenario={scenario} onClose={handleExportClose} />
+      )}
+
+      {/*
+       * Pack Manager — install, browse, and uninstall community scenario packs.
+       * Accessible via the Packs toolbar button in Author mode at any time.
+       * Unmounted when closed so it re-fetches the pack list fresh on next open.
+       */}
+      {showPackManager && (
+        <PackManagerModal
+          installedPacks={installedPacks}
+          onPacksChange={handlePacksChange}
+          onOpenScenario={handlePackOpenScenario}
+          onClose={handlePacksClose}
+        />
       )}
     </div>
   )

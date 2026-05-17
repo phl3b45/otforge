@@ -33,9 +33,17 @@ import type {
   ContainerStatus,
   ICSLabScenario,
   PLCDeployResult,
-  PLCRuntimeStatus
+  PLCRuntimeStatus,
+  PackInstallResult,
+  PackListResult,
+  PackUninstallResult,
+  ICSPackManifest,
+  PackDeviceType,
+  ResolvedPackDeviceType,
+  PackScenarioMeta,
+  InstalledPack
 } from '@ics-sim/schema'
-import { readFile, writeFile, access } from 'fs/promises'
+import { readFile, writeFile, access, mkdir, readdir, rm } from 'fs/promises'
 import { exec, spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import { promisify } from 'util'
@@ -1177,6 +1185,164 @@ function registerIPCHandlers(): void {
     }
   )
 
+  // ── Community scenario packs (Phase 9) ────────────────────────────────────────
+
+  /**
+   * Opens a native file picker, extracts the chosen .icspack ZIP, validates the
+   * manifest, then builds and returns an InstalledPack with icon data URLs pre-loaded.
+   *
+   * ZIP extraction is done with platform-native tools to avoid npm dependencies:
+   *   Windows — `powershell.exe Expand-Archive`
+   *   macOS / Linux — `unzip`
+   *
+   * Install directory: <userData>/packs/<packId>/
+   * A hidden .pack-meta.json file records the installation timestamp.
+   */
+  ipcMain.handle('pack:install', async (): Promise<PackInstallResult> => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Install Scenario Pack',
+      filters: [{ name: 'ICS Scenario Pack', extensions: ['icspack'] }],
+      properties: ['openFile']
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, error: 'Install cancelled' }
+    }
+    const zipPath = result.filePaths[0]
+
+    // Extract the ZIP to a temp location first so we can read pack.json before
+    // deciding the final install directory (pack id determines the folder name).
+    const tmpDir = pathJoin(app.getPath('userData'), 'packs', `_tmp_${Date.now()}`)
+    try {
+      await mkdir(tmpDir, { recursive: true })
+      await extractPackZip(zipPath, tmpDir)
+    } catch (err) {
+      await rm(tmpDir, { recursive: true, force: true }).catch(() => {})
+      return { ok: false, error: `Failed to extract pack: ${(err as Error).message}` }
+    }
+
+    // Read and validate pack.json
+    let manifest: ICSPackManifest
+    try {
+      const raw = JSON.parse(await readFile(pathJoin(tmpDir, 'pack.json'), 'utf-8'))
+      if (!raw.id || !raw.name || !raw.formatVersion) {
+        throw new Error('pack.json is missing required fields (id, name, formatVersion)')
+      }
+      manifest = raw as ICSPackManifest
+    } catch (err) {
+      await rm(tmpDir, { recursive: true, force: true }).catch(() => {})
+      return { ok: false, error: `Invalid pack.json: ${(err as Error).message}` }
+    }
+
+    // Move temp dir to the final location: <userData>/packs/<packId>/
+    // If a pack with the same id is already installed, overwrite it.
+    const finalDir = pathJoin(app.getPath('userData'), 'packs', manifest.id)
+    try {
+      await rm(finalDir, { recursive: true, force: true })
+      // fs.rename doesn't work across volumes; re-extract directly to finalDir instead
+      await rm(tmpDir, { recursive: true, force: true })
+      await mkdir(finalDir, { recursive: true })
+      await extractPackZip(zipPath, finalDir)
+    } catch (err) {
+      await rm(finalDir, { recursive: true, force: true }).catch(() => {})
+      return { ok: false, error: `Failed to install pack: ${(err as Error).message}` }
+    }
+
+    const installedAt = new Date().toISOString()
+    // Write a metadata sidecar file so pack:list can recover installedAt without
+    // re-reading every scenario file every time the pack manager opens.
+    await writeFile(
+      pathJoin(finalDir, '.pack-meta.json'),
+      JSON.stringify({ installedAt }),
+      'utf-8'
+    ).catch(() => {})
+
+    const pack = await buildInstalledPack(finalDir, manifest, installedAt)
+    return { ok: true, pack }
+  })
+
+  /** Lists every pack installed in <userData>/packs/. */
+  ipcMain.handle('pack:list', async (): Promise<PackListResult> => {
+    const dir = pathJoin(app.getPath('userData'), 'packs')
+    try {
+      await mkdir(dir, { recursive: true })
+      const entries = await readdir(dir, { withFileTypes: true })
+      const packs: InstalledPack[] = []
+      for (const entry of entries) {
+        // Skip hidden/temp directories (e.g., _tmp_* extraction dirs)
+        if (!entry.isDirectory() || entry.name.startsWith('_tmp_') || entry.name.startsWith('.')) {
+          continue
+        }
+        const packPath = pathJoin(dir, entry.name)
+        try {
+          const manifest = JSON.parse(
+            await readFile(pathJoin(packPath, 'pack.json'), 'utf-8')
+          ) as ICSPackManifest
+          let installedAt = new Date().toISOString()
+          try {
+            const meta = JSON.parse(await readFile(pathJoin(packPath, '.pack-meta.json'), 'utf-8'))
+            installedAt = meta.installedAt ?? installedAt
+          } catch {
+            /* sidecar absent — use current time */
+          }
+          packs.push(await buildInstalledPack(packPath, manifest, installedAt))
+        } catch {
+          /* skip packs with corrupt manifests */
+        }
+      }
+      return { packs }
+    } catch {
+      return { packs: [] }
+    }
+  })
+
+  /**
+   * Uninstalls a pack by deleting its directory from <userData>/packs/<packId>/.
+   * @param packId - The pack.id value from its manifest.
+   */
+  ipcMain.handle(
+    'pack:uninstall',
+    async (_e, { packId }: { packId: string }): Promise<PackUninstallResult> => {
+      const packPath = pathJoin(app.getPath('userData'), 'packs', packId)
+      try {
+        await rm(packPath, { recursive: true, force: true })
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    }
+  )
+
+  /**
+   * Loads a bundled scenario from an installed pack and returns it ready to open.
+   *
+   * @param packId       - Pack identifier (folder name under <userData>/packs/).
+   * @param relativePath - Path relative to the pack root, e.g. "scenarios/attack.icslab".
+   */
+  ipcMain.handle(
+    'pack:openScenario',
+    async (
+      _e,
+      { packId, relativePath }: { packId: string; relativePath: string }
+    ): Promise<ScenarioImportResult> => {
+      const scenarioPath = pathJoin(app.getPath('userData'), 'packs', packId, relativePath)
+      let raw: unknown
+      try {
+        raw = JSON.parse(await readFile(scenarioPath, 'utf-8'))
+      } catch (err) {
+        return { ok: false, error: `Failed to read scenario: ${(err as Error).message}` }
+      }
+      const { validateScenario: validate } = await import('@ics-sim/orchestrator')
+      const validation = validate(raw)
+      if (!validation.valid) {
+        return { ok: false, error: `Invalid scenario: ${validation.errors.join('\n')}` }
+      }
+      const scenario = raw as ICSLabScenario
+      const resourceEstimate = estimateResources(scenario)
+      await saveActiveScenario(scenario)
+      return { ok: true, scenario, resourceEstimate }
+    }
+  )
+
   // ── HMI window ────────────────────────────────────────────────────────────────
 
   /**
@@ -1236,6 +1402,119 @@ function registerIPCHandlers(): void {
 
     return { ok: true }
   })
+}
+
+// ── Pack helpers (Phase 9) ────────────────────────────────────────────────────
+
+/**
+ * Extracts a .icspack ZIP archive to the given destination directory.
+ *
+ * Uses platform-native tools to avoid adding npm dependencies to the main process:
+ *   Windows — `powershell.exe Expand-Archive` (built into Windows 5.x+)
+ *   macOS / Linux — `unzip` (pre-installed on both platforms)
+ *
+ * The destination directory must already exist before calling this function.
+ *
+ * @param zipPath  - Absolute path to the .icspack ZIP file.
+ * @param destPath - Absolute path to the directory to extract into.
+ */
+function extractPackZip(zipPath: string, destPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let proc: ReturnType<typeof spawn>
+    if (process.platform === 'win32') {
+      // Use -LiteralPath so paths with special chars are treated verbatim.
+      // Single-quote the paths inside the PS script — PS literal strings ignore
+      // wildcards/variables, so spaces and dots in userData paths are safe.
+      // Single quotes within paths are doubled per PowerShell quoting rules.
+      const safe = (p: string) => p.replace(/'/g, "''")
+      proc = spawn(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `Expand-Archive -LiteralPath '${safe(zipPath)}' -DestinationPath '${safe(destPath)}' -Force`
+        ],
+        { env: process.env }
+      )
+    } else {
+      // -o overwrites existing files so reinstalling a pack is clean
+      proc = spawn('unzip', ['-o', zipPath, '-d', destPath], { env: process.env })
+    }
+
+    let stderr = ''
+    proc.stderr?.on('data', (chunk: Buffer) => (stderr += chunk.toString()))
+    proc.on('close', code => {
+      if (code === 0 || code === null) resolve()
+      else reject(new Error(`Extraction exited with code ${code}: ${stderr.trim()}`))
+    })
+    proc.on('error', reject)
+  })
+}
+
+/**
+ * Builds an InstalledPack runtime descriptor from a pack directory on disk.
+ *
+ * Reads the device registry (if present) and converts SVG icon files to base64
+ * data URLs so the renderer can display pack icons without any file I/O.
+ * Reads each bundled scenario file to extract its name and description.
+ *
+ * @param packPath    - Absolute path to the extracted pack directory.
+ * @param manifest    - The parsed pack.json manifest.
+ * @param installedAt - ISO 8601 timestamp of when the pack was installed.
+ */
+async function buildInstalledPack(
+  packPath: string,
+  manifest: ICSPackManifest,
+  installedAt: string
+): Promise<InstalledPack> {
+  // ── Device types ──────────────────────────────────────────────────────────────
+  let deviceTypes: ResolvedPackDeviceType[] = []
+  if (manifest.deviceRegistry) {
+    try {
+      const registryPath = pathJoin(packPath, manifest.deviceRegistry)
+      const rawTypes = JSON.parse(await readFile(registryPath, 'utf-8')) as PackDeviceType[]
+      deviceTypes = await Promise.all(
+        rawTypes.map(async (dt: PackDeviceType): Promise<ResolvedPackDeviceType> => {
+          let iconDataUrl = ''
+          if (dt.iconPath) {
+            // Icon paths are relative to the devices/ folder per icspack format spec
+            const iconFullPath = pathJoin(packPath, 'devices', dt.iconPath)
+            try {
+              const svgData = await readFile(iconFullPath, 'utf-8')
+              iconDataUrl = `data:image/svg+xml;base64,${Buffer.from(svgData).toString('base64')}`
+            } catch {
+              /* icon missing — fall back to standard category icon */
+            }
+          }
+          return { ...dt, iconDataUrl, packId: manifest.id }
+        })
+      )
+    } catch {
+      /* deviceRegistry absent or parse failure — leave deviceTypes empty */
+    }
+  }
+
+  // ── Scenario metas ────────────────────────────────────────────────────────────
+  const scenarioMetas: PackScenarioMeta[] = []
+  for (const relPath of manifest.scenarios) {
+    // Default display values in case the file can't be parsed
+    let name = (relPath.split('/').pop() ?? relPath).replace(/\.icslab$/i, '')
+    let description = ''
+    let locked = false
+    try {
+      const scenarioPath = pathJoin(packPath, relPath)
+      const raw = JSON.parse(await readFile(scenarioPath, 'utf-8'))
+      name = raw.meta?.name ?? name
+      description = raw.meta?.description ?? ''
+      locked = raw.meta?.locked ?? false
+    } catch {
+      /* use defaults if scenario file is missing or corrupt */
+    }
+    scenarioMetas.push({ relativePath: relPath, name, description, locked })
+  }
+
+  return { manifest, installPath: packPath, installedAt, deviceTypes, scenarioMetas }
 }
 
 // ── TCP port connectivity helper ──────────────────────────────────────────────
