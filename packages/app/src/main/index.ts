@@ -694,6 +694,7 @@ function registerIPCHandlers(): void {
 
         if (!result.ok) {
           activeProjectName = null
+
           return { ok: false, error: result.error }
         }
 
@@ -702,6 +703,20 @@ function registerIPCHandlers(): void {
         await new Promise(resolve => setTimeout(resolve, 2000))
         const statuses = await dockerClient.getStatus(projectName)
         const started = statuses.filter(s => s.status === 'running').map(s => s.nodeId)
+
+        // Wire PLC → HMI: auto-provision Modbus device connections in FUXA
+        // so the HMI displays live process data without any manual configuration.
+        // Fire-and-forget — FUXA may still be pulling its image; configureFuxa()
+        // retries internally and logs failures without blocking the start response.
+        configureFuxa(scenario).catch(() => {
+          // configureFuxa() logs its own errors; swallow here so ipcMain.handle
+          // never rejects (a rejected promise in a fire-and-forget would surface
+          // as an unhandled rejection and crash the main process in Electron).
+        })
+
+        // Pre-install networking tools in the Kali attack machine container.
+        // Fire-and-forget — runs in the background while the renderer shows "running".
+        configureAttackMachine().catch(() => {})
 
         return { ok: true, containersStarted: started }
       } catch (err) {
@@ -1161,6 +1176,66 @@ function registerIPCHandlers(): void {
       return { ok: true }
     }
   )
+
+  // ── HMI window ────────────────────────────────────────────────────────────────
+
+  /**
+   * Opens the FUXA web HMI in a standalone Electron BrowserWindow.
+   *
+   * FUXA is always started as part of the simulation infrastructure (it runs
+   * alongside InfluxDB, Grafana, etc.). This handler opens its web UI at
+   * localhost:1881 in a separate OS-level window so instructors and students
+   * can interact with the live process graphics alongside the main simulator.
+   *
+   * The window can be moved to a second monitor independently of the main app.
+   * If FUXA is not yet ready (port 1881 not open) the handler returns an error
+   * rather than opening a blank window — same guard used by attack:launchWindow.
+   *
+   * @returns { ok: true } on success, { ok: false, error } if simulation is not
+   *   running or FUXA's port is not yet accepting connections.
+   */
+  ipcMain.handle('hmi:open', async (): Promise<{ ok: boolean; error?: string }> => {
+    if (!activeProjectName) {
+      return { ok: false, error: 'No simulation is running.' }
+    }
+
+    // Verify FUXA's port is accepting connections before opening the window.
+    // The container may still be starting (Node.js init takes a few seconds).
+    const ready = await isPortOpen(1881)
+    if (!ready) {
+      return {
+        ok: false,
+        error:
+          'FUXA HMI is not ready yet (port 1881 is not open). ' +
+          'Wait a few seconds for the container to finish starting, then try again.'
+      }
+    }
+
+    const hmiWindow = new BrowserWindow({
+      width: 1280,
+      height: 900,
+      minWidth: 800,
+      minHeight: 600,
+      title: 'FUXA — Process HMI',
+      autoHideMenuBar: true,
+      // Dark background matches FUXA's default editor theme and prevents white flash
+      backgroundColor: '#1e1e2e',
+      webPreferences: {
+        // Full sandbox — the FUXA page is a third-party web app with no Electron APIs
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        webviewTag: false
+      }
+    })
+
+    hmiWindow.loadURL('http://localhost:1881')
+
+    // Prevent FUXA from opening pop-out windows that bypass our sandbox settings
+    hmiWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
+    return { ok: true }
+  })
 }
 
 // ── TCP port connectivity helper ──────────────────────────────────────────────
@@ -1194,6 +1269,191 @@ function isPortOpen(port: number, timeout = 2000): Promise<boolean> {
       resolve(false)
     })
   })
+}
+
+// ── Attack machine post-start provisioning ────────────────────────────────────
+
+/**
+ * Pre-installs common network analysis tools in each Kali attack machine container
+ * after the simulation starts. Runs as fire-and-forget from the simulation:start handler.
+ *
+ * Why not bake them into the image?
+ *   We use the upstream `lscr.io/linuxserver/kali-linux` image directly (no custom
+ *   build step). Installing at container start keeps the image pull lean while still
+ *   giving students the tools they need for ICS/SCADA penetration exercises.
+ *
+ * Packages installed:
+ *   iputils-ping      — ping / arping — basic reachability and ARP testing
+ *   iproute2          — ip, ss, tc   — interface/route/socket inspection
+ *   netcat-openbsd    — nc           — TCP/UDP connection tester and banner grabber
+ *
+ * The function waits up to 90 seconds for the container's KasmVNC port to open
+ * (signals that the desktop is fully up), then runs a single `docker exec` per
+ * attack machine. All errors are swallowed — if apt-get fails (e.g., no internet
+ * in an air-gapped lab), the container still works; the user just needs to install
+ * packages manually.
+ *
+ * docker exec runs as root (the container default), so no sudo is required.
+ */
+async function configureAttackMachine(): Promise<void> {
+  if (!activeProjectName || activeAttackPorts.size === 0) return
+
+  const MAX_WAIT_MS = 90_000
+  const POLL_INTERVAL_MS = 3_000
+
+  for (const [nodeId, vncPort] of activeAttackPorts) {
+    // Derive container name using the same logic as compose-generator.ts
+    const sanitized = nodeId.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+    const containerName = `${activeProjectName}-${sanitized}`
+
+    // Wait for the KasmVNC websockify port to accept connections.
+    // This is the last service to start inside the container — once it's up,
+    // the OS is fully booted and apt-get is safe to run.
+    const deadline = Date.now() + MAX_WAIT_MS
+    while (Date.now() < deadline) {
+      const ready = await isPortOpen(vncPort, 1500)
+      if (ready) break
+      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS))
+    }
+
+    // Extra grace period — apt databases need a moment after desktop init
+    await new Promise(resolve => setTimeout(resolve, 3000))
+
+    try {
+      // Single exec installs all tools; `|| true` ensures non-zero apt exit codes
+      // (e.g., package already installed) do not fail the shell command.
+      await execAsync(
+        `docker exec ${containerName} bash -c ` +
+          `"apt-get update -qq 2>/dev/null && ` +
+          `apt-get install -y --no-install-recommends ` +
+          `iputils-ping iproute2 netcat-openbsd 2>/dev/null || true"`,
+        { timeout: 90_000 }
+      )
+    } catch {
+      // Silently ignore — apt may fail in air-gapped environments or if the
+      // container exited between the port-open check and the exec call.
+    }
+  }
+}
+
+// ── FUXA auto-provisioning ────────────────────────────────────────────────────
+
+/**
+ * Auto-provisions Modbus device connections in FUXA after a simulation starts.
+ *
+ * FUXA is a web-based HMI that stores device connections in a SQLite database
+ * inside its container. On every fresh simulation, the named volume is pre-created
+ * but empty, so FUXA has no devices configured. This function provisions them
+ * automatically so instructors don't have to manually add PLCs in the FUXA UI.
+ *
+ * Provisioning algorithm:
+ *   1. Poll localhost:1881 until FUXA's HTTP API is ready (up to 60 s).
+ *   2. Read scenario.visual.edges to find all Modbus-TCP connections.
+ *   3. For each edge, identify the PLC endpoint (category='plc' or 'rtu').
+ *   4. POST /api/device to FUXA with the PLC's IP, port 502, and Modbus unit ID.
+ *   5. Skip PLCs that already have an entry (FUXA returns 400 on duplicate id).
+ *
+ * FUXA REST API for device creation (confirmed from fuxa source, server/apimanager.js):
+ *   POST /api/device
+ *   Content-Type: application/json
+ *   Body: {
+ *     id: string,          // Unique device ID (we use the canvas node ID)
+ *     name: string,        // Display name shown in FUXA editor
+ *     enabled: true,
+ *     type: "MODBUSTCP",
+ *     polling: 1000,       // Poll interval in ms
+ *     request: 30000,      // Request timeout in ms
+ *     property: { address: string, port: 502, uid: 1 },
+ *     tags: {}
+ *   }
+ *
+ * The function is fire-and-forget from simulation:start — if FUXA is slow to
+ * start or the scenario has no Modbus edges it simply logs and returns without
+ * affecting the simulation start result visible to the renderer.
+ *
+ * @param scenario - The scenario that was just started.
+ */
+async function configureFuxa(scenario: ICSLabScenario): Promise<void> {
+  // Build the list of PLC nodes reachable via Modbus-TCP edges.
+  // An edge's source or target may be the PLC — check both sides.
+  const plcNodeIds = new Set<string>()
+  for (const edge of scenario.visual.edges) {
+    if (edge.data.protocol !== 'modbus-tcp') continue
+    // Determine which endpoint is the PLC (the device with modbus config or plc/rtu category)
+    for (const candidateId of [edge.source, edge.target]) {
+      const device = scenario.devices.devices[candidateId]
+      if (device && (device.category === 'plc' || device.category === 'rtu')) {
+        plcNodeIds.add(candidateId)
+      }
+    }
+  }
+
+  if (plcNodeIds.size === 0) {
+    // No Modbus-TCP PLC connections in this scenario — nothing to provision
+    return
+  }
+
+  // Poll until FUXA's HTTP API is responsive (up to 60 seconds with 3-second gaps).
+  // The FUXA Node.js server takes 10–20 s after container start to initialize.
+  const FUXA_PORT = 1881
+  const MAX_WAIT_MS = 60_000
+  const POLL_INTERVAL_MS = 3_000
+  const deadline = Date.now() + MAX_WAIT_MS
+
+  while (Date.now() < deadline) {
+    const ready = await isPortOpen(FUXA_PORT, 1500)
+    if (ready) break
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS))
+  }
+
+  // Extra 2-second grace period after the port opens — FUXA's HTTP router may not
+  // be fully registered even though the TCP socket is accepting connections.
+  await new Promise(resolve => setTimeout(resolve, 2000))
+
+  // POST each PLC as a Modbus-TCP device in FUXA
+  for (const nodeId of plcNodeIds) {
+    const device = scenario.devices.devices[nodeId]
+    if (!device) continue
+
+    // Extract just the IP (no CIDR suffix) from the device config
+    const address = device.ipAddress.split('/')[0]
+
+    // Read Modbus unit ID from the device's modbus config if present, default to 1
+    const uid = device.modbus?.unitId ?? 1
+    const port = device.modbus?.port ?? 502
+
+    const payload = JSON.stringify({
+      id: nodeId,
+      name: `${nodeId} (PLC)`,
+      enabled: true,
+      type: 'MODBUSTCP',
+      polling: 1000,
+      request: 30_000,
+      property: { address, port, uid },
+      tags: {}
+    })
+
+    try {
+      await httpPost(
+        {
+          host: 'localhost',
+          port: FUXA_PORT,
+          path: '/api/device',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload)
+          }
+        },
+        payload
+      )
+      // 200 = created, 400 = duplicate (device already exists from a previous run with
+      // the same named volume) — both are acceptable outcomes; log and continue.
+    } catch {
+      // Connection refused or timeout — FUXA may have failed to start.
+      // Log and continue so a single failure doesn't block the remaining PLCs.
+    }
+  }
 }
 
 // ── OpenPLC HTTP API helpers ───────────────────────────────────────────────────

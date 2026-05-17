@@ -162,6 +162,7 @@ function LaunchScreen({
  * @param onDelete            - Clears all devices and resets the scenario after confirmation.
  * @param onAttackMachineAdd  - Adds an attack machine device to the current scenario.
  * @param onAttackMachineLaunch - Opens the attack machine OS window.
+ * @param onHmiOpen           - Opens the FUXA HMI in a separate OS window.
  */
 function Toolbar({
   scenario,
@@ -179,7 +180,8 @@ function Toolbar({
   onMonitorToggle,
   onSettingsOpen,
   onAttackMachineAdd,
-  onAttackMachineLaunch
+  onAttackMachineLaunch,
+  onHmiOpen
 }: {
   scenario: ICSLabScenario | null
   simStatus: SimStatus
@@ -214,6 +216,12 @@ function Toolbar({
    * @param nodeId - Canvas node ID of the attack-machine device to launch.
    */
   onAttackMachineLaunch: (nodeId: string) => void
+  /**
+   * Opens the FUXA process HMI in a separate Electron BrowserWindow (localhost:1881).
+   * FUXA always runs as simulation infrastructure — this button is shown whenever
+   * the simulation is running so users can inspect live process data.
+   */
+  onHmiOpen: () => void
 }) {
   const scenarioName = scenario?.meta.name ?? 'Untitled Scenario'
   const deviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
@@ -303,6 +311,23 @@ function Toolbar({
             title={showGrid ? 'Hide 25 × 25 snap grid' : 'Show 25 × 25 snap grid'}
           >
             Grid
+          </button>
+        )}
+
+        {/*
+         * Open HMI — only shown while simulation is running.
+         * Opens the FUXA process HMI in a standalone window (localhost:1881).
+         * FUXA is always started as simulation infrastructure and is automatically
+         * provisioned with Modbus connections to PLCs in the scenario (via
+         * configureFuxa() in the main process).
+         */}
+        {isRunning && (
+          <button
+            className="btn btn-sm btn-hmi"
+            onClick={onHmiOpen}
+            title="Open FUXA process HMI — live Modbus data from PLCs"
+          >
+            Open HMI
           </button>
         )}
 
@@ -681,7 +706,7 @@ export default function App() {
         devices: { devices: {}, connections: [] },
         // Clear visual positions too — scenarioToNodes reads visual.nodes first,
         // so leaving them populated keeps icons on screen even with no devices.
-        visual: { nodes: [], edges: [] }
+        visual: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }
       }
     })
     setSelectedDevice(null)
@@ -861,6 +886,24 @@ export default function App() {
   }, [])
 
   /**
+   * Opens the FUXA process HMI in a separate Electron BrowserWindow.
+   *
+   * Calls the `hmi:open` IPC handler which creates a new BrowserWindow loading
+   * localhost:1881 (FUXA's web UI). The window is a native OS window that can be
+   * moved to a second monitor independently of the main app.
+   *
+   * FUXA is always started as part of the simulation infrastructure — no HMI device
+   * needs to be placed on the canvas. Modbus connections to PLCs in the scenario are
+   * provisioned automatically by configureFuxa() in the main process after start.
+   */
+  const handleHmiOpen = useCallback(async () => {
+    const result = await window.electronAPI.hmi.open()
+    if (!result.ok) {
+      setSimError(result.error ?? 'Failed to open FUXA HMI window.')
+    }
+  }, [])
+
+  /**
    * Opens the attack machine's Kali Linux desktop in a separate Electron OS window.
    *
    * Calls the `attack:launchWindow` IPC handler which creates a new BrowserWindow
@@ -990,6 +1033,7 @@ export default function App() {
         onSettingsOpen={handleSettingsOpen}
         onAttackMachineAdd={handleAttackMachineAdd}
         onAttackMachineLaunch={handleAttackMachineLaunch}
+        onHmiOpen={handleHmiOpen}
       />
       {/*
        * Simulation error banner — shown when the most recent start attempt failed.

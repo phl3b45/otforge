@@ -51,9 +51,11 @@ export type ZoneNodeType = Node<ZoneNodeData, 'zoneNode'>
  */
 const ZONE_BG: Record<NetworkZone, string> = {
   ot: 'rgba(57, 208, 176, 0.05)',
-  it: 'rgba(56, 139, 253, 0.05)',
-  dmz: 'rgba(210, 153, 34, 0.05)',
-  external: 'rgba(248, 81, 73, 0.05)'
+  control: 'rgba(56, 139, 253, 0.05)',
+  'plant-dmz': 'rgba(210, 153, 34, 0.05)',
+  enterprise: 'rgba(163, 113, 247, 0.05)',
+  'internet-dmz': 'rgba(247, 129, 102, 0.05)',
+  attacker: 'rgba(248, 81, 73, 0.05)'
 }
 
 /**

@@ -243,6 +243,22 @@ const api = {
     }> => ipcRenderer.invoke('settings:detectSubnets')
   },
 
+  // ── HMI window ───────────────────────────────────────────────────────────────
+  hmi: {
+    /**
+     * Opens the FUXA web HMI in a separate Electron BrowserWindow (localhost:1881).
+     *
+     * FUXA is auto-started as part of every simulation. This call opens its process
+     * graphics editor in a standalone OS window that can be moved to a second monitor.
+     * Modbus-TCP PLC connections are provisioned automatically by configureFuxa() in
+     * the main process after simulation start — no manual FUXA configuration needed.
+     *
+     * @returns { ok: true } on success, { ok: false, error } if the simulation is not
+     *   running or FUXA is not yet accepting connections on port 1881.
+     */
+    open: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('hmi:open')
+  },
+
   // ── Attack Machine window ────────────────────────────────────────────────────
   attack: {
     /**

@@ -49,9 +49,11 @@ interface SecurityPanelProps {
 const ZONE_OPTIONS: { value: NetworkZone | 'any'; label: string }[] = [
   { value: 'any', label: 'Any' },
   { value: 'ot', label: 'OT' },
-  { value: 'it', label: 'IT' },
-  { value: 'dmz', label: 'DMZ' },
-  { value: 'external', label: 'Ext' }
+  { value: 'control', label: 'CTRL' },
+  { value: 'plant-dmz', label: 'PDMZ' },
+  { value: 'enterprise', label: 'ENT' },
+  { value: 'internet-dmz', label: 'IDMZ' },
+  { value: 'attacker', label: 'RED' }
 ]
 
 /** Protocol options for the ACL rule form. Maps to nft protocol matchers. */

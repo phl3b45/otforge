@@ -2655,6 +2655,18 @@ code.prop-value {
   box-shadow: 0 0 0 1px var(--accent-teal);
 }
 
+/* Open HMI button — visible while sim is running; uses accent-blue so it reads
+ * as distinct from the teal Monitor button beside it. */
+.btn-hmi {
+  background: rgba(56, 139, 253, 0.1);
+  border: 1px solid var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.btn-hmi:hover:not(:disabled) {
+  background: rgba(56, 139, 253, 0.2);
+}
+
 /* ── Settings gear button in toolbar ──────────────────────────────────────────
  * Always visible to the left of the toolbar divider so users can configure
  * subnet preferences without having to start a simulation first.

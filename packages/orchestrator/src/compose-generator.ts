@@ -593,16 +593,32 @@ export function generateCompose(
   // ── FUXA — web-based HMI (MIT licensed) ──────────────────────────────────
   // FUXA connects to Modbus/OPC-UA servers and renders live process graphics.
   // The _appdata volume persists user-configured HMI projects across restarts.
+  //
+  // Dual-homed networking (control-net + ot-net):
+  //   FUXA runs on control-net so Grafana and the Electron app can reach port 1881.
+  //   It ALSO needs ot-net so it can open TCP connections to PLC Modbus servers
+  //   (port 502). Without ot-net the FUXA→PLC Modbus poll would be unreachable
+  //   because Docker containers on different networks cannot communicate.
+  //
+  // Port 1881 is published to the host so the Electron main process can open FUXA
+  // in a standalone BrowserWindow via the hmi:open IPC channel.
   volumes[`${projectName}-fuxa-data`] = {}
   services['fuxa'] = {
     image: 'frangoteam/fuxa:latest',
     container_name: `${projectName}-fuxa`,
     restart: 'unless-stopped',
-    networks: { 'control-net': { ipv4_address: `${controlBase}.243` } },
+    networks: {
+      'control-net': { ipv4_address: `${controlBase}.243` },
+      // Second leg on ot-net lets FUXA reach PLC Modbus servers (port 502) directly
+      'ot-net': { ipv4_address: `${otBase}.243` }
+    },
+    // Publish port 1881 so Electron can open FUXA in a separate BrowserWindow
+    ports: ['1881:1881'],
     environment: undefined,
     cap_add: undefined,
     volumes: [`${projectName}-fuxa-data:/usr/src/app/FUXA/server/_appdata`],
-    deploy: { resources: { limits: { memory: '100m', cpus: '0.25' } } }
+    // Increased from 100m — FUXA's Node.js runtime needs ~180m when polling multiple PLCs
+    deploy: { resources: { limits: { memory: '256m', cpus: '0.5' } } }
   }
 
   const compose: ComposeFile = {
