@@ -386,6 +386,12 @@ interface ScadaCanvasProps {
    * the grid disappears and snap is disabled while containers are running.
    */
   showGrid: boolean
+  /**
+   * When true, the canvas is view-only: devices cannot be added, moved, connected,
+   * or deleted. Used in Student mode (locked scenario) to prevent topology modification.
+   * Pan, zoom, and node selection (for PropertiesPanel) still work.
+   */
+  readOnly?: boolean
   onSelectDevice: (nodeId: string | null, device: DeviceConfig | null) => void
   onScenarioChange: (updater: (s: ICSLabScenario | null) => ICSLabScenario | null) => void
 }
@@ -401,6 +407,7 @@ export function ScadaCanvas({
   scenario,
   activeLayer,
   showGrid,
+  readOnly = false,
   onSelectDevice,
   onScenarioChange
 }: ScadaCanvasProps) {
@@ -597,10 +604,14 @@ export function ScadaCanvas({
     [onSelectDevice]
   )
 
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'copy'
-  }, [])
+  const onDragOver = useCallback(
+    (event: React.DragEvent) => {
+      if (readOnly) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+    },
+    [readOnly]
+  )
 
   /**
    * Node deletion — called by React Flow after it removes nodes from canvas state.
@@ -672,12 +683,17 @@ export function ScadaCanvas({
   /**
    * Right-click on a canvas device node — opens the protocol selection menu at the
    * cursor position and cancels any previously pending connection.
+   * Disabled in readOnly mode (Student mode) — no new edges can be created.
    */
-  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
-    event.preventDefault()
-    setPendingConnection(null)
-    setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
-  }, [])
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      if (readOnly) return
+      event.preventDefault()
+      setPendingConnection(null)
+      setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
+    },
+    [readOnly]
+  )
 
   /**
    * Called when the user picks a protocol from the right-click context menu.
@@ -805,10 +821,12 @@ export function ScadaCanvas({
   /**
    * Device drop from palette onto canvas.
    * Zone assignment comes from activeLayer — no y-coordinate lookup needed.
+   * No-op in readOnly mode (Student mode).
    */
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault()
+      if (readOnly) return
       const category = event.dataTransfer.getData('deviceCategory') as DeviceCategory
       if (!category || !rfInstance.current) return
 
@@ -881,7 +899,7 @@ export function ScadaCanvas({
         }
       })
     },
-    [setNodes, onScenarioChange, activeLayer, showGrid, scenario]
+    [setNodes, onScenarioChange, activeLayer, showGrid, scenario, readOnly]
   )
 
   const isOT = activeLayer === 'ot'
@@ -897,14 +915,17 @@ export function ScadaCanvas({
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onNodesDelete={onNodesDelete}
-        onEdgesDelete={onEdgesDelete}
-        onConnect={onConnect}
+        onNodesDelete={readOnly ? undefined : onNodesDelete}
+        onEdgesDelete={readOnly ? undefined : onEdgesDelete}
+        onConnect={readOnly ? undefined : onConnect}
         onSelectionChange={onSelectionChange}
-        onNodeDragStop={onNodeDragStop}
+        onNodeDragStop={readOnly ? undefined : onNodeDragStop}
         onNodeContextMenu={onNodeContextMenu}
         onNodeClick={onNodeClick}
         onPaneClick={cancelConnection}
+        nodesDraggable={!readOnly}
+        nodesConnectable={!readOnly}
+        deleteKeyCode={readOnly ? null : 'Delete'}
         onInit={instance => {
           rfInstance.current = instance
           // Fit the full 25 × 25 grid immediately on mount — no setTimeout needed
@@ -918,7 +939,6 @@ export function ScadaCanvas({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={{ type: isOT ? 'pipeEdge' : 'protocolEdge', animated: false }}
-        deleteKeyCode="Delete"
         multiSelectionKeyCode="Shift"
         minZoom={0.08}
         maxZoom={2}

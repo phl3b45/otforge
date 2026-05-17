@@ -29,6 +29,7 @@ import type {
   AppInfo,
   DockerStatus,
   ICSLabScenario,
+  ICSLabMeta,
   DeviceConfig,
   ContainerStatus,
   PLCProgramConfig,
@@ -43,6 +44,9 @@ import { PlcIdePanel } from './properties/PlcIdePanel'
 import { AttackTerminalModal } from './terminal/AttackTerminalModal'
 import { MonitorPanel } from './monitor/MonitorPanel'
 import { SettingsModal } from './settings/SettingsModal'
+import { MetadataModal } from './metadata/MetadataModal'
+import { ExportModal } from './export/ExportModal'
+import { MissionPanel } from './mission/MissionPanel'
 import './index.css'
 
 /**
@@ -148,21 +152,24 @@ function LaunchScreen({
  *   `simStatus` inside the branches — making `simStatus === 'stopping'` always-false
  *   on the false branch. Pre-computed booleans avoid this narrowing entirely.
  *
- * @param scenario         - Current scenario (null for blank canvas).
- * @param simStatus        - Current simulation lifecycle state.
- * @param docker           - Docker status (used to enable/disable the Run button).
- * @param showMonitor      - Whether the monitor panel drawer is currently open.
- * @param onImport         - Opens the file picker.
- * @param onNew            - Clears the canvas for a new scenario.
- * @param onStart          - Starts the simulation.
- * @param onStop           - Stops the simulation.
- * @param onHome           - Returns to the launch screen (disabled while running).
- * @param onMonitorToggle  - Toggles the Grafana+Loki monitor panel open/closed.
- * @param onSettingsOpen      - Opens the Network Settings modal.
- * @param onDelete            - Clears all devices and resets the scenario after confirmation.
- * @param onAttackMachineAdd  - Adds an attack machine device to the current scenario.
+ * @param scenario           - Current scenario (null for blank canvas).
+ * @param simStatus          - Current simulation lifecycle state.
+ * @param docker             - Docker status (used to enable/disable the Run button).
+ * @param appMode            - 'author' or 'student' — determines which toolbar actions are shown.
+ * @param showMonitor        - Whether the monitor panel drawer is currently open.
+ * @param onImport           - Opens the file picker.
+ * @param onNew              - Clears the canvas for a new scenario.
+ * @param onStart            - Starts the simulation.
+ * @param onStop             - Stops the simulation.
+ * @param onHome             - Returns to the launch screen (disabled while running).
+ * @param onMonitorToggle    - Toggles the Grafana+Loki monitor panel open/closed.
+ * @param onSettingsOpen     - Opens the Network Settings modal.
+ * @param onDelete           - Clears all devices and resets the scenario after confirmation.
+ * @param onAttackMachineAdd - Adds an attack machine device to the current scenario.
  * @param onAttackMachineLaunch - Opens the attack machine OS window.
- * @param onHmiOpen           - Opens the FUXA HMI in a separate OS window.
+ * @param onHmiOpen          - Opens the FUXA HMI in a separate OS window.
+ * @param onMetadataOpen     - Opens the Scenario Metadata editor modal (Author mode only).
+ * @param onExportOpen       - Opens the Export dialog (Author mode only).
  */
 function Toolbar({
   scenario,
@@ -170,6 +177,7 @@ function Toolbar({
   docker,
   showGrid,
   showMonitor,
+  appMode,
   onImport,
   onNew,
   onDelete,
@@ -181,7 +189,9 @@ function Toolbar({
   onSettingsOpen,
   onAttackMachineAdd,
   onAttackMachineLaunch,
-  onHmiOpen
+  onHmiOpen,
+  onMetadataOpen,
+  onExportOpen
 }: {
   scenario: ICSLabScenario | null
   simStatus: SimStatus
@@ -194,6 +204,8 @@ function Toolbar({
   showGrid: boolean
   /** Whether the Grafana+Loki monitor drawer is open. Used to style the toggle button. */
   showMonitor: boolean
+  /** Current app mode — 'author' for unlocked scenarios, 'student' for locked ones. */
+  appMode: 'author' | 'student'
   onImport: () => void
   onNew: () => void
   /** Clears all devices and resets the current scenario after a confirmation prompt. */
@@ -222,6 +234,10 @@ function Toolbar({
    * the simulation is running so users can inspect live process data.
    */
   onHmiOpen: () => void
+  /** Opens the Scenario Metadata editor. Only available in Author mode while idle. */
+  onMetadataOpen: () => void
+  /** Opens the Export dialog. Only available in Author mode while idle. */
+  onExportOpen: () => void
 }) {
   const scenarioName = scenario?.meta.name ?? 'Untitled Scenario'
   const deviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
@@ -271,9 +287,14 @@ function Toolbar({
         </div>
       </div>
 
-      {/* Centered simulation status badge */}
+      {/* Centered simulation status badge + mode badge */}
       <div className="toolbar-center">
         <SimStatusBadge status={simStatus} />
+        {scenario && (
+          <div className={`mode-badge mode-badge-${appMode}`}>
+            {appMode === 'student' ? '🔒 Student Mode' : '✎ Author Mode'}
+          </div>
+        )}
       </div>
 
       <div className="toolbar-right">
@@ -285,11 +306,39 @@ function Toolbar({
         </button>
 
         {/*
-         * Delete scenario — only visible when idle with a scenario loaded.
+         * Metadata — edit scenario name, description, author, sector, mission brief.
+         * Only visible to the instructor (Author mode) while idle.
+         */}
+        {isIdle && scenario && appMode === 'author' && (
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={onMetadataOpen}
+            title="Edit scenario name, description, and mission brief"
+          >
+            Metadata
+          </button>
+        )}
+
+        {/*
+         * Export — choose Author Copy (full) or Student Copy (locked, stripped).
+         * Only visible to the instructor (Author mode) while idle with a scenario loaded.
+         */}
+        {isIdle && scenario && appMode === 'author' && (
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={onExportOpen}
+            title="Export scenario as Author Copy or Student Copy"
+          >
+            Export
+          </button>
+        )}
+
+        {/*
+         * Delete scenario — only visible when idle with a scenario loaded in Author mode.
          * Asks for confirmation before clearing all devices so accidental clicks
          * don't lose unsaved work.
          */}
-        {isIdle && scenario && (
+        {isIdle && scenario && appMode === 'author' && (
           <button
             className="btn btn-sm btn-ghost btn-delete-scenario"
             onClick={onDelete}
@@ -300,11 +349,10 @@ function Toolbar({
         )}
 
         {/*
-         * Grid toggle — hidden during simulation so operators aren't distracted.
-         * The grid is always 25 × 25 cells (CELL_SIZE in ScadaCanvas.tsx); there
-         * is no size picker. Filled style = on, ghost = off.
+         * Grid toggle — only shown in Author mode while idle (students cannot edit,
+         * so a snap grid has no utility for them). The grid is always 25 × 25 cells.
          */}
-        {isIdle && (
+        {isIdle && appMode === 'author' && (
           <button
             className={`btn btn-sm ${showGrid ? 'btn-secondary' : 'btn-ghost'}`}
             onClick={onGridToggle}
@@ -620,6 +668,19 @@ export default function App() {
    */
   const [showSettings, setShowSettings] = useState<boolean>(false)
 
+  /** Whether the Scenario Metadata editor modal is open (Author mode only). */
+  const [showMetadataModal, setShowMetadataModal] = useState<boolean>(false)
+
+  /** Whether the Export dialog modal is open (Author mode only). */
+  const [showExportModal, setShowExportModal] = useState<boolean>(false)
+
+  /**
+   * Current app mode derived from the scenario's locked flag.
+   *   'author'  — scenario is unlocked; full editor UI is available.
+   *   'student' — scenario is locked; read-only canvas + Mission Brief panel.
+   */
+  const appMode: 'author' | 'student' = scenario?.meta.locked ? 'student' : 'author'
+
   /**
    * Error message from the most recent failed simulation start.
    * Shown in a dismissible banner below the toolbar. Cleared when
@@ -835,6 +896,40 @@ export default function App() {
     setShowSettings(false)
   }, [])
 
+  /** Opens the Scenario Metadata editor modal. */
+  const handleMetadataOpen = useCallback(() => {
+    setShowMetadataModal(true)
+  }, [])
+
+  /** Closes the Metadata modal without saving. */
+  const handleMetadataClose = useCallback(() => {
+    setShowMetadataModal(false)
+  }, [])
+
+  /**
+   * Applies updated metadata from the MetadataModal back into the scenario.
+   * Called when the user clicks Save in the metadata editor.
+   *
+   * @param updated - The new ICSLabMeta object from the form.
+   */
+  const handleMetadataSave = useCallback((updated: ICSLabMeta) => {
+    setScenario(prev => {
+      if (!prev) return prev
+      return { ...prev, meta: updated }
+    })
+    setShowMetadataModal(false)
+  }, [])
+
+  /** Opens the Export dialog modal. */
+  const handleExportOpen = useCallback(() => {
+    setShowExportModal(true)
+  }, [])
+
+  /** Closes the Export dialog modal. */
+  const handleExportClose = useCallback(() => {
+    setShowExportModal(false)
+  }, [])
+
   /**
    * Adds a default attack machine device to the scenario's device list.
    *
@@ -1022,6 +1117,7 @@ export default function App() {
         docker={docker}
         showGrid={effectiveShowGrid}
         showMonitor={showMonitor}
+        appMode={appMode}
         onImport={handleImport}
         onNew={handleNew}
         onDelete={handleDelete}
@@ -1034,6 +1130,8 @@ export default function App() {
         onAttackMachineAdd={handleAttackMachineAdd}
         onAttackMachineLaunch={handleAttackMachineLaunch}
         onHmiOpen={handleHmiOpen}
+        onMetadataOpen={handleMetadataOpen}
+        onExportOpen={handleExportOpen}
       />
       {/*
        * Simulation error banner — shown when the most recent start attempt failed.
@@ -1052,13 +1150,27 @@ export default function App() {
       )}
       {/* Purdue model layer tabs — sit between toolbar and the 3-column workspace */}
       <LayerTabBar activeLayer={activeLayer} scenario={scenario} onLayerChange={setActiveLayer} />
-      {/* 3-column workspace: palette | canvas | properties */}
+      {/* 3-column workspace: (palette | mission) | canvas | properties */}
       <div className="workspace">
-        <DevicePalette activeLayer={activeLayer} />
+        {/*
+         * Left column: DevicePalette in Author mode, MissionPanel in Student mode.
+         * MissionPanel replaces the palette entirely — students cannot add devices,
+         * so showing a device library would be confusing and misleading.
+         */}
+        {appMode === 'student' && scenario ? (
+          <MissionPanel
+            name={scenario.meta.name}
+            author={scenario.meta.author}
+            brief={scenario.meta.brief}
+          />
+        ) : (
+          <DevicePalette activeLayer={activeLayer} readOnly={appMode === 'student'} />
+        )}
         <ScadaCanvas
           scenario={scenario}
           activeLayer={activeLayer}
           showGrid={effectiveShowGrid}
+          readOnly={appMode === 'student'}
           onSelectDevice={handleSelectDevice}
           onScenarioChange={handleScenarioChange}
         />
@@ -1067,6 +1179,7 @@ export default function App() {
           zone={selectedZone}
           simRunning={simStatus === 'running'}
           security={scenario?.security ?? null}
+          readOnly={appMode === 'student'}
           onSecurityChange={handleSecurityChange}
           onOpenPlcIde={handleOpenPlcIde}
           onOpenAttackTerminal={handleOpenAttackTerminal}
@@ -1099,6 +1212,28 @@ export default function App() {
        * Changes take effect on the next simulation start (not retroactively).
        */}
       {showSettings && <SettingsModal onClose={handleSettingsClose} />}
+
+      {/*
+       * Metadata editor modal — lets the instructor edit scenario name, description,
+       * author, sector, and mission brief. Only available in Author mode while idle.
+       * Unmounted when closed so the form always initializes fresh from current meta.
+       */}
+      {showMetadataModal && scenario && (
+        <MetadataModal
+          meta={scenario.meta}
+          onSave={handleMetadataSave}
+          onClose={handleMetadataClose}
+        />
+      )}
+
+      {/*
+       * Export dialog — presents Author Copy vs Student Copy options, then calls
+       * scenario:export IPC which triggers the native save dialog.
+       * Only available in Author mode while idle.
+       */}
+      {showExportModal && scenario && (
+        <ExportModal scenario={scenario} onClose={handleExportClose} />
+      )}
     </div>
   )
 }

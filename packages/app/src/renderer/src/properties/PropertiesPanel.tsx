@@ -73,6 +73,12 @@ interface PropertiesPanelProps {
    */
   security: SecurityLayer | null
   /**
+   * When true the panel is view-only: PLC IDE and security editing buttons are hidden.
+   * Used in Student mode (locked scenario) to prevent topology/security modification.
+   * Device identity and protocol sections are always shown regardless of this flag.
+   */
+  readOnly?: boolean
+  /**
    * Called when the user edits security config in FirewallPanel or IDSPanel.
    * App.tsx applies the updater to scenario.security and re-renders.
    */
@@ -115,6 +121,7 @@ export function PropertiesPanel({
   zone,
   simRunning,
   security,
+  readOnly = false,
   onSecurityChange,
   onOpenPlcIde,
   onOpenAttackTerminal
@@ -189,13 +196,15 @@ export function PropertiesPanel({
             </div>
           </section>
 
-          {/* IDE launch — opens the full two-column ST editor in a modal overlay */}
-          <div className="prop-plc-ide-launch">
-            <button className="btn btn-primary btn-plc-ide" onClick={() => onOpenPlcIde(device)}>
-              Open PLC IDE
-            </button>
-            <span className="prop-plc-ide-hint">IEC 61131-3 ST · Ladder · OpenPLC v3</span>
-          </div>
+          {/* IDE launch — hidden in Student mode (read-only); instructors only */}
+          {!readOnly && (
+            <div className="prop-plc-ide-launch">
+              <button className="btn btn-primary btn-plc-ide" onClick={() => onOpenPlcIde(device)}>
+                Open PLC IDE
+              </button>
+              <span className="prop-plc-ide-hint">IEC 61131-3 ST · Ladder · OpenPLC v3</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -290,11 +299,11 @@ export function PropertiesPanel({
           )}
 
           {/* ── Firewall panel (Phase 5) ──────────────────────────────────────── */}
-          {/* Shown when a firewall device is selected — edits scenario.security.  */}
-          {device.category === 'firewall' && security && (
+          {/* Hidden in Student mode — security config is stripped from locked exports. */}
+          {!readOnly && device.category === 'firewall' && security && (
             <FirewallPanel security={security} onSecurityChange={onSecurityChange} />
           )}
-          {device.category === 'firewall' && !security && (
+          {!readOnly && device.category === 'firewall' && !security && (
             <section className="prop-section">
               <p className="prop-attack-idle">
                 Open or create a scenario to configure firewall rules.
@@ -303,11 +312,11 @@ export function PropertiesPanel({
           )}
 
           {/* ── IDS/IPS panel (Phase 5) ───────────────────────────────────────── */}
-          {/* Shown when an ids-ips device is selected — edits scenario.security.ids. */}
-          {device.category === 'ids-ips' && security && (
+          {/* Hidden in Student mode — security config is stripped from locked exports. */}
+          {!readOnly && device.category === 'ids-ips' && security && (
             <IDSPanel security={security} onSecurityChange={onSecurityChange} />
           )}
-          {device.category === 'ids-ips' && !security && (
+          {!readOnly && device.category === 'ids-ips' && !security && (
             <section className="prop-section">
               <p className="prop-attack-idle">Open or create a scenario to configure IDS rules.</p>
             </section>

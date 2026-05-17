@@ -185,6 +185,11 @@ function PaletteItem({ category, label }: { category: DeviceCategory; label: str
 interface DevicePaletteProps {
   /** The currently active Purdue layer — controls which sections are shown. */
   activeLayer: NetworkZone
+  /**
+   * When true the palette is hidden — rendered as null.
+   * Used in Student mode where the MissionPanel occupies the left sidebar instead.
+   */
+  readOnly?: boolean
 }
 
 /**
@@ -194,7 +199,10 @@ interface DevicePaletteProps {
  * layer in their `layers` array. A hint text at the bottom reminds new users
  * of the drag interaction.
  */
-export function DevicePalette({ activeLayer }: DevicePaletteProps) {
+export function DevicePalette({ activeLayer, readOnly = false }: DevicePaletteProps) {
+  // In Student mode the MissionPanel occupies this column; hide the palette entirely.
+  if (readOnly) return null
+
   const visibleSections = PALETTE.filter(
     section => !section.layers || section.layers.includes(activeLayer)
   )

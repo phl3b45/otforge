@@ -3030,3 +3030,480 @@ code.prop-value {
   font-size: 12px;
   color: var(--accent-red);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Phase 8 — Author / Student Mode (MetadataModal, ExportModal, MissionPanel)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Shared modal shell ───────────────────────────────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 90vh;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-panel);
+}
+
+.modal-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-title-icon {
+  font-size: 1rem;
+  opacity: 0.8;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+.modal-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-panel-hover);
+}
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+}
+
+/* ── Metadata Modal ───────────────────────────────────────────────────────────── */
+
+.metadata-modal {
+  width: 600px;
+}
+
+.meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 16px;
+}
+
+.meta-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.meta-required {
+  color: var(--accent-red);
+  margin-left: 2px;
+}
+
+.meta-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.meta-input {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  padding: 7px 10px;
+  font-family: inherit;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+.meta-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.meta-select {
+  cursor: pointer;
+}
+
+.meta-textarea {
+  resize: vertical;
+  min-height: 120px;
+  font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+  font-size: 0.825rem;
+  line-height: 1.6;
+}
+
+/* Two-column row for Author + Sector fields */
+.meta-row-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* ── Export Modal ─────────────────────────────────────────────────────────────── */
+
+.export-modal {
+  width: 560px;
+}
+
+.export-intro {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+.export-intro strong {
+  color: var(--text-primary);
+}
+
+.export-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Clickable option card — behaves like a radio button */
+.export-option-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+  width: 100%;
+  font-family: inherit;
+  color: var(--text-primary);
+}
+.export-option-card:hover {
+  border-color: #484f58;
+  background: var(--bg-panel-hover);
+}
+.export-option-card.selected {
+  border-color: var(--accent-blue);
+  background: rgba(56, 139, 253, 0.07);
+}
+
+.export-option-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+  margin-top: 2px;
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+}
+
+.export-option-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.export-option-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-primary);
+}
+
+.export-option-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.export-option-includes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.export-tag {
+  font-size: 0.7rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.export-tag-include {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--accent-green);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+.export-tag-exclude {
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--accent-red);
+  border: 1px solid rgba(248, 81, 73, 0.25);
+}
+
+/* Export result states (success / error) */
+.export-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 8px;
+}
+.export-result-ok {
+  background: rgba(63, 185, 80, 0.1);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+.export-result-error {
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.25);
+}
+.export-result-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+  margin-top: 1px;
+}
+.export-result-ok .export-result-icon {
+  color: var(--accent-green);
+}
+.export-result-error .export-result-icon {
+  color: var(--accent-red);
+}
+.export-result-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.875rem;
+}
+.export-result-path {
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.775rem;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* ── Mode badge in toolbar ────────────────────────────────────────────────────── */
+
+/* Sits in the toolbar-center next to the SimStatusBadge */
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-left: 10px;
+}
+.mode-badge-author {
+  background: rgba(56, 139, 253, 0.15);
+  border: 1px solid rgba(56, 139, 253, 0.35);
+  color: #58a6ff;
+}
+.mode-badge-student {
+  background: rgba(57, 208, 176, 0.12);
+  border: 1px solid rgba(57, 208, 176, 0.3);
+  color: var(--accent-teal);
+}
+
+/* ── Mission Panel ────────────────────────────────────────────────────────────── */
+
+/* Full-width expanded state — occupies the palette column */
+.mission-panel {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Collapsed strip — just a vertical "Mission" tab */
+.mission-panel-collapsed {
+  width: 36px;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 8px;
+}
+
+.mission-panel-expand {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border-radius: 6px;
+  transition:
+    color 0.15s,
+    background 0.15s;
+  width: 100%;
+}
+.mission-panel-expand:hover {
+  color: var(--accent-teal);
+  background: var(--bg-panel-hover);
+}
+.mission-panel-expand-icon {
+  font-size: 0.95rem;
+}
+.mission-panel-expand-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+/* Panel header row */
+.mission-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.mission-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mission-lock-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.mission-mode-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-teal);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.mission-collapse-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  line-height: 1;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+.mission-collapse-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-panel-hover);
+}
+
+/* Scenario identity block */
+.mission-identity {
+  padding: 10px 12px 8px;
+  flex-shrink: 0;
+}
+.mission-scenario-name {
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.mission-author {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.mission-divider {
+  height: 1px;
+  background: var(--border-muted);
+  margin: 0 12px 8px;
+  flex-shrink: 0;
+}
+
+/* Mission brief section */
+.mission-brief-label {
+  padding: 0 12px 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.mission-brief-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 12px 12px;
+}
+
+.mission-brief-text {
+  font-family: inherit;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mission-brief-empty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.5;
+}

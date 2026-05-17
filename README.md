@@ -210,8 +210,8 @@ Share your scenarios with the community — open a pull request against the [ics
 | — | Self-healing IP deduplication in compose generator | ✅ Complete |
 | — | Network Settings modal — per-zone subnet configuration | ✅ Complete |
 | — | Delete Scenario button with confirmation | ✅ Complete |
-| 7 | FUXA HMI embed + PLC → HMI Modbus wiring | 🔜 Next |
-| 8 | Author / Student mode split + locked scenario distribution | 🔜 Planned |
+| 7 | FUXA HMI embed + PLC → HMI Modbus wiring | ✅ Complete |
+| 8 | Author / Student mode split + locked scenario distribution | ✅ Complete |
 | 9 | Community scenario pack format | 🔜 Planned |
 | 10 | Conpot legacy device emulation (Siemens S7, IEC 104) | 🔜 Planned |
 | 11 | Physical process simulation (tank, pump, valve dynamics) | 🔜 Planned |
