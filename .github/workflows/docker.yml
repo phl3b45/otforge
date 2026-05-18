@@ -48,6 +48,11 @@ jobs:
             context: containers/suricata
           - image: ics-sim-zeek
             context: containers/zeek
+          # Phase 10: Siemens S7comm (port 102) and IEC 60870-5-104 (port 2404)
+          # emulation via pure-Python server. One image handles both device types;
+          # DEVICE_CATEGORY env var selects the protocol at startup.
+          - image: ics-sim-conpot
+            context: containers/conpot
 
     steps:
       - uses: actions/checkout@v4

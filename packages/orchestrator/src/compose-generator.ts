@@ -52,6 +52,9 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   rtu: 'alpine:latest',
   // STUB: Replace with ics-sim-dnp3 (DNP3 outstation) once published.
   ied: 'alpine:latest',
+  // Phase 10: Conpot legacy device emulation (S7comm + IEC 104)
+  'legacy-plc': 'ghcr.io/iburres/ics-sim-conpot:latest',
+  'iec104-rtu': 'ghcr.io/iburres/ics-sim-conpot:latest',
   sensor: 'alpine:latest',
   actuator: 'alpine:latest',
   pump: 'alpine:latest',
@@ -109,6 +112,8 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   plc: { memory: 128, cpus: '0.5' }, // OpenPLC Runtime (Ubuntu base)
   rtu: { memory: 80, cpus: '0.25' }, // pymodbus on Alpine
   ied: { memory: 80, cpus: '0.25' }, // pure-Python DNP3 on Alpine
+  'legacy-plc': { memory: 80, cpus: '0.25' }, // pure-Python S7comm on Alpine (Phase 10)
+  'iec104-rtu': { memory: 80, cpus: '0.25' }, // pure-Python IEC 104 on Alpine (Phase 10)
   sensor: { memory: 64, cpus: '0.15' },
   actuator: { memory: 64, cpus: '0.15' },
   pump: { memory: 64, cpus: '0.15' },
@@ -821,6 +826,22 @@ function buildDeviceEnv(
   if (device.opcua) {
     env.push(`OPCUA_PORT=${device.opcua.port}`)
     env.push(`OPCUA_NAMESPACE=${device.opcua.namespace}`)
+  }
+
+  // Siemens S7comm configuration — consumed by containers/conpot/server.py
+  // (DEVICE_CATEGORY=legacy-plc). S7_DEVICE_TYPE selects the CPU model which
+  // determines the order number and firmware version returned in SZL responses.
+  if (device.s7) {
+    env.push(`S7_DEVICE_TYPE=${device.s7.deviceType}`)
+    env.push(`S7_PORT=${device.s7.port}`)
+  }
+
+  // IEC 60870-5-104 configuration — consumed by containers/conpot/server.py
+  // (DEVICE_CATEGORY=iec104-rtu). The common address identifies this RTU on
+  // a multi-drop IEC 104 segment; each RTU must have a unique common address.
+  if (device.iec104) {
+    env.push(`IEC104_COMMON_ADDRESS=${device.iec104.commonAddress}`)
+    env.push(`IEC104_PORT=${device.iec104.port}`)
   }
 
   // PLC program pre-load (Phase 4):

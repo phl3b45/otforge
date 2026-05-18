@@ -13,6 +13,8 @@ export type Protocol =
   | 'bacnet'
   | 'ethernet-ip'
   | 'iec61850'
+  | 's7comm' // Siemens S7 Communication (S7-300/400/1200/1500, port 102)
+  | 'iec-104' // IEC 60870-5-104 telecontrol protocol (port 2404)
   | 'none'
 
 /**
@@ -37,6 +39,8 @@ export type DeviceCategory =
   | 'plc'
   | 'rtu'
   | 'ied'
+  | 'legacy-plc' // Siemens S7-300/400/1200/1500 via S7comm (Phase 10)
+  | 'iec104-rtu' // IEC 60870-5-104 RTU via conpot emulation (Phase 10)
   | 'sensor'
   | 'actuator'
   | 'pump'
@@ -142,6 +146,34 @@ export interface DNP3Config {
   port: number
 }
 
+/**
+ * Configuration for a Siemens S7 legacy PLC emulated by containers/conpot.
+ * The emulator presents a real S7comm handshake (RFC 1006 / COTP / S7 PDU)
+ * that Nmap s7-enumerate and Metasploit siemens_simatic_manager can fingerprint.
+ */
+export interface S7Config {
+  /** Siemens CPU model series — determines order number and firmware in SZL responses. */
+  deviceType: '300' | '400' | '1200' | '1500'
+  /** S7 TSAP rack number (0 for S7-300, configurable for S7-400 multi-rack). */
+  rack: number
+  /** S7 TSAP slot number (2 for S7-300/400 CPU, 1 for S7-1200/1500). */
+  slot: number
+  /** ISO-TSAP port (RFC 1006) — always 102 in standard configurations. */
+  port: number
+}
+
+/**
+ * Configuration for an IEC 60870-5-104 RTU emulated by containers/conpot.
+ * The emulator responds to STARTDT, TESTFR, and General Interrogation commands
+ * and sends periodic floating-point process values (type M_ME_NC_1).
+ */
+export interface Iec104Config {
+  /** ASDU Common Address — identifies this RTU on a multi-RTU segment (1–65535). */
+  commonAddress: number
+  /** TCP listening port (IEC 104 standard default is 2404). */
+  port: number
+}
+
 export interface OpcUaConfig {
   port: number
   namespace: string
@@ -168,6 +200,8 @@ export interface DeviceConfig {
   modbus?: ModbusConfig
   dnp3?: DNP3Config
   opcua?: OpcUaConfig
+  s7?: S7Config // Siemens S7comm config (legacy-plc devices, Phase 10)
+  iec104?: Iec104Config // IEC 60870-5-104 config (iec104-rtu devices, Phase 10)
   plcProgram?: PLCProgramConfig
   dockerImage?: string // override default image for this device type
 }

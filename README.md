@@ -71,6 +71,8 @@ Real protocol packets flow on Docker virtual networks — scanner tools and expl
 | BACnet/IP | bacpypes (Python) | UDP 47808 |
 | Ethernet/IP CIP | cpppo (Python) | TCP 44818 |
 | IEC 61850 | libiec61850 (C) | TCP 102 |
+| S7comm (Siemens S7) | Pure Python (RFC 1006 / COTP / S7 PDU) | TCP 102 |
+| IEC 60870-5-104 | Pure Python (APCI / ASDU) | TCP 2404 |
 
 ---
 
@@ -82,7 +84,7 @@ Real protocol packets flow on Docker virtual networks — scanner tools and expl
 | Packet analysis | Wireshark (GUI), tshark, tcpdump, Scapy |
 | Exploitation | Metasploit Framework, Armitage (GUI) |
 | Credentials | Hydra, Medusa, Patator, John the Ripper, Hashcat |
-| ICS/OT specific | pymodbus, dnp3-python, opcua, bacpypes3, python-snap7, impacket, ike-scan |
+| ICS/OT specific | pymodbus, dnp3-python, opcua, bacpypes3, python-snap7 (S7comm), impacket, ike-scan |
 | Desktop | Full Kali Xfce4 via KasmVNC — launches in a dedicated OS window |
 
 ---
@@ -230,7 +232,7 @@ Install packs via **Toolbar → Packs → Install Pack** (Author mode). Installe
 | 7 | FUXA HMI embed + PLC → HMI Modbus wiring | ✅ Complete |
 | 8 | Author / Student mode split + locked scenario distribution | ✅ Complete |
 | 9 | Community scenario pack format (.icspack ZIP — Pack Manager, custom device types, bundled Suricata/Zeek rules) | ✅ Complete |
-| 10 | Conpot legacy device emulation (Siemens S7, IEC 104) | 🔜 Planned |
+| 10 | Conpot legacy device emulation (Siemens S7, IEC 104) | ✅ Complete |
 | 11 | Physical process simulation (tank, pump, valve dynamics) | 🔜 Planned |
 | 12 | macOS + Linux packaging and distribution | 🔜 Planned |
 

@@ -77,6 +77,8 @@ export const VALID_CONNECTIONS: Partial<
     rtu: ['modbus-tcp', 'modbus-rtu', 'dnp3'],
     ied: ['modbus-tcp', 'iec61850'],
     plc: ['modbus-tcp', 'ethernet-ip'], // peer-to-peer PLC network
+    'legacy-plc': ['s7comm', 'modbus-tcp'], // PLC → Siemens S7 peer (Phase 10)
+    'iec104-rtu': ['modbus-tcp', 'modbus-rtu'], // PLC → IEC 104 RTU (Phase 10)
     hmi: ['modbus-tcp', 'opc-ua'],
     historian: ['modbus-tcp', 'opc-ua'],
     switch: ['none'],
@@ -94,6 +96,8 @@ export const VALID_CONNECTIONS: Partial<
     'flow-meter': ['modbus-rtu', 'modbus-tcp', 'dnp3'],
     'pressure-transmitter': ['modbus-rtu', 'modbus-tcp', 'dnp3'],
     plc: ['modbus-tcp', 'modbus-rtu', 'dnp3'],
+    'legacy-plc': ['s7comm', 'modbus-tcp'], // RTU → Siemens S7 peer (Phase 10)
+    'iec104-rtu': ['iec-104', 'modbus-tcp'], // RTU → IEC 104 RTU peer (Phase 10)
     ied: ['dnp3', 'iec61850'],
     hmi: ['dnp3', 'modbus-tcp'],
     historian: ['dnp3'],
@@ -108,6 +112,8 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['iec61850', 'dnp3'], // GOOSE between peer IEDs
     rtu: ['iec61850', 'dnp3'],
     plc: ['iec61850', 'modbus-tcp'],
+    'legacy-plc': ['s7comm'], // IED → Siemens S7 (S7comm read, Phase 10)
+    'iec104-rtu': ['iec-104', 'dnp3'], // IED → IEC 104 RTU (Phase 10)
     hmi: ['dnp3', 'iec61850'],
     historian: ['dnp3', 'iec61850'],
     switch: ['none'],
@@ -121,6 +127,8 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['modbus-tcp', 'opc-ua'],
     rtu: ['dnp3', 'modbus-tcp'],
     ied: ['dnp3', 'iec61850'],
+    'legacy-plc': ['s7comm', 'opc-ua'], // HMI reads Siemens S7 via S7comm or OPC-UA (Phase 10)
+    'iec104-rtu': ['iec-104'], // HMI reads IEC 104 RTU (Phase 10)
     historian: ['opc-ua', 'none'],
     switch: ['none'],
     router: ['none'],
@@ -133,7 +141,57 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['opc-ua', 'modbus-tcp'],
     rtu: ['dnp3'],
     ied: ['dnp3', 'iec61850'],
+    'legacy-plc': ['s7comm', 'opc-ua'], // Historian archives Siemens S7 data (Phase 10)
+    'iec104-rtu': ['iec-104'], // Historian archives IEC 104 RTU data (Phase 10)
     hmi: ['opc-ua', 'none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
+  // ── Siemens S7 legacy PLC (S7comm primary, Modbus to field devices) ─────────
+  // Phase 10: Siemens S7-300/400/1200/1500 emulated by conpot container.
+  // S7comm (port 102) is the primary upward protocol; the S7 also acts as a
+  // Modbus master to poll classic Modbus field devices.
+  'legacy-plc': {
+    sensor: ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    actuator: ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    pump: ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    valve: ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    'flow-meter': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    'pressure-transmitter': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    plc: ['s7comm', 'modbus-tcp'], // peer PLC
+    rtu: ['s7comm', 'modbus-tcp'], // upward to SCADA RTU
+    ied: ['s7comm'], // IED in substation
+    'legacy-plc': ['s7comm'], // Siemens peer-to-peer S7comm
+    'iec104-rtu': ['modbus-tcp'], // feeds data to IEC 104 RTU
+    hmi: ['s7comm', 'opc-ua', 'modbus-tcp'],
+    historian: ['s7comm', 'opc-ua', 'modbus-tcp'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
+  // ── IEC 60870-5-104 RTU (IEC 104 to SCADA; Modbus to field devices) ─────────
+  // Phase 10: telecontrol RTU emulated by conpot container on port 2404.
+  // Collects measurements from Modbus field devices and reports them to the
+  // SCADA master (HMI/Historian) using the IEC 104 telecontrol protocol.
+  'iec104-rtu': {
+    sensor: ['modbus-rtu', 'modbus-tcp'],
+    actuator: ['modbus-rtu', 'modbus-tcp'],
+    pump: ['modbus-rtu', 'modbus-tcp'],
+    valve: ['modbus-rtu', 'modbus-tcp'],
+    'flow-meter': ['modbus-rtu', 'modbus-tcp'],
+    'pressure-transmitter': ['modbus-rtu', 'modbus-tcp'],
+    plc: ['iec-104', 'modbus-tcp'], // peer PLC / SCADA master
+    rtu: ['iec-104'], // peer RTU (RTU concentrator chain)
+    ied: ['iec-104', 'dnp3'], // IED in same zone
+    'legacy-plc': ['iec-104'], // Siemens S7 in same zone
+    'iec104-rtu': ['iec-104'], // peer IEC 104 RTU
+    hmi: ['iec-104'], // SCADA master reads RTU
+    historian: ['iec-104'], // Historian archives RTU data
     switch: ['none'],
     router: ['none'],
     firewall: ['none'],
@@ -146,32 +204,44 @@ export const VALID_CONNECTIONS: Partial<
   sensor: {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp', 'dnp3'],
-    ied: ['dnp3']
+    ied: ['dnp3'],
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // polled by S7 master (Phase 10)
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // polled by IEC 104 RTU (Phase 10)
   },
   actuator: {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp'],
-    ied: ['dnp3']
+    ied: ['dnp3'],
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // controlled by S7 master (Phase 10)
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // controlled by IEC 104 RTU (Phase 10)
   },
   pump: {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp'],
-    ied: ['dnp3']
+    ied: ['dnp3'],
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
   },
   valve: {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp'],
-    ied: ['dnp3']
+    ied: ['dnp3'],
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
   },
   'flow-meter': {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp'],
-    ied: ['dnp3']
+    ied: ['dnp3'],
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
   },
   'pressure-transmitter': {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp'],
-    ied: ['dnp3']
+    ied: ['dnp3'],
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
   },
 
   // ── Infrastructure: Ethernet pass-through — no ICS application protocols ───
@@ -179,6 +249,8 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['none'],
     rtu: ['none'],
     ied: ['none'],
+    'legacy-plc': ['none'], // Phase 10
+    'iec104-rtu': ['none'], // Phase 10
     hmi: ['none'],
     historian: ['none'],
     sensor: ['none'],
@@ -197,6 +269,8 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['none'],
     rtu: ['none'],
     ied: ['none'],
+    'legacy-plc': ['none'], // Phase 10
+    'iec104-rtu': ['none'], // Phase 10
     hmi: ['none'],
     historian: ['none'],
     sensor: ['none'],
@@ -215,6 +289,8 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['none'],
     rtu: ['none'],
     ied: ['none'],
+    'legacy-plc': ['none'], // Phase 10
+    'iec104-rtu': ['none'], // Phase 10
     hmi: ['none'],
     historian: ['none'],
     sensor: ['none'],
@@ -233,6 +309,8 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['none'],
     rtu: ['none'],
     ied: ['none'],
+    'legacy-plc': ['none'], // Phase 10
+    'iec104-rtu': ['none'], // Phase 10
     hmi: ['none'],
     historian: ['none'],
     sensor: ['none'],
@@ -251,6 +329,7 @@ export const VALID_CONNECTIONS: Partial<
   // ── Attack machine — can attempt any protocol (External zone red team) ──────
   // All protocols listed because an attacker is not constrained by operational
   // intent. Students see this device can reach anything — that's the lesson.
+  // Phase 10: s7comm and iec-104 added to enable Siemens S7 and IEC 104 attacks.
   'attack-machine': {
     plc: [
       'modbus-tcp',
@@ -273,6 +352,30 @@ export const VALID_CONNECTIONS: Partial<
       'none'
     ],
     ied: [
+      'modbus-tcp',
+      'modbus-rtu',
+      'dnp3',
+      'opc-ua',
+      'bacnet',
+      'ethernet-ip',
+      'iec61850',
+      'none'
+    ],
+    // Siemens S7 attack surface: s7-enumerate (Nmap), siemens_simatic_manager (Metasploit)
+    'legacy-plc': [
+      's7comm',
+      'modbus-tcp',
+      'modbus-rtu',
+      'dnp3',
+      'opc-ua',
+      'bacnet',
+      'ethernet-ip',
+      'iec61850',
+      'none'
+    ],
+    // IEC 104 attack surface: General Interrogation spoofing, command injection
+    'iec104-rtu': [
+      'iec-104',
       'modbus-tcp',
       'modbus-rtu',
       'dnp3',
@@ -418,6 +521,8 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
   plc: 'PLC',
   rtu: 'RTU',
   ied: 'IED',
+  'legacy-plc': 'Siemens S7 PLC', // Phase 10
+  'iec104-rtu': 'IEC 104 RTU', // Phase 10
   sensor: 'Sensor',
   actuator: 'Actuator',
   pump: 'Pump',

@@ -36,6 +36,8 @@ const PIPE_COLORS: Record<Protocol, string> = {
   bacnet: '#7ee787',
   'ethernet-ip': '#ce93d8',
   iec61850: '#f48fb1',
+  s7comm: '#79b8ff', // Siemens S7comm — blue (Phase 10)
+  'iec-104': '#e3b341', // IEC 60870-5-104 — gold (Phase 10)
   none: '#484f58'
 }
 
@@ -48,7 +50,9 @@ const PROTOCOL_LABELS: Partial<Record<Protocol, string>> = {
   'opc-ua': 'OPC-UA',
   bacnet: 'BACnet',
   'ethernet-ip': 'EtherNet/IP',
-  iec61850: 'IEC 61850'
+  iec61850: 'IEC 61850',
+  s7comm: 'S7comm', // Phase 10
+  'iec-104': 'IEC 104' // Phase 10
 }
 
 export interface PipeEdgeData {

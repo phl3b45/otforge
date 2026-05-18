@@ -410,6 +410,69 @@ function InternetServerSvg() {
 }
 
 /**
+ * Legacy PLC (Siemens S7) — compact CPU module silhouette with distinctive
+ * Siemens-style front-panel indicators: a status LED strip on the left edge,
+ * a mode selector dial, and a memory card slot recess. The narrow rectangle
+ * reflects the S7-300 DIN-rail form factor. Colored amber in the palette to
+ * visually distinguish legacy devices from modern PLC/RTU entries.
+ */
+function LegacyPlcSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* CPU module body */}
+      <rect x="4" y="2" width="16" height="20" rx="1" />
+      {/* Front-panel status LED column (left side) */}
+      <line x1="6" y1="5" x2="6" y2="5" strokeWidth={2} strokeLinecap="round" />
+      <line x1="6" y1="8" x2="6" y2="8" strokeWidth={2} strokeLinecap="round" />
+      <line x1="6" y1="11" x2="6" y2="11" strokeWidth={2} strokeLinecap="round" />
+      {/* Mode selector keyswitch recess */}
+      <rect x="8" y="4" width="8" height="5" rx="0.5" />
+      <circle cx="12" cy="6.5" r="1.5" />
+      {/* Memory card slot */}
+      <rect x="8" y="11" width="8" height="3" rx="0.5" />
+      {/* MPI/DP connector block at bottom */}
+      <rect x="7" y="17" width="10" height="3" rx="0.5" />
+      <line x1="9" y1="17" x2="9" y2="20" />
+      <line x1="12" y1="17" x2="12" y2="20" />
+      <line x1="15" y1="17" x2="15" y2="20" />
+    </svg>
+  )
+}
+
+/**
+ * IEC 104 RTU — a Remote Terminal Unit in the telecontrol tradition: a wider
+ * chassis than the S7 PLC with a front-panel analog process display (curved arc
+ * representing a dial gauge), I/O terminal rows, and a communication port block.
+ * Used for IEC 60870-5-104 / IEC 60870-5-101 field concentrators in substations,
+ * water utilities, and energy distribution networks.
+ */
+function Iec104RtuSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* RTU chassis body */}
+      <rect x="2" y="3" width="20" height="18" rx="1" />
+      {/* Analog display window (instrument bubble) */}
+      <circle cx="8" cy="10" r="4" />
+      {/* Gauge needle arc */}
+      <path d="M5.5 12 Q8 7 10.5 12" />
+      {/* I/O terminal rows on the right side */}
+      <line x1="14" y1="6" x2="20" y2="6" />
+      <line x1="14" y1="9" x2="20" y2="9" />
+      <line x1="14" y1="12" x2="20" y2="12" />
+      {/* Terminal screw symbols */}
+      <circle cx="15" cy="6" r="0.8" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="9" r="0.8" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="0.8" fill="currentColor" stroke="none" />
+      {/* Communication port block at bottom */}
+      <rect x="5" y="17" width="14" height="2.5" rx="0.5" />
+      <line x1="8" y1="17" x2="8" y2="19.5" />
+      <line x1="12" y1="17" x2="12" y2="19.5" />
+      <line x1="16" y1="17" x2="16" y2="19.5" />
+    </svg>
+  )
+}
+
+/**
  * Attack Machine — monitor with a crosshair/target overlay, clearly distinguishing
  * this device from the HMI. The red color (set via palette) reinforces that this is
  * a hostile/red-team tool (Kali Linux container).
@@ -439,6 +502,8 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   plc: PlcSvg,
   rtu: RtuSvg,
   ied: IedSvg,
+  'legacy-plc': LegacyPlcSvg, // Siemens S7-300/400/1200/1500 via S7comm (Phase 10)
+  'iec104-rtu': Iec104RtuSvg, // IEC 60870-5-104 RTU via conpot emulation (Phase 10)
   sensor: SensorSvg,
   actuator: ActuatorSvg,
   pump: PumpSvg,

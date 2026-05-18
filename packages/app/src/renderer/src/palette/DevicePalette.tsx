@@ -56,6 +56,16 @@ const PALETTE: PaletteSection[] = [
     ]
   },
   {
+    // Phase 10: Siemens S7 and IEC 104 legacy devices for fingerprinting labs.
+    // Emulated by the conpot container; respond to real Nmap/Metasploit probes.
+    label: 'Legacy / Protocol',
+    layers: ['ot'],
+    items: [
+      { category: 'legacy-plc', label: 'Siemens S7 PLC' },
+      { category: 'iec104-rtu', label: 'IEC 104 RTU' }
+    ]
+  },
+  {
     label: 'Field Devices',
     layers: ['ot'],
     items: [
@@ -138,6 +148,9 @@ const PALETTE: PaletteSection[] = [
  * Categories not listed here use the default muted gray (#8b949e).
  */
 const PALETTE_COLORS: Partial<Record<DeviceCategory, string>> = {
+  // Legacy / Phase 10 devices — teal to distinguish from standard PLCs and RTUs
+  'legacy-plc': '#39d0b0',
+  'iec104-rtu': '#39d0b0',
   // Security boundary devices — amber
   firewall: '#d29922',
   'ids-ips': '#d29922',
