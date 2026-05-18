@@ -30,7 +30,7 @@
  */
 
 import { useState, useCallback, useId } from 'react'
-import type { DeviceConfig, PLCProgramConfig, Protocol } from '@ics-sim/schema'
+import type { DeviceConfig, PLCProgramConfig, Protocol, ImportedRoutine } from '@ics-sim/schema'
 
 // ── Default ST program template ───────────────────────────────────────────────
 
@@ -457,6 +457,106 @@ function VariableTable({ rows, onChange }: { rows: VarRow[]; onChange: (rows: Va
   )
 }
 
+// ── Routine picker modal ──────────────────────────────────────────────────────
+
+/**
+ * Modal dialog shown when a PLC project file contains multiple Structured Text
+ * routines (common in multi-routine L5X files from Logix Designer).
+ *
+ * Displays each routine's name, source format badge, variable count, and any
+ * parse warnings. The user clicks "Load" to apply one routine to the editor;
+ * Cancel closes the modal without changing the current program.
+ *
+ * @param routines  - Routines extracted from the parsed PLC file.
+ * @param fileName  - Source file base name shown in the modal header.
+ * @param onSelect  - Called with the chosen routine when the user clicks Load.
+ * @param onClose   - Called when the user dismisses the modal without selecting.
+ */
+function RoutinePickerModal({
+  routines,
+  fileName,
+  onSelect,
+  onClose
+}: {
+  routines: ImportedRoutine[]
+  fileName: string
+  onSelect: (routine: ImportedRoutine) => void
+  onClose: () => void
+}) {
+  /** Human-readable label for each source format code. */
+  function formatLabel(fmt: string): string {
+    if (fmt === 'l5x-st') return 'Logix ST'
+    if (fmt === 'plcopen-st') return 'PLCopen ST'
+    return 'ST'
+  }
+
+  return (
+    <div
+      className="modal-overlay routine-picker-overlay"
+      onClick={e => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div className="modal-panel routine-picker-modal">
+        {/* Header */}
+        <div className="modal-header">
+          <div className="modal-title">
+            <span className="modal-title-icon">📂</span>
+            Select Routine to Import
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Close routine picker">
+            ×
+          </button>
+        </div>
+
+        {/* File name context */}
+        <div className="routine-picker-source">
+          Source file: <span className="routine-picker-filename">{fileName}</span> —{' '}
+          {routines.length} routine{routines.length !== 1 ? 's' : ''} found
+        </div>
+
+        {/* Routine list */}
+        <div className="routine-picker-list modal-body">
+          {routines.map(routine => (
+            <div key={routine.name} className="routine-picker-row">
+              <div className="routine-picker-info">
+                <div className="routine-picker-name">
+                  {routine.name}
+                  <span className="routine-picker-format-badge">
+                    {formatLabel(routine.sourceFormat)}
+                  </span>
+                </div>
+                <div className="routine-picker-meta">
+                  {routine.variables.length} variable{routine.variables.length !== 1 ? 's' : ''}
+                  {routine.warnings.length > 0 && (
+                    <span className="routine-picker-warn" title={routine.warnings.join('\n')}>
+                      ⚠ {routine.warnings.length} warning{routine.warnings.length !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+                {/* Show first warning inline so users can quickly decide */}
+                {routine.warnings.length > 0 && (
+                  <div className="routine-picker-warn-text">{routine.warnings[0]}</div>
+                )}
+              </div>
+              <button className="btn btn-sm btn-primary" onClick={() => onSelect(routine)}>
+                Load
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── PlcIdePanel ───────────────────────────────────────────────────────────────
 
 /**
@@ -486,6 +586,16 @@ export function PlcIdePanel({
   const [statusMsg, setStatusMsg] = useState<string | null>(null)
   const [deploying, setDeploying] = useState(false)
   const [activeTab, setActiveTab] = useState<'st' | 'ladder'>('st')
+
+  /** True while the native file picker + parse operation is in flight. */
+  const [importing, setImporting] = useState(false)
+  /**
+   * Routines returned by a successful parse of a multi-routine file.
+   * Non-null triggers the RoutinePickerModal. Cleared after selection or cancel.
+   */
+  const [importPickerRoutines, setImportPickerRoutines] = useState<ImportedRoutine[] | null>(null)
+  /** Base file name of the last imported file — shown in the picker modal header. */
+  const [importPickerFileName, setImportPickerFileName] = useState<string>('')
 
   const buildProgram = useCallback(
     (): PLCProgramConfig => ({
@@ -520,87 +630,195 @@ export function PlcIdePanel({
     }
   }, [buildProgram, device.nodeId, onProgramChange, source])
 
+  /**
+   * Loads a routine from the picker into the ST editor and variable table.
+   *
+   * Converts ImportedVariable entries to VarRow objects. Because imported
+   * variables don't carry protocol or protocolAddress information, they default
+   * to modbus-tcp with auto-incremented addresses (0, 1, 2…). The user can
+   * change these in the variable table before deploying.
+   *
+   * After applying, switches to the ST tab so the user can immediately see
+   * the loaded source code.
+   */
+  const applyImportedRoutine = useCallback(
+    (routine: ImportedRoutine) => {
+      setSource(routine.source)
+      setVarRows(
+        routine.variables.map((v, i) => ({
+          id: `import-${i}-${v.name}`,
+          name: v.name,
+          type: ((['BOOL', 'WORD', 'INT', 'DINT', 'REAL'] as string[]).includes(v.type)
+            ? v.type
+            : 'DINT') as VarRow['type'],
+          address: v.address || `%MW${i}`,
+          protocol: 'modbus-tcp' as Protocol,
+          protocolAddress: String(i)
+        }))
+      )
+      setImportPickerRoutines(null)
+      setActiveTab('st')
+      const warnNote =
+        routine.warnings.length > 0
+          ? `\n${routine.warnings.length} warning(s) — check variable table.`
+          : ''
+      setStatusMsg(
+        `Imported "${routine.name}" from ${importPickerFileName}.${warnNote} Review bindings then Save.`
+      )
+      setTimeout(() => setStatusMsg(null), 8000)
+    },
+    [importPickerFileName]
+  )
+
+  /**
+   * Opens the native file picker for PLC project files and parses the selection.
+   *
+   * On success: if one routine is found it is loaded immediately; if multiple
+   * routines are found the RoutinePickerModal is shown. On failure (including
+   * user cancellation) a status message is shown briefly.
+   */
+  const handleImport = useCallback(async () => {
+    setImporting(true)
+    setStatusMsg(null)
+    try {
+      const result = await window.electronAPI.plc.importProgram()
+      if (!result.ok) {
+        // 'Import cancelled' is a normal user action — show no error for that case
+        if (result.error && result.error !== 'Import cancelled') {
+          setStatusMsg(`Import failed: ${result.error}`)
+          setTimeout(() => setStatusMsg(null), 6000)
+        }
+        return
+      }
+
+      const routines = result.routines ?? []
+      const fileName = result.fileName ?? 'unknown'
+      setImportPickerFileName(fileName)
+
+      if (routines.length === 0) {
+        setStatusMsg('No importable routines found in the selected file.')
+        setTimeout(() => setStatusMsg(null), 5000)
+        return
+      }
+
+      if (routines.length === 1) {
+        // Single routine — apply directly, no picker needed
+        applyImportedRoutine(routines[0])
+      } else {
+        // Multiple routines — show the picker modal
+        setImportPickerRoutines(routines)
+      }
+    } catch (err) {
+      setStatusMsg(`Import error: ${(err as Error).message}`)
+      setTimeout(() => setStatusMsg(null), 6000)
+    } finally {
+      setImporting(false)
+    }
+  }, [applyImportedRoutine])
+
   // ── Modal layout ─────────────────────────────────────────────────────────────
   if (modal) {
     return (
-      <div className="plc-ide plc-ide-modal-body">
-        {/* Left column: tabbed ST editor / Ladder viewer */}
-        <div className="plc-ide-modal-left">
-          {/* Tab bar */}
-          <div className="plc-ide-tab-bar">
-            <button
-              className={`plc-ide-tab${activeTab === 'st' ? ' active' : ''}`}
-              onClick={() => setActiveTab('st')}
-            >
-              Structured Text
-              <span className="plc-ide-tab-hint">IEC 61131-3 ST</span>
-            </button>
-            <button
-              className={`plc-ide-tab${activeTab === 'ladder' ? ' active' : ''}`}
-              onClick={() => setActiveTab('ladder')}
-            >
-              Ladder Diagram
-              <span className="plc-ide-tab-hint">read-only view</span>
-            </button>
-          </div>
+      <>
+        {/* Routine picker modal — shown when a multi-routine file is imported */}
+        {importPickerRoutines && (
+          <RoutinePickerModal
+            routines={importPickerRoutines}
+            fileName={importPickerFileName}
+            onSelect={applyImportedRoutine}
+            onClose={() => setImportPickerRoutines(null)}
+          />
+        )}
 
-          {/* ST editor pane */}
-          {activeTab === 'st' && (
-            <textarea
-              className="plc-st-editor plc-st-editor-modal"
-              value={source}
-              onChange={e => setSource(e.target.value)}
-              spellCheck={false}
-              aria-label="Structured Text program source"
-            />
-          )}
-
-          {/* Ladder diagram pane */}
-          {activeTab === 'ladder' && (
-            <div className="plc-ladder-modal-pane">
-              <LadderDiagram vars={varRows} large />
+        <div className="plc-ide plc-ide-modal-body">
+          {/* Left column: tabbed ST editor / Ladder viewer */}
+          <div className="plc-ide-modal-left">
+            {/* Tab bar — tabs on the left, Import button on the right */}
+            <div className="plc-ide-tab-bar">
+              <button
+                className={`plc-ide-tab${activeTab === 'st' ? ' active' : ''}`}
+                onClick={() => setActiveTab('st')}
+              >
+                Structured Text
+                <span className="plc-ide-tab-hint">IEC 61131-3 ST</span>
+              </button>
+              <button
+                className={`plc-ide-tab${activeTab === 'ladder' ? ' active' : ''}`}
+                onClick={() => setActiveTab('ladder')}
+              >
+                Ladder Diagram
+                <span className="plc-ide-tab-hint">read-only view</span>
+              </button>
+              {/* Import button — right-aligned via plc-ide-tab-spacer flex gap */}
+              <span className="plc-ide-tab-spacer" />
+              <button
+                className="btn btn-sm btn-ghost plc-import-btn"
+                onClick={handleImport}
+                disabled={importing}
+                title="Import Structured Text program from a PLC project file (.l5x, .xml, .st, .scl)"
+              >
+                {importing ? 'Importing…' : '↑ Import Program'}
+              </button>
             </div>
-          )}
+
+            {/* ST editor pane */}
+            {activeTab === 'st' && (
+              <textarea
+                className="plc-st-editor plc-st-editor-modal"
+                value={source}
+                onChange={e => setSource(e.target.value)}
+                spellCheck={false}
+                aria-label="Structured Text program source"
+              />
+            )}
+
+            {/* Ladder diagram pane */}
+            {activeTab === 'ladder' && (
+              <div className="plc-ladder-modal-pane">
+                <LadderDiagram vars={varRows} large />
+              </div>
+            )}
+          </div>
+
+          {/* Right column: variable bindings + action bar */}
+          <div className="plc-ide-modal-right">
+            <div className="plc-ide-section-header plc-ide-section-header-modal">
+              <span className="plc-ide-section-title">Variable Bindings</span>
+              <span className="plc-ide-section-hint">I/O map · IEC ↔ Protocol</span>
+            </div>
+            <div className="plc-ide-modal-vars">
+              <VariableTable rows={varRows} onChange={setVarRows} />
+            </div>
+
+            {/* Action buttons */}
+            <div className="plc-ide-actions plc-ide-actions-modal">
+              <button className="btn btn-secondary" onClick={handleSave}>
+                Save Program
+              </button>
+              <button
+                className="btn btn-run"
+                onClick={handleDeploy}
+                disabled={!simRunning || deploying}
+                title={
+                  !simRunning
+                    ? 'Start simulation first to deploy'
+                    : 'Upload to running OpenPLC container'
+                }
+              >
+                {deploying ? 'Deploying…' : '▶  Deploy to PLC'}
+              </button>
+            </div>
+
+            {statusMsg && <pre className="plc-deploy-output">{statusMsg}</pre>}
+
+            {/* OpenPLC runtime info footer */}
+            <div className="plc-ide-runtime-info">
+              <span className="plc-ide-runtime-badge">OpenPLC Runtime v3</span>
+              <span>IEC 61131-3 · MATIEC compiler · {device.nodeId}</span>
+            </div>
+          </div>
         </div>
-
-        {/* Right column: variable bindings + action bar */}
-        <div className="plc-ide-modal-right">
-          <div className="plc-ide-section-header plc-ide-section-header-modal">
-            <span className="plc-ide-section-title">Variable Bindings</span>
-            <span className="plc-ide-section-hint">I/O map · IEC ↔ Protocol</span>
-          </div>
-          <div className="plc-ide-modal-vars">
-            <VariableTable rows={varRows} onChange={setVarRows} />
-          </div>
-
-          {/* Action buttons */}
-          <div className="plc-ide-actions plc-ide-actions-modal">
-            <button className="btn btn-secondary" onClick={handleSave}>
-              Save Program
-            </button>
-            <button
-              className="btn btn-run"
-              onClick={handleDeploy}
-              disabled={!simRunning || deploying}
-              title={
-                !simRunning
-                  ? 'Start simulation first to deploy'
-                  : 'Upload to running OpenPLC container'
-              }
-            >
-              {deploying ? 'Deploying…' : '▶  Deploy to PLC'}
-            </button>
-          </div>
-
-          {statusMsg && <pre className="plc-deploy-output">{statusMsg}</pre>}
-
-          {/* OpenPLC runtime info footer */}
-          <div className="plc-ide-runtime-info">
-            <span className="plc-ide-runtime-badge">OpenPLC Runtime v3</span>
-            <span>IEC 61131-3 · MATIEC compiler · {device.nodeId}</span>
-          </div>
-        </div>
-      </div>
+      </>
     )
   }
 
@@ -639,8 +857,16 @@ export function PlcIdePanel({
       </div>
 
       <div className="plc-ide-actions">
+        <button
+          className="btn btn-sm btn-ghost plc-import-btn"
+          onClick={handleImport}
+          disabled={importing}
+          title="Import ST program from a PLC project file (.l5x, .xml, .st, .scl)"
+        >
+          {importing ? 'Importing…' : '↑ Import'}
+        </button>
         <button className="btn btn-sm btn-secondary" onClick={handleSave}>
-          Save Program
+          Save
         </button>
         <button
           className="btn btn-sm btn-run"
@@ -650,11 +876,21 @@ export function PlcIdePanel({
             !simRunning ? 'Start simulation first to deploy' : 'Upload to running OpenPLC container'
           }
         >
-          {deploying ? 'Deploying…' : 'Deploy to PLC'}
+          {deploying ? 'Deploying…' : 'Deploy'}
         </button>
       </div>
 
       {statusMsg && <pre className="plc-deploy-output">{statusMsg}</pre>}
+
+      {/* Routine picker modal — shown when a multi-routine file is imported in sidebar mode */}
+      {importPickerRoutines && (
+        <RoutinePickerModal
+          routines={importPickerRoutines}
+          fileName={importPickerFileName}
+          onSelect={applyImportedRoutine}
+          onClose={() => setImportPickerRoutines(null)}
+        />
+      )}
     </div>
   )
 }

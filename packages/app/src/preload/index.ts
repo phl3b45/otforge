@@ -36,6 +36,7 @@ import type {
   ICSLabScenario,
   PLCDeployResult,
   PLCRuntimeStatus,
+  PlcImportResult,
   PackInstallResult,
   PackListResult,
   PackUninstallResult
@@ -210,7 +211,17 @@ const api = {
      * @param nodeId - Canvas node ID of the PLC device to query.
      */
     status: (nodeId: string): Promise<PLCRuntimeStatus> =>
-      ipcRenderer.invoke('plc:status', { nodeId })
+      ipcRenderer.invoke('plc:status', { nodeId }),
+
+    /**
+     * Opens a native file picker for PLC project files (.l5x, .xml, .export,
+     * .st, .scl) and parses the selected file into one or more importable
+     * Structured Text routines. The renderer presents a picker modal when
+     * multiple routines are found so the user can choose which to load.
+     *
+     * @returns PlcImportResult with .routines[] on success, or .error string on failure.
+     */
+    importProgram: (): Promise<PlcImportResult> => ipcRenderer.invoke('plc:importProgram')
   },
 
   // ── Network settings ──────────────────────────────────────────────────────────

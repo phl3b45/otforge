@@ -64,6 +64,74 @@ export interface AppInfo {
   platform: 'win32' | 'darwin' | 'linux'
 }
 
+// ── PLC firmware import (Phase 9 add-on) ──────────────────────────────────────
+
+/**
+ * A single variable extracted from a PLC project file.
+ *
+ * IEC addresses are populated for formats that carry them (PLCopen XML, plain ST).
+ * L5X (Logix Designer) does not use IEC addressing — address will be an empty string
+ * and the renderer assigns defaults based on type and position.
+ */
+export interface ImportedVariable {
+  /** IEC 61131-3 variable name, e.g. "pump_run". */
+  name: string
+  /**
+   * Normalized IEC type: "BOOL" | "INT" | "DINT" | "REAL" | "WORD".
+   * Logix/non-standard types are mapped to the closest IEC equivalent.
+   */
+  type: string
+  /**
+   * IEC 61131-3 I/O address, e.g. "%QX0.0" or "%IW0".
+   * Empty string when the source format does not use IEC addressing (L5X).
+   */
+  address: string
+  /** Comment or description extracted from the variable declaration. */
+  comment: string
+}
+
+/**
+ * One importable routine/POU extracted from a PLC project file.
+ *
+ * For L5X files (Logix Designer) this maps to a <Routine Type="ST"> element.
+ * For PLCopen XML this maps to a <pou pouType="program|functionBlock"> element.
+ * For plain .st/.scl files this is the whole file as a single routine.
+ */
+export interface ImportedRoutine {
+  /** Routine name from the source file, e.g. "MainRoutine" or "main". */
+  name: string
+  /** Decoded ST source text, ready to paste into the OpenPLC IDE editor. */
+  source: string
+  /** Variables extracted from the file — pre-populates the variable binding table. */
+  variables: ImportedVariable[]
+  /**
+   * Source format descriptor shown in the routine picker UI.
+   * Examples: "st", "l5x-st", "plcopen-st"
+   */
+  sourceFormat: string
+  /**
+   * Non-fatal parse warnings shown to the user.
+   * Common examples: Ladder routines that were skipped, unmapped data types.
+   */
+  warnings: string[]
+}
+
+/**
+ * Return value of the plc:importProgram IPC handler.
+ *
+ * On success, `routines` contains one or more importable routines found in the file.
+ * Multiple routines (e.g., from a multi-routine L5X file) are presented in a picker
+ * so the user can choose which one to load into the editor.
+ */
+export interface PlcImportResult {
+  ok: boolean
+  /** Extracted routines — one per ST/SCL POU found in the source file. */
+  routines?: ImportedRoutine[]
+  /** Original filename without the path — shown in the status message after import. */
+  fileName?: string
+  error?: string
+}
+
 // ── Scenario pack (Phase 9) ────────────────────────────────────────────────────
 
 /**
@@ -161,6 +229,18 @@ export interface IPCChannels {
    * device's container. Used by the IDE panel to show run/stopped status.
    */
   'plc:status': [{ nodeId: string }, PLCRuntimeStatus]
+
+  /**
+   * Opens a native file picker filtered to .l5x, .xml, .export, .st, and .scl
+   * files, parses the selected PLC project file, and returns one or more
+   * importable ST routines found in it. Supports:
+   *   - Rockwell Logix Designer L5X (.l5x) — extracts <Routine Type="ST"> elements
+   *   - PLCopen XML (.xml, .export) — extracts <pou pouType="program|functionBlock"> ST bodies
+   *   - Plain IEC 61131-3 ST / SCL source (.st, .scl) — treated as a single routine
+   * Ladder (RLL) and FBD routines are skipped with a warning; the user is
+   * informed via PlcImportResult.routines[].warnings.
+   */
+  'plc:importProgram': [void, PlcImportResult]
 
   // Community scenario packs (Phase 9)
   /**

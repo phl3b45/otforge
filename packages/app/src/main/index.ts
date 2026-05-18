@@ -41,7 +41,8 @@ import type {
   PackDeviceType,
   ResolvedPackDeviceType,
   PackScenarioMeta,
-  InstalledPack
+  InstalledPack,
+  PlcImportResult
 } from '@ics-sim/schema'
 import { readFile, writeFile, access, mkdir, readdir, rm } from 'fs/promises'
 import { exec, spawn } from 'child_process'
@@ -64,6 +65,7 @@ import {
 } from '@ics-sim/orchestrator'
 import type { NetworkZone } from '@ics-sim/schema'
 import { initDb, saveActiveScenario, loadActiveScenario, clearActiveScenario } from './db'
+import { parsePlcFile } from './plc-import'
 
 const execAsync = promisify(exec)
 
@@ -1401,6 +1403,54 @@ function registerIPCHandlers(): void {
     hmiWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
     return { ok: true }
+  })
+
+  // ── PLC firmware import ────────────────────────────────────────────────────────
+
+  /**
+   * Opens a native file picker for PLC project files, parses the selected file,
+   * and returns one or more importable Structured Text routines.
+   *
+   * Supported formats:
+   *   .l5x     — Rockwell Logix Designer (Studio 5000) project export
+   *   .xml     — PLCopen XML / CODESYS export, or L5X saved as .xml
+   *   .export  — CODESYS / Beckhoff TwinCAT project export
+   *   .st      — Plain IEC 61131-3 Structured Text source
+   *   .scl     — Siemens Structured Control Language source
+   *
+   * The renderer presents a routine picker modal when multiple ST routines are
+   * found (common in multi-routine L5X files). The selected routine's source and
+   * variable declarations are loaded into the PLC IDE editor.
+   *
+   * @returns PlcImportResult — ok=true with routines array on success, ok=false with
+   *   error string when the file is unsupported or cannot be parsed.
+   */
+  ipcMain.handle('plc:importProgram', async (): Promise<PlcImportResult> => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Import PLC Program',
+      filters: [
+        {
+          name: 'PLC Project Files',
+          extensions: ['l5x', 'xml', 'export', 'st', 'scl']
+        }
+      ],
+      properties: ['openFile']
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, error: 'Import cancelled' }
+    }
+
+    const filePath = result.filePaths[0]
+    try {
+      const fileBuffer = await readFile(filePath)
+      return parsePlcFile(filePath, fileBuffer)
+    } catch (err) {
+      return {
+        ok: false,
+        error: `Could not read file: ${(err as Error).message}`
+      }
+    }
   })
 }
 
