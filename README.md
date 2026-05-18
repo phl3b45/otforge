@@ -191,6 +191,23 @@ Scenarios are saved as `.icslab` JSON files with four layers:
 
 Share your scenarios with the community — open a pull request against the [ics-sim-scenarios](https://github.com/iburres/ics-sim-scenarios) repository (coming soon).
 
+### Community Scenario Packs (.icspack)
+
+Pack multiple scenarios, custom device types, and sector-specific detection rules into a single `.icspack` ZIP:
+
+```
+pack.json                    — manifest (id, name, version, author, sector, ...)
+scenarios/                   — pre-built .icslab scenario files
+devices/
+  registry.json              — custom device types (label + Docker image override)
+  icons/                     — SVG icons displayed in the palette
+rules/
+  suricata/                  — .rules files (Emerging Threats format)
+  zeek/                      — .zeek protocol analysis scripts
+```
+
+Install packs via **Toolbar → Packs → Install Pack** (Author mode). Installed packs appear in the Pack Manager where you can open bundled scenarios or uninstall packs. Custom device types from packs appear in the palette under **Pack Devices**, draggable onto the canvas like any built-in device.
+
 ---
 
 ## Development Status
@@ -212,7 +229,7 @@ Share your scenarios with the community — open a pull request against the [ics
 | — | Delete Scenario button with confirmation | ✅ Complete |
 | 7 | FUXA HMI embed + PLC → HMI Modbus wiring | ✅ Complete |
 | 8 | Author / Student mode split + locked scenario distribution | ✅ Complete |
-| 9 | Community scenario pack format | 🔜 Planned |
+| 9 | Community scenario pack format (.icspack ZIP — Pack Manager, custom device types, bundled Suricata/Zeek rules) | ✅ Complete |
 | 10 | Conpot legacy device emulation (Siemens S7, IEC 104) | 🔜 Planned |
 | 11 | Physical process simulation (tank, pump, valve dynamics) | 🔜 Planned |
 | 12 | macOS + Linux packaging and distribution | 🔜 Planned |
