@@ -41,6 +41,7 @@ export type DeviceCategory =
   | 'ied'
   | 'legacy-plc' // Siemens S7-300/400/1200/1500 via S7comm (Phase 10)
   | 'iec104-rtu' // IEC 60870-5-104 RTU via conpot emulation (Phase 10)
+  | 'process-unit' // Physics-simulated process unit: water tank, pipeline, generator (Phase 11)
   | 'sensor'
   | 'actuator'
   | 'pump'
@@ -192,6 +193,53 @@ export interface PLCProgramConfig {
   }>
 }
 
+/**
+ * Configuration for a physics-simulated process unit (Phase 11).
+ * The process-sim container runs a real-time physics model and exposes
+ * sensor values and control points as Modbus TCP registers.
+ *
+ * Process types and their primary Modbus outputs:
+ *   water-tank  — HR 0 level (m), HR 1/2 inlet/outlet flow (L/min),
+ *                 HR 3 hydrostatic pressure (bar), HR 4 temperature (°C)
+ *   pipeline    — HR 3 line pressure (bar), HR 1/2 pump/outlet flow,
+ *                 HR 0 fill % mapped to 0–10 m scale
+ *   generator   — HR 6 frequency (Hz), HR 7 terminal voltage (%),
+ *                 HR 8/9 active/reactive power (MW/MVAR)
+ *   generic     — HR 0–3 configurable sine/sawtooth signals
+ */
+export interface ProcessUnitConfig {
+  /** Physics model to run inside the container. */
+  processType: 'water-tank' | 'pipeline' | 'generator' | 'generic'
+  /** Simulation timestep in milliseconds (default 1000). Lower = faster transients. */
+  simDtMs?: number
+
+  // ── Water tank parameters ──────────────────────────────────────────────────
+  /** Total tank capacity in liters (default 1000). */
+  tankVolumeL?: number
+  /** Tank cross-sectional area in m² — determines level from volume (default 1.0). */
+  tankAreaM2?: number
+  /** Maximum outlet pump flow rate in L/min at 100 % VFD speed (default 150). */
+  pumpFlowMaxLpm?: number
+  /** Maximum inlet flow rate in L/min at 100 % valve opening (default 200). */
+  valveFlowMaxLpm?: number
+  /** Starting fill level as 0–100 % of TANK_VOLUME_L (default 50). */
+  initialLevelPct?: number
+
+  // ── Generator parameters ───────────────────────────────────────────────────
+  /** Rated active power output in MW (default 100). */
+  generatorRatedMw?: number
+  /** Generator inertia constant H in seconds (default 6). Higher = slower frequency swings. */
+  generatorInertiaH?: number
+  /** Nominal (synchronous) frequency in Hz: 50 for European, 60 for North American (default 50). */
+  generatorFreqBase?: number
+
+  // ── Pipeline parameters ────────────────────────────────────────────────────
+  /** Internal pipeline volume in liters — affects pressure response speed (default 500). */
+  pipelineVolumeL?: number
+  /** Maximum pump flow rate into the pipeline in L/min (default 300). */
+  pipelinePumpMaxLpm?: number
+}
+
 export interface DeviceConfig {
   nodeId: string // matches CanvasNode.id
   category: DeviceCategory
@@ -202,6 +250,7 @@ export interface DeviceConfig {
   opcua?: OpcUaConfig
   s7?: S7Config // Siemens S7comm config (legacy-plc devices, Phase 10)
   iec104?: Iec104Config // IEC 60870-5-104 config (iec104-rtu devices, Phase 10)
+  processUnit?: ProcessUnitConfig // Physics process simulation config (Phase 11)
   plcProgram?: PLCProgramConfig
   dockerImage?: string // override default image for this device type
 }

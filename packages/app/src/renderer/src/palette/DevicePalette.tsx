@@ -66,6 +66,15 @@ const PALETTE: PaletteSection[] = [
     ]
   },
   {
+    // Phase 11: Physics-simulated process units.
+    // Each instance runs a real-time physics model (water-tank / pipeline /
+    // generator / generic) in the ics-sim-process container. The PLC reads
+    // sensor values as Modbus registers and writes control outputs back.
+    label: 'Process Simulation',
+    layers: ['ot'],
+    items: [{ category: 'process-unit', label: 'Process Unit' }]
+  },
+  {
     label: 'Field Devices',
     layers: ['ot'],
     items: [
@@ -148,6 +157,8 @@ const PALETTE: PaletteSection[] = [
  * Categories not listed here use the default muted gray (#8b949e).
  */
 const PALETTE_COLORS: Partial<Record<DeviceCategory, string>> = {
+  // Phase 11 process units — green to evoke a running physical process
+  'process-unit': '#56d364',
   // Legacy / Phase 10 devices — teal to distinguish from standard PLCs and RTUs
   'legacy-plc': '#39d0b0',
   'iec104-rtu': '#39d0b0',

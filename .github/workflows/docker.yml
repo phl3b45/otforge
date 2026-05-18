@@ -53,6 +53,10 @@ jobs:
           # DEVICE_CATEGORY env var selects the protocol at startup.
           - image: ics-sim-conpot
             context: containers/conpot
+          # Phase 11: Physics-simulated process unit — water tank, pipeline, generator,
+          # generic. Exposes Modbus TCP on port 502; PROCESS_TYPE env var selects model.
+          - image: ics-sim-process
+            context: containers/process-sim
 
     steps:
       - uses: actions/checkout@v4

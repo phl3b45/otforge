@@ -410,6 +410,40 @@ function InternetServerSvg() {
 }
 
 /**
+ * Process Unit (Phase 11) — vertical cylindrical vessel with inlet pipe at top,
+ * outlet at bottom, and a level indicator column on the side. The symbol is
+ * loosely based on ISA-5.1 vessel notation: a tall rectangle represents the
+ * tank body, a vertical bar on the right side shows the fill level gauge
+ * (instrument bubble convention), and short horizontal pipes at top and bottom
+ * indicate inlet and outlet connections.
+ *
+ * Works equally well to represent a water tank, pipeline segment entry, or
+ * generator stator block — the process type is configured in Properties.
+ */
+function ProcessUnitSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* Tank body — tall rounded rectangle */}
+      <rect x="5" y="3" width="12" height="18" rx="2" />
+      {/* Inlet pipe at top center */}
+      <line x1="11" y1="1" x2="11" y2="3" />
+      <line x1="13" y1="1" x2="13" y2="3" />
+      {/* Outlet pipe at bottom center */}
+      <line x1="11" y1="21" x2="11" y2="23" />
+      <line x1="13" y1="21" x2="13" y2="23" />
+      {/* Level gauge column on right side — instrument bubble per ISA-5.1 */}
+      <line x1="17" y1="5" x2="20" y2="5" />
+      <line x1="17" y1="19" x2="20" y2="19" />
+      <line x1="20" y1="5" x2="20" y2="19" />
+      {/* Level indicator fill mark — shows ~50 % full */}
+      <line x1="17" y1="12" x2="20" y2="12" strokeWidth={2} />
+      {/* Internal horizontal line showing fluid surface at ~60 % */}
+      <line x1="6" y1="10" x2="16" y2="10" strokeDasharray="2 1.5" />
+    </svg>
+  )
+}
+
+/**
  * Legacy PLC (Siemens S7) — compact CPU module silhouette with distinctive
  * Siemens-style front-panel indicators: a status LED strip on the left edge,
  * a mode selector dial, and a memory card slot recess. The narrow rectangle
@@ -504,6 +538,7 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   ied: IedSvg,
   'legacy-plc': LegacyPlcSvg, // Siemens S7-300/400/1200/1500 via S7comm (Phase 10)
   'iec104-rtu': Iec104RtuSvg, // IEC 60870-5-104 RTU via conpot emulation (Phase 10)
+  'process-unit': ProcessUnitSvg, // physics-simulated process unit (Phase 11)
   sensor: SensorSvg,
   actuator: ActuatorSvg,
   pump: PumpSvg,

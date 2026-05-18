@@ -73,6 +73,7 @@ Real protocol packets flow on Docker virtual networks — scanner tools and expl
 | IEC 61850 | libiec61850 (C) | TCP 102 |
 | S7comm (Siemens S7) | Pure Python (RFC 1006 / COTP / S7 PDU) | TCP 102 |
 | IEC 60870-5-104 | Pure Python (APCI / ASDU) | TCP 2404 |
+| Modbus TCP (process sim) | pymodbus 3.7 + physics loop (water tank / pipeline / generator) | TCP 502 |
 
 ---
 
@@ -233,7 +234,7 @@ Install packs via **Toolbar → Packs → Install Pack** (Author mode). Installe
 | 8 | Author / Student mode split + locked scenario distribution | ✅ Complete |
 | 9 | Community scenario pack format (.icspack ZIP — Pack Manager, custom device types, bundled Suricata/Zeek rules) | ✅ Complete |
 | 10 | Conpot legacy device emulation (Siemens S7, IEC 104) | ✅ Complete |
-| 11 | Physical process simulation (tank, pump, valve dynamics) | 🔜 Planned |
+| 11 | Physical process simulation (water tank, pipeline, generator dynamics) | ✅ Complete |
 | 12 | macOS + Linux packaging and distribution | 🔜 Planned |
 
 ---

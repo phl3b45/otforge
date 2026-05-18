@@ -79,6 +79,7 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['modbus-tcp', 'ethernet-ip'], // peer-to-peer PLC network
     'legacy-plc': ['s7comm', 'modbus-tcp'], // PLC → Siemens S7 peer (Phase 10)
     'iec104-rtu': ['modbus-tcp', 'modbus-rtu'], // PLC → IEC 104 RTU (Phase 10)
+    'process-unit': ['modbus-tcp', 'modbus-rtu'], // PLC polls process simulation (Phase 11)
     hmi: ['modbus-tcp', 'opc-ua'],
     historian: ['modbus-tcp', 'opc-ua'],
     switch: ['none'],
@@ -98,6 +99,7 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['modbus-tcp', 'modbus-rtu', 'dnp3'],
     'legacy-plc': ['s7comm', 'modbus-tcp'], // RTU → Siemens S7 peer (Phase 10)
     'iec104-rtu': ['iec-104', 'modbus-tcp'], // RTU → IEC 104 RTU peer (Phase 10)
+    'process-unit': ['modbus-tcp', 'modbus-rtu'], // RTU polls process simulation (Phase 11)
     ied: ['dnp3', 'iec61850'],
     hmi: ['dnp3', 'modbus-tcp'],
     historian: ['dnp3'],
@@ -129,6 +131,7 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['dnp3', 'iec61850'],
     'legacy-plc': ['s7comm', 'opc-ua'], // HMI reads Siemens S7 via S7comm or OPC-UA (Phase 10)
     'iec104-rtu': ['iec-104'], // HMI reads IEC 104 RTU (Phase 10)
+    'process-unit': ['modbus-tcp'], // HMI reads process simulation PVs (Phase 11)
     historian: ['opc-ua', 'none'],
     switch: ['none'],
     router: ['none'],
@@ -143,7 +146,23 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['dnp3', 'iec61850'],
     'legacy-plc': ['s7comm', 'opc-ua'], // Historian archives Siemens S7 data (Phase 10)
     'iec104-rtu': ['iec-104'], // Historian archives IEC 104 RTU data (Phase 10)
+    'process-unit': ['modbus-tcp'], // Historian archives process simulation data (Phase 11)
     hmi: ['opc-ua', 'none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
+  // ── Physics process unit (Modbus TCP server — PLC polls it) ──────────────────
+  // Phase 11: The process-unit container exposes a Modbus TCP server. The PLC is
+  // the Modbus master — it reads sensor registers and writes control coils/setpoints.
+  // Process units do not initiate connections; they only accept inbound Modbus polls.
+  'process-unit': {
+    // A process unit should not appear as a connection source in normal operation.
+    // (It is a passive Modbus server.) If a student tries to draw FROM a process
+    // unit, only switch/router infrastructure connections are permitted —
+    // they represent the Ethernet port on the process instrument panel.
     switch: ['none'],
     router: ['none'],
     firewall: ['none'],
@@ -251,6 +270,7 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['none'],
     'legacy-plc': ['none'], // Phase 10
     'iec104-rtu': ['none'], // Phase 10
+    'process-unit': ['none'], // Phase 11
     hmi: ['none'],
     historian: ['none'],
     sensor: ['none'],
@@ -271,6 +291,7 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['none'],
     'legacy-plc': ['none'], // Phase 10
     'iec104-rtu': ['none'], // Phase 10
+    'process-unit': ['none'], // Phase 11
     hmi: ['none'],
     historian: ['none'],
     sensor: ['none'],
@@ -291,6 +312,7 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['none'],
     'legacy-plc': ['none'], // Phase 10
     'iec104-rtu': ['none'], // Phase 10
+    'process-unit': ['none'], // Phase 11
     hmi: ['none'],
     historian: ['none'],
     sensor: ['none'],
@@ -311,6 +333,7 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['none'],
     'legacy-plc': ['none'], // Phase 10
     'iec104-rtu': ['none'], // Phase 10
+    'process-unit': ['none'], // Phase 11
     hmi: ['none'],
     historian: ['none'],
     sensor: ['none'],
@@ -376,6 +399,18 @@ export const VALID_CONNECTIONS: Partial<
     // IEC 104 attack surface: General Interrogation spoofing, command injection
     'iec104-rtu': [
       'iec-104',
+      'modbus-tcp',
+      'modbus-rtu',
+      'dnp3',
+      'opc-ua',
+      'bacnet',
+      'ethernet-ip',
+      'iec61850',
+      'none'
+    ],
+    // Process unit attack surface: Modbus coil injection (CO3=ESD), setpoint tampering
+    // PUMP_CMD=1 + INLET_VALVE_CMD=1 at max speed → tank overflow scenario
+    'process-unit': [
       'modbus-tcp',
       'modbus-rtu',
       'dnp3',
@@ -523,6 +558,7 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
   ied: 'IED',
   'legacy-plc': 'Siemens S7 PLC', // Phase 10
   'iec104-rtu': 'IEC 104 RTU', // Phase 10
+  'process-unit': 'Process Unit', // Phase 11
   sensor: 'Sensor',
   actuator: 'Actuator',
   pump: 'Pump',

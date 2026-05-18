@@ -55,6 +55,8 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   // Phase 10: Conpot legacy device emulation (S7comm + IEC 104)
   'legacy-plc': 'ghcr.io/iburres/ics-sim-conpot:latest',
   'iec104-rtu': 'ghcr.io/iburres/ics-sim-conpot:latest',
+  // Phase 11: Physics-simulated process unit (water tank, pipeline, generator, generic)
+  'process-unit': 'ghcr.io/iburres/ics-sim-process:latest',
   sensor: 'alpine:latest',
   actuator: 'alpine:latest',
   pump: 'alpine:latest',
@@ -114,6 +116,7 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   ied: { memory: 80, cpus: '0.25' }, // pure-Python DNP3 on Alpine
   'legacy-plc': { memory: 80, cpus: '0.25' }, // pure-Python S7comm on Alpine (Phase 10)
   'iec104-rtu': { memory: 80, cpus: '0.25' }, // pure-Python IEC 104 on Alpine (Phase 10)
+  'process-unit': { memory: 96, cpus: '0.25' }, // pymodbus + physics loop on Alpine (Phase 11)
   sensor: { memory: 64, cpus: '0.15' },
   actuator: { memory: 64, cpus: '0.15' },
   pump: { memory: 64, cpus: '0.15' },
@@ -842,6 +845,26 @@ function buildDeviceEnv(
   if (device.iec104) {
     env.push(`IEC104_COMMON_ADDRESS=${device.iec104.commonAddress}`)
     env.push(`IEC104_PORT=${device.iec104.port}`)
+  }
+
+  // Phase 11: Physical process simulation — consumed by containers/process-sim/sim.py.
+  // All parameters have sensible defaults in the container; only set env vars for
+  // values that differ from the Dockerfile defaults to keep the Compose YAML clean.
+  if (device.processUnit) {
+    const pu = device.processUnit
+    env.push(`PROCESS_TYPE=${pu.processType}`)
+    if (pu.simDtMs !== undefined) env.push(`SIM_DT_MS=${pu.simDtMs}`)
+    if (pu.tankVolumeL !== undefined) env.push(`TANK_VOLUME_L=${pu.tankVolumeL}`)
+    if (pu.tankAreaM2 !== undefined) env.push(`TANK_AREA_M2=${pu.tankAreaM2}`)
+    if (pu.pumpFlowMaxLpm !== undefined) env.push(`PUMP_FLOW_MAX_LPM=${pu.pumpFlowMaxLpm}`)
+    if (pu.valveFlowMaxLpm !== undefined) env.push(`VALVE_FLOW_MAX_LPM=${pu.valveFlowMaxLpm}`)
+    if (pu.initialLevelPct !== undefined) env.push(`INITIAL_LEVEL_PCT=${pu.initialLevelPct}`)
+    if (pu.generatorRatedMw !== undefined) env.push(`GENERATOR_RATED_MW=${pu.generatorRatedMw}`)
+    if (pu.generatorInertiaH !== undefined) env.push(`GENERATOR_INERTIA_H=${pu.generatorInertiaH}`)
+    if (pu.generatorFreqBase !== undefined) env.push(`GENERATOR_FREQ_BASE=${pu.generatorFreqBase}`)
+    if (pu.pipelineVolumeL !== undefined) env.push(`PIPELINE_VOLUME_L=${pu.pipelineVolumeL}`)
+    if (pu.pipelinePumpMaxLpm !== undefined)
+      env.push(`PIPELINE_PUMP_MAX_LPM=${pu.pipelinePumpMaxLpm}`)
   }
 
   // PLC program pre-load (Phase 4):
