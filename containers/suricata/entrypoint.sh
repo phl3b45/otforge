@@ -1,5 +1,5 @@
 #!/bin/bash
-# entrypoint.sh — Suricata IDS/IPS startup for the ics-sim-suricata container.
+# entrypoint.sh — Suricata IDS/IPS startup for the otforge-suricata container.
 #
 # Reads security configuration injected by compose-generator.ts and starts Suricata
 # in AF_PACKET inline mode on the specified interface.
@@ -51,7 +51,7 @@ fi
 # suricata-update downloads and merges Emerging Threats Open rules. The --no-reload
 # flag skips live rule reload (not running yet). --no-test skips the self-test to
 # speed up startup. If the update fails (no internet, rate limit), Suricata falls
-# back to the bundled ics-sim.rules and whatever was previously cached.
+# back to the bundled otforge.rules and whatever was previously cached.
 #
 # The IDS_RULESETS variable is logged but not yet used to filter suricata-update
 # sources at the CLI level — source filtering requires an enable.conf file which
@@ -61,7 +61,7 @@ echo "[ics-suricata] Running suricata-update (may fail in offline environments).
 suricata-update \
     --no-reload \
     --no-test \
-    --suricata-conf /etc/suricata/ics-sim.yaml \
+    --suricata-conf /etc/suricata/otforge.yaml \
     2>/dev/null || echo "[ics-suricata] Rule update failed — continuing with bundled rules"
 
 # Write enable.conf so future suricata-update runs only download selected rulesets.
@@ -80,7 +80,7 @@ done
 # /var/log/suricata/ (a named volume in the compose file, consumed by Loki in Phase 6).
 echo "[ics-suricata] Starting Suricata in AF_PACKET mode on ${IFACE}..."
 exec suricata \
-    -c /etc/suricata/ics-sim.yaml \
+    -c /etc/suricata/otforge.yaml \
     --af-packet="${IFACE}" \
     --init-errors-fatal \
     -l /var/log/suricata

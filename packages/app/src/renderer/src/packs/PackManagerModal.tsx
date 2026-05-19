@@ -2,7 +2,7 @@
  * PackManagerModal.tsx — Community scenario pack installer and manager.
  *
  * Opened by the "Packs" toolbar button (Author mode only). Displays all installed
- * .icspack community packs and provides controls to install new ones or uninstall
+ * .otfpack community packs and provides controls to install new ones or uninstall
  * existing ones.
  *
  * Each pack card shows:
@@ -13,7 +13,7 @@
  *   - Uninstall button (removes the pack directory from disk)
  *
  * Installing a new pack:
- *   Clicking "Install Pack" opens a native file picker filtered to .icspack files.
+ *   Clicking "Install Pack" opens a native file picker filtered to .otfpack files.
  *   The main process extracts the ZIP, validates pack.json, and returns the resolved
  *   InstalledPack. The modal's pack list is refreshed after any install/uninstall.
  *
@@ -24,7 +24,7 @@
  */
 
 import { useState } from 'react'
-import type { InstalledPack } from '@ics-sim/schema'
+import type { InstalledPack } from '@otforge/schema'
 
 interface PackManagerModalProps {
   /** All currently installed packs — supplied by App. */
@@ -35,7 +35,7 @@ interface PackManagerModalProps {
    */
   onPacksChange: (packs: InstalledPack[]) => void
   /**
-   * Opens a bundled .icslab scenario from a pack directly on the SCADA canvas.
+   * Opens a bundled .otflab scenario from a pack directly on the SCADA canvas.
    * Closes this modal as a side-effect — the scenario replaces whatever is open.
    *
    * @param packId       - Pack whose scenario to open.
@@ -156,7 +156,7 @@ export function PackManagerModal({
               className="btn btn-primary btn-sm"
               onClick={handleInstall}
               disabled={installing}
-              title="Browse for a .icspack community scenario pack file"
+              title="Browse for a .otfpack community scenario pack file"
             >
               {installing ? 'Installing…' : '+ Install Pack'}
             </button>
@@ -185,10 +185,10 @@ export function PackManagerModal({
               <div className="pack-empty-desc">
                 Community scenario packs add pre-built scenarios, custom device types, and
                 sector-specific Suricata / Zeek rules to your simulator. Click{' '}
-                <strong>+ Install Pack</strong> to install a .icspack file.
+                <strong>+ Install Pack</strong> to install a .otfpack file.
               </div>
               <div className="pack-empty-hint">
-                Share your own packs — see the README for the .icspack format specification.
+                Share your own packs — see the README for the .otfpack format specification.
               </div>
             </div>
           ) : (

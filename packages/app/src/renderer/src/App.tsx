@@ -9,7 +9,7 @@
  *   - view:              'launch' | 'canvas' — which top-level screen to show
  *   - appInfo:           Electron version metadata (displayed in launch screen)
  *   - docker:            Docker status (available, version, error message)
- *   - scenario:          The active ICSLabScenario document (null = no scenario loaded)
+ *   - scenario:          The active OTForgeScenario document (null = no scenario loaded)
  *   - selectedDevice:    The device config for the currently selected canvas node
  *   - selectedZone:      The zone key for the selected node (for PropertiesPanel color)
  *   - simStatus:         The simulation lifecycle state machine
@@ -36,8 +36,8 @@ import { useEffect, useState, useCallback } from 'react'
 import type {
   AppInfo,
   DockerStatus,
-  ICSLabScenario,
-  ICSLabMeta,
+  OTForgeScenario,
+  OTForgeMeta,
   DeviceConfig,
   ContainerStatus,
   PLCProgramConfig,
@@ -45,7 +45,7 @@ import type {
   SecurityLayer,
   InstalledPack,
   ResolvedPackDeviceType
-} from '@ics-sim/schema'
+} from '@otforge/schema'
 import { ScadaCanvas } from './canvas/ScadaCanvas'
 import { DevicePalette } from './palette/DevicePalette'
 import { LayerTabBar } from './canvas/LayerTabBar'
@@ -76,12 +76,12 @@ type SimStatus = 'idle' | 'starting' | 'running' | 'stopping'
  * First screen shown when the app opens.
  *
  * Displays Docker availability status and version info. The New Scenario and
- * Open .icslab buttons are disabled until Docker is confirmed running, because
+ * Open .otflab buttons are disabled until Docker is confirmed running, because
  * a simulation cannot start without Docker Desktop.
  *
  * @param docker   - Docker status from the main process (null while checking).
  * @param appInfo  - Electron/Node version info for the status row.
- * @param onImport - Opens the native file picker to import a .icslab scenario.
+ * @param onImport - Opens the native file picker to import a .otflab scenario.
  * @param onNew    - Creates a blank canvas and transitions to the canvas view.
  */
 function LaunchScreen({
@@ -99,11 +99,9 @@ function LaunchScreen({
     <div className="launch-screen">
       <div className="launch-content">
         <div className="logo-mark">
-          <span className="logo-bracket">[</span>
-          <span className="logo-text">ICS</span>
-          <span className="logo-bracket">]</span>
+          <span className="logo-text">OTForge</span>
         </div>
-        <h1>ICS Simulator</h1>
+        <h1>OTForge</h1>
         <p className="tagline">ICS/SCADA Security Research &amp; Education Platform</p>
 
         {/* Docker and app version status indicators */}
@@ -139,7 +137,7 @@ function LaunchScreen({
             onClick={onImport}
             disabled={!docker?.available}
           >
-            Open .icslab File
+            Open .otflab File
           </button>
         </div>
 
@@ -211,7 +209,7 @@ function Toolbar({
   onPacksOpen,
   onTutorialOpen
 }: {
-  scenario: ICSLabScenario | null
+  scenario: OTForgeScenario | null
   simStatus: SimStatus
   docker: DockerStatus | null
   /**
@@ -297,9 +295,7 @@ function Toolbar({
       <div className="toolbar-left">
         {/* Logo acts as a home button */}
         <button className="toolbar-logo" onClick={onHome} title="Home">
-          <span className="logo-bracket">[</span>
-          <span className="logo-text-sm">ICS</span>
-          <span className="logo-bracket">]</span>
+          <span className="logo-text-sm">OTForge</span>
         </button>
         <div className="toolbar-scenario">
           <span className="toolbar-scenario-name">{scenarioName}</span>
@@ -325,7 +321,7 @@ function Toolbar({
         <button className="btn btn-sm btn-ghost" onClick={onNew} title="New scenario">
           New
         </button>
-        <button className="btn btn-sm btn-ghost" onClick={onImport} title="Open .icslab file">
+        <button className="btn btn-sm btn-ghost" onClick={onImport} title="Open .otflab file">
           Open
         </button>
 
@@ -365,7 +361,7 @@ function Toolbar({
         )}
 
         {/*
-         * Pack Manager — install and manage community scenario packs (.icspack files).
+         * Pack Manager — install and manage community scenario packs (.otfpack files).
          * Available in Author mode only (students see a read-only canvas with no palette).
          * A small numeric badge shows how many packs are installed so instructors know
          * at a glance whether they have any packs loaded.
@@ -374,7 +370,7 @@ function Toolbar({
           <button
             className="btn btn-sm btn-ghost btn-packs"
             onClick={onPacksOpen}
-            title="Manage community scenario packs (.icspack files)"
+            title="Manage community scenario packs (.otfpack files)"
           >
             Packs
             {installedPackCount > 0 && <span className="packs-badge">{installedPackCount}</span>}
@@ -735,7 +731,7 @@ export default function App() {
   const [view, setView] = useState<View>('launch')
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [docker, setDocker] = useState<DockerStatus | null>(null)
-  const [scenario, setScenario] = useState<ICSLabScenario | null>(null)
+  const [scenario, setScenario] = useState<OTForgeScenario | null>(null)
   const [selectedDevice, setSelectedDevice] = useState<DeviceConfig | null>(null)
   const [selectedZone, setSelectedZone] = useState<string | null>(null)
   const [simStatus, setSimStatus] = useState<SimStatus>('idle')
@@ -794,7 +790,7 @@ export default function App() {
   const [pullActive, setPullActive] = useState<boolean>(false)
 
   /**
-   * Absolute path of the .icslab file currently open in the canvas.
+   * Absolute path of the .otflab file currently open in the canvas.
    * Set when a scenario is loaded via Open (scenario:import) or saved via
    * Export (scenario:export). Cleared when a new blank scenario is created.
    * Used by the Delete Scenario action to remove the file from disk.
@@ -884,7 +880,7 @@ export default function App() {
   }, [simStatus])
 
   /**
-   * Opens the file picker, imports a .icslab scenario, and navigates to the canvas.
+   * Opens the file picker, imports a .otflab scenario, and navigates to the canvas.
    *
    * Builder mode is reset to false (View Mode) on every import so the canvas starts
    * read-only regardless of whether the scenario is locked or not. Instructors must
@@ -1041,7 +1037,7 @@ export default function App() {
    * Uses an updater function pattern so changes can be based on the previous state.
    */
   const handleScenarioChange = useCallback(
-    (updater: (s: ICSLabScenario | null) => ICSLabScenario | null) => {
+    (updater: (s: OTForgeScenario | null) => OTForgeScenario | null) => {
       setScenario(prev => updater(prev))
     },
     []
@@ -1151,9 +1147,9 @@ export default function App() {
    * the instructor clicks Scenario Builder, fills in the metadata, and clicks Save.
    * After that, `builderModeActive = true` unlocks the DevicePalette and canvas.
    *
-   * @param updated - The new ICSLabMeta object from the form.
+   * @param updated - The new OTForgeMeta object from the form.
    */
-  const handleMetadataSave = useCallback((updated: ICSLabMeta) => {
+  const handleMetadataSave = useCallback((updated: OTForgeMeta) => {
     setScenario(prev => {
       if (!prev) return prev
       return { ...prev, meta: updated }
@@ -1204,13 +1200,13 @@ export default function App() {
   /**
    * Opens a scenario bundled inside a community pack and transitions to the canvas.
    *
-   * Calls the pack:openScenario IPC handler which reads the .icslab file from the
+   * Calls the pack:openScenario IPC handler which reads the .otflab file from the
    * pack directory, validates it, and returns it as a ScenarioImportResult. If the
    * import succeeds, the scenario replaces whatever is currently open on the canvas.
    * The Pack Manager modal closes immediately after the user clicks Open.
    *
    * @param packId       - Pack id from the manifest.
-   * @param relativePath - Path to the .icslab file relative to the pack root.
+   * @param relativePath - Path to the .otflab file relative to the pack root.
    */
   const handlePackOpenScenario = useCallback(async (packId: string, relativePath: string) => {
     setShowPackManager(false) // close the modal before navigating

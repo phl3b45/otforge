@@ -1,7 +1,7 @@
 /**
- * schema-validator.test.ts — Unit tests for ICSLabScenario runtime validation.
+ * schema-validator.test.ts — Unit tests for OTForgeScenario runtime validation.
  *
- * .icslab files come from disk (import dialog, USB, email attachment) and must
+ * .otflab files come from disk (import dialog, USB, email attachment) and must
  * be fully validated before the compose generator or renderer touches them.
  * These tests verify every check in validateScenario() and all edge cases in
  * toProjectName() so that malformed files are caught with clear error messages
@@ -21,8 +21,8 @@ import { validateScenario, toProjectName } from '../schema-validator'
 /**
  * Minimal raw JSON object that satisfies every field checked by validateScenario().
  *
- * The validator casts to Partial<ICSLabScenario> so it only needs the fields
- * it actually reads — it does not require a fully populated ICSLabScenario.
+ * The validator casts to Partial<OTForgeScenario> so it only needs the fields
+ * it actually reads — it does not require a fully populated OTForgeScenario.
  * This fixture therefore only provides those exact fields.
  */
 const VALID_RAW = {
@@ -37,7 +37,7 @@ const VALID_RAW = {
         zone: 'ot',
         subnet: '172.20.10.0/24',
         gateway: '172.20.10.1',
-        dockerNetwork: 'ics-sim-ot-net'
+        dockerNetwork: 'otforge-ot-net'
       }
     ]
   },
@@ -254,36 +254,36 @@ describe('validateScenario', () => {
 // ── toProjectName ─────────────────────────────────────────────────────────────
 
 describe('toProjectName', () => {
-  it('always prefixes the result with "ics-sim-"', () => {
-    expect(toProjectName('Demo')).toMatch(/^ics-sim-/)
+  it('always prefixes the result with "otforge-"', () => {
+    expect(toProjectName('Demo')).toMatch(/^otforge-/)
   })
 
   it('lowercases the entire name', () => {
-    expect(toProjectName('Water Plant')).toBe('ics-sim-water-plant')
+    expect(toProjectName('Water Plant')).toBe('otforge-water-plant')
   })
 
   it('replaces spaces with hyphens', () => {
-    expect(toProjectName('Oil Gas Refinery')).toBe('ics-sim-oil-gas-refinery')
+    expect(toProjectName('Oil Gas Refinery')).toBe('otforge-oil-gas-refinery')
   })
 
   it('collapses multiple consecutive spaces or special characters into a single hyphen', () => {
-    expect(toProjectName('Water  Treatment   Plant')).toBe('ics-sim-water-treatment-plant')
+    expect(toProjectName('Water  Treatment   Plant')).toBe('otforge-water-treatment-plant')
   })
 
   it('strips ampersands, em-dashes, and other punctuation', () => {
-    expect(toProjectName('Oil & Gas — Refinery!')).toBe('ics-sim-oil-gas-refinery')
+    expect(toProjectName('Oil & Gas — Refinery!')).toBe('otforge-oil-gas-refinery')
   })
 
   it('strips leading and trailing hyphens from the sanitized portion', () => {
-    expect(toProjectName('--Demo--')).toBe('ics-sim-demo')
+    expect(toProjectName('--Demo--')).toBe('otforge-demo')
   })
 
   it('preserves digits in the name', () => {
-    expect(toProjectName('Plant 42')).toBe('ics-sim-plant-42')
+    expect(toProjectName('Plant 42')).toBe('otforge-plant-42')
   })
 
   it('handles a name that is already a valid kebab-case identifier', () => {
-    expect(toProjectName('my-scenario')).toBe('ics-sim-my-scenario')
+    expect(toProjectName('my-scenario')).toBe('otforge-my-scenario')
   })
 
   it('handles a name consisting entirely of special characters', () => {

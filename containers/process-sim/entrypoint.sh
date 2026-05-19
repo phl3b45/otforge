@@ -1,5 +1,5 @@
 #!/bin/sh
-# entrypoint.sh — Container startup for ICS Simulator process-sim (Phase 11).
+# entrypoint.sh — Container startup for OTForge process-sim (Phase 11).
 # Logs the active process type and configuration before handing off to sim.py.
 set -e
 

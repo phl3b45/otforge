@@ -32,19 +32,19 @@ import type {
   SimulationStartResult,
   SimulationStopResult,
   ContainerStatus,
-  ICSLabScenario,
+  OTForgeScenario,
   PLCDeployResult,
   PLCRuntimeStatus,
   PackInstallResult,
   PackListResult,
   PackUninstallResult,
-  ICSPackManifest,
+  OTForgePackManifest,
   PackDeviceType,
   ResolvedPackDeviceType,
   PackScenarioMeta,
   InstalledPack,
   PlcImportResult
-} from '@ics-sim/schema'
+} from '@otforge/schema'
 import { readFile, writeFile, access, mkdir, readdir, rm } from 'fs/promises'
 import { exec, spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
@@ -63,8 +63,8 @@ import {
   writeGrafanaProvisioning,
   findFreeSubnets,
   ZONE_DEFAULTS
-} from '@ics-sim/orchestrator'
-import type { NetworkZone } from '@ics-sim/schema'
+} from '@otforge/orchestrator'
+import type { NetworkZone } from '@otforge/schema'
 import { initDb, saveActiveScenario, loadActiveScenario, clearActiveScenario } from './db'
 import { parsePlcFile } from './plc-import'
 
@@ -105,11 +105,11 @@ function settingsPath(): string {
  *
  * In development (electron-vite dev server running from the project root):
  *   <project-root>/scenarios/
- *   e.g. C:\Users\iburr\ICS-Simulator\scenarios
+ *   e.g. C:\Users\iburr\OTForge\scenarios
  *
  * In production (packaged app):
- *   <user Documents>/ICS Simulator/Scenarios/
- *   Instructors can drop .icslab files here and they appear in the open dialog.
+ *   <user Documents>/OTForge/Scenarios/
+ *   Instructors can drop .otflab files here and they appear in the open dialog.
  *
  * The directory is created on first call if it does not exist.
  */
@@ -119,11 +119,11 @@ function getScenariosLibraryDir(): string {
     // The bundled scenarios/ folder lives two levels up at the project root.
     return pathJoin(app.getAppPath(), '..', '..', 'scenarios')
   }
-  return pathJoin(app.getPath('documents'), 'ICS Simulator', 'Scenarios')
+  return pathJoin(app.getPath('documents'), 'OTForge', 'Scenarios')
 }
 
 /**
- * Absolute path of the .icslab file most recently opened or saved by the user.
+ * Absolute path of the .otflab file most recently opened or saved by the user.
  * Set by scenario:import and scenario:export; cleared by scenario:deleteFile.
  * Used by scenario:deleteFile to know which file to remove from disk.
  */
@@ -331,7 +331,7 @@ function showDockerInstallPrompt(): void {
     .showMessageBox(mainWindow!, {
       type: 'info',
       title: 'Docker Desktop Required',
-      message: 'ICS Simulator requires Docker Desktop',
+      message: 'OTForge requires Docker Desktop',
       detail:
         'Docker Desktop creates the isolated virtual networks that power every simulation.\n\n' +
         'Click "Download Docker Desktop" to get the installer. Once installed, start Docker Desktop ' +
@@ -437,7 +437,7 @@ function createWindow(): void {
     minHeight: 768,
     show: false,
     autoHideMenuBar: true,
-    title: 'ICS Simulator',
+    title: 'OTForge',
     backgroundColor: '#1a1a2e',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -536,7 +536,7 @@ function registerIPCHandlers(): void {
   // ── Scenario management ───────────────────────────────────────────────────────
 
   /**
-   * Opens a native file picker, reads the selected .icslab file, validates the
+   * Opens a native file picker, reads the selected .otflab file, validates the
    * JSON schema, estimates memory requirements, optionally warns the user, then
    * persists the scenario to LevelDB so it survives an app restart.
    *
@@ -546,11 +546,11 @@ function registerIPCHandlers(): void {
   ipcMain.handle('scenario:import', async (): Promise<ScenarioImportResult> => {
     // Default to the scenarios library folder so the user lands in the right place.
     // getScenariosLibraryDir() returns the project scenarios/ dir in dev and
-    // Documents/ICS Simulator/Scenarios in production.
+    // Documents/OTForge/Scenarios in production.
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: 'Open ICS Scenario',
       defaultPath: getScenariosLibraryDir(),
-      filters: [{ name: 'ICS Lab Scenario', extensions: ['icslab'] }],
+      filters: [{ name: 'OTForge Scenario', extensions: ['otflab'] }],
       properties: ['openFile']
     })
 
@@ -567,14 +567,14 @@ function registerIPCHandlers(): void {
       return { ok: false, error: `Failed to parse scenario: ${(err as Error).message}` }
     }
 
-    // Validate JSON structure matches the ICSLabScenario schema
-    const { validateScenario: validate } = await import('@ics-sim/orchestrator')
+    // Validate JSON structure matches the OTForgeScenario schema
+    const { validateScenario: validate } = await import('@otforge/orchestrator')
     const validation = validate(raw)
     if (!validation.valid) {
       return { ok: false, error: `Invalid scenario:\n${validation.errors.join('\n')}` }
     }
 
-    const scenario = raw as ICSLabScenario
+    const scenario = raw as OTForgeScenario
     const resourceEstimate = estimateResources(scenario)
     const memCheck = checkSystemMemory(resourceEstimate)
 
@@ -617,7 +617,7 @@ function registerIPCHandlers(): void {
   })
 
   /**
-   * Exports a scenario to a .icslab file.
+   * Exports a scenario to a .otflab file.
    *
    * If options.locked is true, the visual layer (node positions) and the security
    * layer (firewall rules, IDS config) are stripped from the output. This produces
@@ -630,7 +630,7 @@ function registerIPCHandlers(): void {
     'scenario:export',
     async (
       _e,
-      { scenario, options }: { scenario: ICSLabScenario; options: ScenarioExportOptions }
+      { scenario, options }: { scenario: OTForgeScenario; options: ScenarioExportOptions }
     ): Promise<ScenarioExportResult> => {
       let targetPath = options.filePath
 
@@ -641,8 +641,8 @@ function registerIPCHandlers(): void {
         const cleanName = scenario.meta.name.replace(/\s+/g, '-')
         const result = await dialog.showSaveDialog(mainWindow!, {
           title: 'Save ICS Scenario',
-          filters: [{ name: 'ICS Lab Scenario', extensions: ['icslab'] }],
-          defaultPath: pathJoin(getScenariosLibraryDir(), `${cleanName}.icslab`)
+          filters: [{ name: 'OTForge Scenario', extensions: ['otflab'] }],
+          defaultPath: pathJoin(getScenariosLibraryDir(), `${cleanName}.otflab`)
         })
         if (result.canceled || !result.filePath) return { ok: false, error: 'Export cancelled' }
         targetPath = result.filePath
@@ -670,7 +670,7 @@ function registerIPCHandlers(): void {
   )
 
   /**
-   * Deletes the .icslab scenario file at the given path from disk.
+   * Deletes the .otflab scenario file at the given path from disk.
    *
    * Called by the renderer's Delete Scenario action after the user confirms.
    * The renderer passes the file path it received from scenario:import or
@@ -678,7 +678,7 @@ function registerIPCHandlers(): void {
    * { ok: false, error } rather than throwing — the renderer always clears the
    * canvas regardless of whether the file delete succeeds.
    *
-   * @param filePath - Absolute path to the .icslab file to remove.
+   * @param filePath - Absolute path to the .otflab file to remove.
    */
   ipcMain.handle(
     'scenario:deleteFile',
@@ -715,7 +715,7 @@ function registerIPCHandlers(): void {
    */
   ipcMain.handle(
     'simulation:start',
-    async (_e, scenario: ICSLabScenario): Promise<SimulationStartResult> => {
+    async (_e, scenario: OTForgeScenario): Promise<SimulationStartResult> => {
       // Top-level try/catch converts any thrown error into a structured { ok: false }
       // result. Without this, an uncaught throw rejects the ipcMain handler's promise,
       // which causes ipcRenderer.invoke() to throw on the renderer side — and since
@@ -1092,7 +1092,7 @@ function registerIPCHandlers(): void {
     if (!port) {
       return { error: 'No noVNC port found — is the simulation running?' }
     }
-    // noVNC v1.5.0 (ics-sim-attack-base) serves vnc.html at /opt/novnc/ via websockify.
+    // noVNC v1.5.0 (otforge-attack-base) serves vnc.html at /opt/novnc/ via websockify.
     // ?autoconnect=true  — connect immediately without the manual "Connect" button click
     // ?resize=scale      — scale the 1920×1080 Kali desktop to fit the webview/window
     // Without autoconnect the page loads the connect form but the user has no way to
@@ -1193,7 +1193,7 @@ function registerIPCHandlers(): void {
    * BrowserWindow loading the container's noVNC WebSocket interface.
    *
    * The window is a fully independent OS-level window: it can be moved to a second
-   * monitor, resized, and operated independently of the main ICS Simulator window.
+   * monitor, resized, and operated independently of the main OTForge window.
    * This is intentional — instructors typically put the attack machine on a
    * projector or second display while students view the SCADA canvas on the main screen.
    *
@@ -1237,7 +1237,7 @@ function registerIPCHandlers(): void {
         }
       }
 
-      // noVNC v1.5.0 (ics-sim-attack-base): load vnc.html with autoconnect + scale.
+      // noVNC v1.5.0 (otforge-attack-base): load vnc.html with autoconnect + scale.
       // /vnc.html is the standard noVNC entry point; index.html is a symlink to it.
       // ?autoconnect=true makes noVNC connect immediately without user interaction.
       // ?resize=scale scales the 1920×1080 Kali desktop to fill the BrowserWindow.
@@ -1274,7 +1274,7 @@ function registerIPCHandlers(): void {
   // ── Community scenario packs (Phase 9) ────────────────────────────────────────
 
   /**
-   * Opens a native file picker, extracts the chosen .icspack ZIP, validates the
+   * Opens a native file picker, extracts the chosen .otfpack ZIP, validates the
    * manifest, then builds and returns an InstalledPack with icon data URLs pre-loaded.
    *
    * ZIP extraction is done with platform-native tools to avoid npm dependencies:
@@ -1287,7 +1287,7 @@ function registerIPCHandlers(): void {
   ipcMain.handle('pack:install', async (): Promise<PackInstallResult> => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: 'Install Scenario Pack',
-      filters: [{ name: 'ICS Scenario Pack', extensions: ['icspack'] }],
+      filters: [{ name: 'ICS Scenario Pack', extensions: ['otfpack'] }],
       properties: ['openFile']
     })
     if (result.canceled || result.filePaths.length === 0) {
@@ -1307,13 +1307,13 @@ function registerIPCHandlers(): void {
     }
 
     // Read and validate pack.json
-    let manifest: ICSPackManifest
+    let manifest: OTForgePackManifest
     try {
       const raw = JSON.parse(await readFile(pathJoin(tmpDir, 'pack.json'), 'utf-8'))
       if (!raw.id || !raw.name || !raw.formatVersion) {
         throw new Error('pack.json is missing required fields (id, name, formatVersion)')
       }
-      manifest = raw as ICSPackManifest
+      manifest = raw as OTForgePackManifest
     } catch (err) {
       await rm(tmpDir, { recursive: true, force: true }).catch(() => {})
       return { ok: false, error: `Invalid pack.json: ${(err as Error).message}` }
@@ -1362,7 +1362,7 @@ function registerIPCHandlers(): void {
         try {
           const manifest = JSON.parse(
             await readFile(pathJoin(packPath, 'pack.json'), 'utf-8')
-          ) as ICSPackManifest
+          ) as OTForgePackManifest
           let installedAt = new Date().toISOString()
           try {
             const meta = JSON.parse(await readFile(pathJoin(packPath, '.pack-meta.json'), 'utf-8'))
@@ -1402,7 +1402,7 @@ function registerIPCHandlers(): void {
    * Loads a bundled scenario from an installed pack and returns it ready to open.
    *
    * @param packId       - Pack identifier (folder name under <userData>/packs/).
-   * @param relativePath - Path relative to the pack root, e.g. "scenarios/attack.icslab".
+   * @param relativePath - Path relative to the pack root, e.g. "scenarios/attack.otflab".
    */
   ipcMain.handle(
     'pack:openScenario',
@@ -1417,12 +1417,12 @@ function registerIPCHandlers(): void {
       } catch (err) {
         return { ok: false, error: `Failed to read scenario: ${(err as Error).message}` }
       }
-      const { validateScenario: validate } = await import('@ics-sim/orchestrator')
+      const { validateScenario: validate } = await import('@otforge/orchestrator')
       const validation = validate(raw)
       if (!validation.valid) {
         return { ok: false, error: `Invalid scenario: ${validation.errors.join('\n')}` }
       }
-      const scenario = raw as ICSLabScenario
+      const scenario = raw as OTForgeScenario
       const resourceEstimate = estimateResources(scenario)
       await saveActiveScenario(scenario)
       return { ok: true, scenario, resourceEstimate }
@@ -1541,7 +1541,7 @@ function registerIPCHandlers(): void {
 // ── Pack helpers (Phase 9) ────────────────────────────────────────────────────
 
 /**
- * Extracts a .icspack ZIP archive to the given destination directory.
+ * Extracts a .otfpack ZIP archive to the given destination directory.
  *
  * Uses platform-native tools to avoid adding npm dependencies to the main process:
  *   Windows — `powershell.exe Expand-Archive` (built into Windows 5.x+)
@@ -1549,7 +1549,7 @@ function registerIPCHandlers(): void {
  *
  * The destination directory must already exist before calling this function.
  *
- * @param zipPath  - Absolute path to the .icspack ZIP file.
+ * @param zipPath  - Absolute path to the .otfpack ZIP file.
  * @param destPath - Absolute path to the directory to extract into.
  */
 function extractPackZip(zipPath: string, destPath: string): Promise<void> {
@@ -1599,7 +1599,7 @@ function extractPackZip(zipPath: string, destPath: string): Promise<void> {
  */
 async function buildInstalledPack(
   packPath: string,
-  manifest: ICSPackManifest,
+  manifest: OTForgePackManifest,
   installedAt: string
 ): Promise<InstalledPack> {
   // ── Device types ──────────────────────────────────────────────────────────────
@@ -1633,7 +1633,7 @@ async function buildInstalledPack(
   const scenarioMetas: PackScenarioMeta[] = []
   for (const relPath of manifest.scenarios) {
     // Default display values in case the file can't be parsed
-    let name = (relPath.split('/').pop() ?? relPath).replace(/\.icslab$/i, '')
+    let name = (relPath.split('/').pop() ?? relPath).replace(/\.otflab$/i, '')
     let description = ''
     let locked = false
     try {
@@ -1786,7 +1786,7 @@ async function configureAttackMachine(): Promise<void> {
  *
  * @param scenario - The scenario that was just started.
  */
-async function configureFuxa(scenario: ICSLabScenario): Promise<void> {
+async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   // Build the list of PLC nodes reachable via Modbus-TCP edges.
   // An edge's source or target may be the PLC — check both sides.
   const plcNodeIds = new Set<string>()

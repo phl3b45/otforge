@@ -23,7 +23,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import os from 'os'
 import { estimateResources, checkSystemMemory } from '../resource-estimator'
-import type { ICSLabScenario, ResourceEstimate } from '@ics-sim/schema'
+import type { OTForgeScenario, ResourceEstimate } from '@otforge/schema'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -45,18 +45,18 @@ const RAM_ATTACK_BONUS_MB = 512 // Added on top of device slot for attack machin
 // ── Test fixture factory ───────────────────────────────────────────────────────
 
 type CategoryEntry = {
-  category: ICSLabScenario['devices']['devices'][string]['category']
+  category: OTForgeScenario['devices']['devices'][string]['category']
   ipAddress: string
 }
 
 /**
- * Builds a minimal but type-correct ICSLabScenario with the given devices.
+ * Builds a minimal but type-correct OTForgeScenario with the given devices.
  *
  * Only the fields that estimateResources() and checkSystemMemory() read are
  * populated — the rest are set to empty/zero defaults so the factory stays lean.
  */
-function makeScenario(deviceMap: Record<string, CategoryEntry>): ICSLabScenario {
-  const devices: ICSLabScenario['devices']['devices'] = {}
+function makeScenario(deviceMap: Record<string, CategoryEntry>): OTForgeScenario {
+  const devices: OTForgeScenario['devices']['devices'] = {}
   for (const [id, d] of Object.entries(deviceMap)) {
     devices[id] = { nodeId: id, category: d.category, ipAddress: d.ipAddress, protocols: [] }
   }

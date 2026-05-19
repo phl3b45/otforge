@@ -1,5 +1,5 @@
 /**
- * plc-import.ts — PLC project file parser for the ICS Simulator PLC IDE.
+ * plc-import.ts — PLC project file parser for the OTForge PLC IDE.
  *
  * Supports three source formats commonly encountered in ICS/SCADA environments:
  *
@@ -36,7 +36,7 @@
  * @module plc-import
  */
 
-import type { PlcImportResult, ImportedRoutine, ImportedVariable } from '@ics-sim/schema'
+import type { PlcImportResult, ImportedRoutine, ImportedVariable } from '@otforge/schema'
 import path from 'path'
 
 // ── Type normalization ─────────────────────────────────────────────────────────

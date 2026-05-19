@@ -1,5 +1,5 @@
-appId: com.iburres.ics-simulator
-productName: ICS Simulator
+appId: com.iburres.otforge
+productName: OTForge
 copyright: Copyright © 2026 Ian Burres
 
 directories:
@@ -20,7 +20,7 @@ win:
     - target: nsis
       arch:
         - x64
-  artifactName: ICS-Simulator-${version}-Setup.${ext}
+  artifactName: OTForge-${version}-Setup.${ext}
 
 nsis:
   oneClick: false
@@ -28,7 +28,7 @@ nsis:
   deleteAppDataOnUninstall: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: ICS Simulator
+  shortcutName: OTForge
 
 # macOS — DMG
 mac:
@@ -38,14 +38,14 @@ mac:
         - x64
         - arm64
   category: public.app-category.developer-tools
-  artifactName: ICS-Simulator-${version}-${arch}.${ext}
+  artifactName: OTForge-${version}-${arch}.${ext}
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
 
 dmg:
-  title: ICS Simulator ${version}
+  title: OTForge ${version}
   window:
     width: 540
     height: 380
@@ -57,7 +57,7 @@ linux:
       arch:
         - x64
   category: Development
-  artifactName: ICS-Simulator-${version}.${ext}
+  artifactName: OTForge-${version}.${ext}
   maintainer: Ian Burres <iburres@att.net>
   description: ICS/SCADA Security Simulator for Research and Education
 
@@ -65,5 +65,5 @@ linux:
 publish:
   provider: github
   owner: iburres
-  repo: ics-simulator
+  repo: otforge
   releaseType: release

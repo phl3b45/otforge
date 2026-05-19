@@ -33,7 +33,7 @@ jobs:
 
       - name: Build workspace packages
         # Both schema and orchestrator must be compiled before tsc can resolve
-        # @ics-sim/schema and @ics-sim/orchestrator imports in packages/app.
+        # @otforge/schema and @otforge/orchestrator imports in packages/app.
         run: npm run build:packages
 
       - name: Type check all packages
@@ -164,13 +164,13 @@ jobs:
         include:
           - os: windows-latest
             platform: win
-            artifact: 'ICS-Simulator-*-Setup.exe'
+            artifact: 'OTForge-*-Setup.exe'
           - os: macos-latest
             platform: mac
-            artifact: 'ICS-Simulator-*.dmg'
+            artifact: 'OTForge-*.dmg'
           - os: ubuntu-latest
             platform: linux
-            artifact: 'ICS-Simulator-*.AppImage'
+            artifact: 'OTForge-*.AppImage'
 
     runs-on: ${{ matrix.os }}
 
@@ -231,7 +231,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ics-simulator-${{ matrix.platform }}
+          name: otforge-${{ matrix.platform }}
           path: packages/app/release/${{ matrix.artifact }}
           if-no-files-found: warn
           retention-days: 7

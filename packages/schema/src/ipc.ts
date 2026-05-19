@@ -2,7 +2,7 @@
 // All channels use ipcMain.handle / ipcRenderer.invoke (request-response pattern).
 // Event channels (one-way push from main) use the 'on:' prefix.
 
-import type { ICSLabScenario, ResourceEstimate } from './icslab'
+import type { OTForgeScenario, ResourceEstimate } from './icslab'
 import type { InstalledPack } from './icspack'
 
 // ── Request / Response types ───────────────────────────────────────────────────
@@ -15,10 +15,10 @@ export interface DockerStatus {
 
 export interface ScenarioImportResult {
   ok: boolean
-  scenario?: ICSLabScenario
+  scenario?: OTForgeScenario
   error?: string
   resourceEstimate?: ResourceEstimate
-  /** Absolute path of the .icslab file that was opened. Used by the renderer to
+  /** Absolute path of the .otflab file that was opened. Used by the renderer to
    *  track which file is currently loaded so the Delete Scenario action can
    *  remove it from disk via the scenario:deleteFile IPC handler. */
   filePath?: string
@@ -146,7 +146,7 @@ export interface PlcImportResult {
 // ── Scenario pack (Phase 9) ────────────────────────────────────────────────────
 
 /**
- * Result of installing a community scenario pack from a .icspack ZIP file.
+ * Result of installing a community scenario pack from a .otfpack ZIP file.
  * On success, `pack` contains the fully-resolved InstalledPack ready for use.
  */
 export interface PackInstallResult {
@@ -208,16 +208,16 @@ export interface IPCChannels {
   // Scenario management
   'scenario:import': [void, ScenarioImportResult]
   'scenario:export': [
-    { scenario: ICSLabScenario; options: ScenarioExportOptions },
+    { scenario: OTForgeScenario; options: ScenarioExportOptions },
     ScenarioExportResult
   ]
-  'scenario:validate': [ICSLabScenario, { valid: boolean; errors: string[] }]
-  /** Deletes the .icslab file at the given absolute path from disk.
+  'scenario:validate': [OTForgeScenario, { valid: boolean; errors: string[] }]
+  /** Deletes the .otflab file at the given absolute path from disk.
    *  Called by the renderer after the user confirms the Delete Scenario action. */
   'scenario:deleteFile': [{ filePath: string }, ScenarioDeleteFileResult]
 
   // Simulation lifecycle
-  'simulation:start': [ICSLabScenario, SimulationStartResult]
+  'simulation:start': [OTForgeScenario, SimulationStartResult]
   'simulation:stop': [void, SimulationStopResult]
   'simulation:status': [void, ContainerStatus[]]
 
@@ -258,7 +258,7 @@ export interface IPCChannels {
 
   // Community scenario packs (Phase 9)
   /**
-   * Opens a native file picker for .icspack files, extracts the ZIP to
+   * Opens a native file picker for .otfpack files, extracts the ZIP to
    * <userData>/packs/<packId>/, validates the manifest, and returns the
    * resolved InstalledPack with pre-loaded icon data URLs.
    */
@@ -277,7 +277,7 @@ export interface IPCChannels {
   'pack:uninstall': [{ packId: string }, PackUninstallResult]
 
   /**
-   * Loads a bundled .icslab scenario from inside the given pack, validates it,
+   * Loads a bundled .otflab scenario from inside the given pack, validates it,
    * and returns it as a ScenarioImportResult so the renderer can open it directly.
    *
    * @param packId       - The pack whose scenario to load.

@@ -43,12 +43,12 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type {
-  ICSLabScenario,
+  OTForgeScenario,
   DeviceCategory,
   NetworkZone,
   DeviceConfig,
   Protocol
-} from '@ics-sim/schema'
+} from '@otforge/schema'
 import { DeviceNode, type DeviceNodeData, type DeviceNodeType, ZONE_COLORS } from './DeviceNode'
 import { ProtocolEdge, type ProtocolEdgeType } from './ProtocolEdge'
 import { PipeEdge, type PipeEdgeType } from './PipeEdge'
@@ -302,7 +302,7 @@ function categoryToZone(category: DeviceCategory): NetworkZone {
  *   2. No saved positions — simple 6-column grid starting at (80, 80); no zone
  *      band y-offsets needed since each tab shows only its own devices.
  */
-function scenarioToNodes(scenario: ICSLabScenario, activeLayer: NetworkZone): DeviceNodeType[] {
+function scenarioToNodes(scenario: OTForgeScenario, activeLayer: NetworkZone): DeviceNodeType[] {
   const hasVisual = scenario.visual.nodes.length > 0
 
   if (hasVisual) {
@@ -364,7 +364,7 @@ function scenarioToNodes(scenario: ICSLabScenario, activeLayer: NetworkZone): De
  * All other layers → ProtocolEdgeType (bezier curves)
  */
 function scenarioToEdges(
-  scenario: ICSLabScenario,
+  scenario: OTForgeScenario,
   activeLayer: NetworkZone,
   layerNodeIds: Set<string>
 ): (ProtocolEdgeType | PipeEdgeType)[] {
@@ -384,7 +384,7 @@ function scenarioToEdges(
 }
 
 interface ScadaCanvasProps {
-  scenario: ICSLabScenario | null
+  scenario: OTForgeScenario | null
   /** The currently active Purdue layer — scopes which nodes and edges are visible. */
   activeLayer: NetworkZone
   /**
@@ -406,9 +406,9 @@ interface ScadaCanvasProps {
    * matching entry here to resolve the custom Docker image and canonical label.
    * Passed down from App so the canvas doesn't need to call the IPC directly.
    */
-  packDeviceTypes?: import('@ics-sim/schema').ResolvedPackDeviceType[]
+  packDeviceTypes?: import('@otforge/schema').ResolvedPackDeviceType[]
   onSelectDevice: (nodeId: string | null, device: DeviceConfig | null) => void
-  onScenarioChange: (updater: (s: ICSLabScenario | null) => ICSLabScenario | null) => void
+  onScenarioChange: (updater: (s: OTForgeScenario | null) => OTForgeScenario | null) => void
 }
 
 /**
@@ -1081,10 +1081,10 @@ export function ScadaCanvas({
 }
 
 /**
- * Minimal ICSLabScenario with all four Purdue network segments pre-defined.
+ * Minimal OTForgeScenario with all four Purdue network segments pre-defined.
  * Created when the user drops their first device onto a blank canvas.
  */
-function buildEmptyScenario(): ICSLabScenario {
+function buildEmptyScenario(): OTForgeScenario {
   return {
     meta: {
       formatVersion: '1.0',

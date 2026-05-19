@@ -17,8 +17,8 @@
  *
  *   grafana/
  *     provisioning/
- *       datasources/icslab.yaml   ← InfluxDB + Loki datasources (explicit UIDs)
- *       dashboards/icslab.yaml    ← File-based dashboard provider config
+ *       datasources/otflab.yaml   ← InfluxDB + Loki datasources (explicit UIDs)
+ *       dashboards/otflab.yaml    ← File-based dashboard provider config
  *     dashboards/
  *       ics-overview.json         ← ICS Lab Overview dashboard (Suricata + Zeek)
  *   promtail/
@@ -93,17 +93,17 @@ export async function writeGrafanaProvisioning(
     datasources: [
       {
         name: 'InfluxDB',
-        uid: 'icslab-influxdb',
+        uid: 'otflab-influxdb',
         type: 'influxdb',
         url: `http://${INFLUXDB_IP}:8086`,
-        database: 'icslab',
+        database: 'otflab',
         isDefault: true,
         editable: true,
         jsonData: { httpMode: 'GET' }
       },
       {
         name: 'Loki',
-        uid: 'icslab-loki',
+        uid: 'otflab-loki',
         type: 'loki',
         url: `http://${LOKI_IP}:3100`,
         isDefault: false,
@@ -111,7 +111,7 @@ export async function writeGrafanaProvisioning(
       }
     ]
   }
-  await writeFile(join(grafanaDatasourcesDir, 'icslab.yaml'), yaml.dump(datasources), 'utf-8')
+  await writeFile(join(grafanaDatasourcesDir, 'otflab.yaml'), yaml.dump(datasources), 'utf-8')
 
   // ── Grafana dashboard provider provisioning ─────────────────────────────────
   // Tells Grafana to watch /var/lib/grafana/dashboards (the volume-mounted dir)
@@ -134,14 +134,14 @@ export async function writeGrafanaProvisioning(
     ]
   }
   await writeFile(
-    join(grafanaDashboardsProvDir, 'icslab.yaml'),
+    join(grafanaDashboardsProvDir, 'otflab.yaml'),
     yaml.dump(dashboardProvider),
     'utf-8'
   )
 
   // ── ICS Lab Overview dashboard JSON ────────────────────────────────────────
   // Two log panels: Suricata IPS alerts and Zeek network analysis.
-  // Both panels target the provisioned Loki datasource (uid: icslab-loki).
+  // Both panels target the provisioned Loki datasource (uid: otflab-loki).
   // LogQL expressions filter by the `job` label set by Promtail's scrape config.
   await writeFile(
     join(grafanaDashboardsDir, 'ics-overview.json'),
@@ -225,7 +225,7 @@ export async function writeGrafanaProvisioning(
  */
 function buildIcsDashboard(): object {
   /** Common datasource reference for all Loki panels. */
-  const lokiDs = { type: 'loki', uid: 'icslab-loki' }
+  const lokiDs = { type: 'loki', uid: 'otflab-loki' }
 
   /** Shared options for all log panels. */
   const logsOptions = {

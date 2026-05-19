@@ -1,5 +1,5 @@
 /**
- * compose-generator.ts — Generates a docker-compose.yml from an ICSLabScenario.
+ * compose-generator.ts — Generates a docker-compose.yml from an OTForgeScenario.
  *
  * This is the core of the simulation orchestration layer. Given a scenario JSON
  * document, it produces a complete Docker Compose v2 file that, when run with
@@ -24,12 +24,12 @@
  *     keeps the commercial distribution legally clean.
  *
  * Usage:
- *   const yaml = generateCompose(scenario, 'ics-sim-water-plant')
+ *   const yaml = generateCompose(scenario, 'otforge-water-plant')
  *   await writeFile('docker-compose.yml', yaml)
  */
 
 import yaml from 'js-yaml'
-import type { ICSLabScenario, DeviceCategory, NetworkZone } from '@ics-sim/schema'
+import type { OTForgeScenario, DeviceCategory, NetworkZone } from '@otforge/schema'
 import { ZONE_DEFAULTS } from './network-config'
 
 /**
@@ -41,22 +41,22 @@ import { ZONE_DEFAULTS } from './network-config'
  * use the pure-Python DNP3 outstation.
  */
 // Images marked "STUB" are placeholders used until the corresponding custom
-// ics-sim-* image is built and published to GHCR. Stubs use well-known public
+// otforge-* image is built and published to GHCR. Stubs use well-known public
 // images that start cleanly and join the correct Docker network; they do not
 // implement the full ICS protocol the device represents.
 const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   // ── OT Process (Levels 0–2) ────────────────────────────────────────────────
-  plc: 'ghcr.io/iburres/ics-sim-openplc:latest',
+  plc: 'ghcr.io/iburres/otforge-openplc:latest',
   // STUB: alpine provides a minimal container that starts and joins the network.
-  // Replace with ics-sim-modbus (Modbus TCP outstation) once published.
+  // Replace with otforge-modbus (Modbus TCP outstation) once published.
   rtu: 'alpine:latest',
-  // STUB: Replace with ics-sim-dnp3 (DNP3 outstation) once published.
+  // STUB: Replace with otforge-dnp3 (DNP3 outstation) once published.
   ied: 'alpine:latest',
   // Phase 10: Conpot legacy device emulation (S7comm + IEC 104)
-  'legacy-plc': 'ghcr.io/iburres/ics-sim-conpot:latest',
-  'iec104-rtu': 'ghcr.io/iburres/ics-sim-conpot:latest',
+  'legacy-plc': 'ghcr.io/iburres/otforge-conpot:latest',
+  'iec104-rtu': 'ghcr.io/iburres/otforge-conpot:latest',
   // Phase 11: Physics-simulated process unit (water tank, pipeline, generator, generic)
-  'process-unit': 'ghcr.io/iburres/ics-sim-process:latest',
+  'process-unit': 'ghcr.io/iburres/otforge-process:latest',
   sensor: 'alpine:latest',
   actuator: 'alpine:latest',
   pump: 'alpine:latest',
@@ -67,43 +67,43 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   hmi: 'frangoteam/fuxa:latest',
   historian: 'influxdb:1.8-alpine',
   // STUB: nginx:alpine serves HTTP so the container appears "up" on the network.
-  // Replace with ics-sim-appserver once published.
+  // Replace with otforge-appserver once published.
   'application-server': 'nginx:alpine',
-  // STUB: Replace with ics-sim-dbserver (PostgreSQL + ICS schema) once published.
+  // STUB: Replace with otforge-dbserver (PostgreSQL + ICS schema) once published.
   'database-server': 'postgres:16-alpine',
   // linuxserver webtop: Ubuntu XFCE desktop via KasmVNC on port 3000.
-  // Replace with ics-sim-workstation once published.
+  // Replace with otforge-workstation once published.
   'engineering-workstation': 'lscr.io/linuxserver/webtop:ubuntu-xfce',
   // ── Plant DMZ (Level 3.5) ───────────────────────────────────────────────────
-  firewall: 'ghcr.io/iburres/ics-sim-firewall:latest',
-  'ids-ips': 'ghcr.io/iburres/ics-sim-suricata:latest',
+  firewall: 'ghcr.io/iburres/otforge-firewall:latest',
+  'ids-ips': 'ghcr.io/iburres/otforge-suricata:latest',
   // STUB: alpine with NET_ADMIN cap acts as a placeholder network device.
-  // Replace with ics-sim-switch / ics-sim-router once published.
+  // Replace with otforge-switch / otforge-router once published.
   switch: 'alpine:latest',
   router: 'alpine:latest',
   // ── Enterprise Zone (Level 4) ───────────────────────────────────────────────
-  // STUB: Replace with ics-sim-dc (Samba AD domain controller) once published.
+  // STUB: Replace with otforge-dc (Samba AD domain controller) once published.
   'domain-controller': 'alpine:latest',
-  // STUB: nginx:alpine serves HTTP. Replace with ics-sim-webserver once published.
+  // STUB: nginx:alpine serves HTTP. Replace with otforge-webserver once published.
   'web-server': 'nginx:alpine',
-  // STUB: Replace with ics-sim-bizserver once published.
+  // STUB: Replace with otforge-bizserver once published.
   'business-server': 'nginx:alpine',
   // linuxserver webtop: Ubuntu XFCE desktop via KasmVNC on port 3000.
-  // Replace with ics-sim-workstation once published.
+  // Replace with otforge-workstation once published.
   'enterprise-desktop': 'lscr.io/linuxserver/webtop:ubuntu-xfce',
   // ── Internet DMZ (Level 5) ───────────────────────────────────────────────────
   // STUB: mailhog provides a lightweight SMTP+web UI for email simulation.
-  // Replace with ics-sim-mail once published.
+  // Replace with otforge-mail once published.
   'email-server': 'mailhog/mailhog:latest',
   // STUB: nginx:alpine for generic internet-facing servers.
-  // The tutorial scenario overrides this with ics-sim-web-company via deviceConfig.dockerImage.
+  // The tutorial scenario overrides this with otforge-web-company via deviceConfig.dockerImage.
   'internet-server': 'nginx:alpine',
   // Phase 12: Authoritative DNS server — dnsmasq serving the meridian-process.com zone.
-  'dns-server': 'ghcr.io/iburres/ics-sim-dns:latest',
+  'dns-server': 'ghcr.io/iburres/otforge-dns:latest',
   // ── Red Team ─────────────────────────────────────────────────────────────────
   // Custom Kali rolling image with full Xfce4 + noVNC (port 6080) + ICS attack tools.
   // Built from containers/attack-base — replaces the old linuxserver/kali-linux stub.
-  'attack-machine': 'ghcr.io/iburres/ics-sim-attack-base:latest'
+  'attack-machine': 'ghcr.io/iburres/otforge-attack-base:latest'
 }
 
 /**
@@ -212,7 +212,7 @@ interface ComposeFile {
  * @returns Complete YAML string ready to write to docker-compose.yml.
  */
 export function generateCompose(
-  scenario: ICSLabScenario,
+  scenario: OTForgeScenario,
   projectName: string,
   scenarioDir?: string,
   resolvedZones?: Record<NetworkZone, { subnet: string; gateway: string }>
@@ -404,7 +404,7 @@ export function generateCompose(
     // Attack machine is always isolated on the dedicated Attacker network.
     // It is NOT on any Purdue Model zone — it lives outside the OT/IT/Enterprise perimeter.
     //
-    // Image: ghcr.io/iburres/ics-sim-attack-base:latest (built from containers/attack-base)
+    // Image: ghcr.io/iburres/otforge-attack-base:latest (built from containers/attack-base)
     //   Full Kali rolling desktop (Xfce4 + TigerVNC + noVNC) served on container port 6080.
     //   Includes ICS attack tools: nmap, pymodbus, metasploit, wireshark, scapy, etc.
     //   Students browse to http://localhost:<hostPort>/vnc.html to get the desktop GUI.
@@ -421,7 +421,7 @@ export function generateCompose(
         'attacker-net': { ipv4_address: device.ipAddress }
       }
       services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
-      // Port 6080: noVNC WebSocket bridge served by our custom ics-sim-attack-base image
+      // Port 6080: noVNC WebSocket bridge served by our custom otforge-attack-base image
       services[serviceName].ports = [`${webPort}:6080`]
       attackPortIndex++
     }
@@ -454,7 +454,7 @@ export function generateCompose(
 
   volumes[`${projectName}-suricata-logs`] = {}
   services['suricata'] = {
-    image: 'ghcr.io/iburres/ics-sim-suricata:latest',
+    image: 'ghcr.io/iburres/otforge-suricata:latest',
     container_name: `${projectName}-suricata`,
     restart: 'unless-stopped',
     networks: {
@@ -480,7 +480,7 @@ export function generateCompose(
 
   volumes[`${projectName}-zeek-logs`] = {}
   services['zeek'] = {
-    image: 'ghcr.io/iburres/ics-sim-zeek:latest',
+    image: 'ghcr.io/iburres/otforge-zeek:latest',
     container_name: `${projectName}-zeek`,
     restart: 'unless-stopped',
     networks: { 'ot-net': { ipv4_address: `${otBase}.252` } },
@@ -501,9 +501,9 @@ export function generateCompose(
     // .240–.249 reserved for infrastructure/system services; user devices start at .10
     networks: { 'control-net': { ipv4_address: `${controlBase}.240` } },
     environment: [
-      'INFLUXDB_DB=icslab',
+      'INFLUXDB_DB=otflab',
       'INFLUXDB_ADMIN_USER=admin',
-      'INFLUXDB_ADMIN_PASSWORD=icslab-admin',
+      'INFLUXDB_ADMIN_PASSWORD=otflab-admin',
       'INFLUXDB_HTTP_AUTH_ENABLED=false' // Auth off so containers can write without credentials
     ],
     cap_add: undefined,
@@ -541,7 +541,7 @@ export function generateCompose(
 
   const grafanaEnv = [
     'GF_SECURITY_ADMIN_USER=admin',
-    'GF_SECURITY_ADMIN_PASSWORD=icslab',
+    'GF_SECURITY_ADMIN_PASSWORD=otflab',
     'GF_AUTH_ANONYMOUS_ENABLED=true', // No login required in the embedded panel
     'GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer', // Restrict anonymous sessions to read-only
     'GF_SECURITY_ALLOW_EMBEDDING=true', // Required for Electron webview embedding
@@ -666,7 +666,7 @@ function sanitizeServiceName(nodeId: string): string {
  * @param scenario - The scenario whose network segments to search.
  * @returns The NetworkZone the IP falls in, or null if no segment matches.
  */
-function findZoneForIp(ip: string, scenario: ICSLabScenario): NetworkZone | null {
+function findZoneForIp(ip: string, scenario: OTForgeScenario): NetworkZone | null {
   for (const seg of scenario.network.segments) {
     if (ipInSubnet(ip, seg.subnet)) return seg.zone
   }
@@ -728,7 +728,7 @@ function findZoneForIpInDefaults(ip: string): NetworkZone | null {
  */
 function resolveDeviceIp(
   deviceIp: string,
-  scenario: ICSLabScenario,
+  scenario: OTForgeScenario,
   effectiveZones: Record<NetworkZone, { subnet: string; gateway: string }>
 ): string {
   // Walk the scenario's declared segments first (most specific match)
@@ -808,8 +808,8 @@ function ipToInt(ip: string): number {
  * @returns Array of "KEY=VALUE" strings for the compose environment field.
  */
 function buildDeviceEnv(
-  device: ICSLabScenario['devices']['devices'][string],
-  _scenario: ICSLabScenario
+  device: OTForgeScenario['devices']['devices'][string],
+  _scenario: OTForgeScenario
 ): string[] {
   const env: string[] = [`DEVICE_ID=${device.nodeId}`, `DEVICE_CATEGORY=${device.category}`]
 

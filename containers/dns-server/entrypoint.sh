@@ -1,5 +1,5 @@
 #!/bin/sh
-# entrypoint.sh — dnsmasq authoritative DNS server for the ICS Simulator
+# entrypoint.sh — dnsmasq authoritative DNS server for the OTForge
 #
 # Generates a dnsmasq zone configuration at runtime from environment variables,
 # then starts dnsmasq in foreground mode so Docker captures all output.

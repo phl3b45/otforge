@@ -16,7 +16,7 @@
 
 import { memo } from 'react'
 import type { NodeProps, Node } from '@xyflow/react'
-import type { NetworkZone } from '@ics-sim/schema'
+import type { NetworkZone } from '@otforge/schema'
 import { ZONE_COLORS } from './DeviceNode'
 
 /**

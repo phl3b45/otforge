@@ -34,36 +34,36 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: ics-sim-modbus
+          - image: otforge-modbus
             context: containers/modbus
-          - image: ics-sim-dnp3
+          - image: otforge-dnp3
             context: containers/dnp3
-          - image: ics-sim-firewall
+          - image: otforge-firewall
             context: containers/firewall
-          - image: ics-sim-switch
+          - image: otforge-switch
             context: containers/switch
-          - image: ics-sim-router
+          - image: otforge-router
             context: containers/router
-          - image: ics-sim-suricata
+          - image: otforge-suricata
             context: containers/suricata
-          - image: ics-sim-zeek
+          - image: otforge-zeek
             context: containers/zeek
           # Phase 10: Siemens S7comm (port 102) and IEC 60870-5-104 (port 2404)
           # emulation via pure-Python server. One image handles both device types;
           # DEVICE_CATEGORY env var selects the protocol at startup.
-          - image: ics-sim-conpot
+          - image: otforge-conpot
             context: containers/conpot
           # Phase 11: Physics-simulated process unit — water tank, pipeline, generator,
           # generic. Exposes Modbus TCP on port 502; PROCESS_TYPE env var selects model.
-          - image: ics-sim-process
+          - image: otforge-process
             context: containers/process-sim
           # Phase 12: Meridian Process Controls company website — nginx serving
           # a realistic industrial automation company site for OSINT exercises.
-          - image: ics-sim-web-company
+          - image: otforge-web-company
             context: containers/web-company
           # Phase 12: Authoritative DNS server for meridian-process.com — dnsmasq
           # on Alpine. Logs all queries so students observe reconnaissance in real time.
-          - image: ics-sim-dns
+          - image: otforge-dns
             context: containers/dns-server
 
     steps:
@@ -103,7 +103,7 @@ jobs:
 # Building OpenPLC Runtime from source takes ~20 minutes.
 
   build-openplc:
-    name: Build ics-sim-openplc
+    name: Build otforge-openplc
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -156,27 +156,27 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/ics-sim-openplc
+          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/otforge-openplc
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-,format=short
             type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
 
-      - name: Build and push ics-sim-openplc
+      - name: Build and push otforge-openplc
         uses: docker/build-push-action@v6
         with:
           context: containers/openplc
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=ics-sim-openplc
-          cache-to: type=gha,mode=max,scope=ics-sim-openplc
+          cache-from: type=gha,scope=otforge-openplc
+          cache-to: type=gha,mode=max,scope=otforge-openplc
 
 # ── Attack base — Kali rolling, only on main push or release ──────────────────
 # Largest image (~800MB). Built separately to avoid blocking the matrix.
 
   build-attack-base:
-    name: Build ics-sim-attack-base
+    name: Build otforge-attack-base
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -202,18 +202,18 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/ics-sim-attack-base
+          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/otforge-attack-base
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-,format=short
             type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
 
-      - name: Build and push ics-sim-attack-base
+      - name: Build and push otforge-attack-base
         uses: docker/build-push-action@v6
         with:
           context: containers/attack-base
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=ics-sim-attack-base
-          cache-to: type=gha,mode=max,scope=ics-sim-attack-base
+          cache-from: type=gha,scope=otforge-attack-base
+          cache-to: type=gha,mode=max,scope=otforge-attack-base

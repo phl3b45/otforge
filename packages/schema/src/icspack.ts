@@ -1,13 +1,13 @@
-// .icspack community scenario pack format.
+// .otfpack community scenario pack format.
 //
 // A pack is a ZIP archive with a pack.json manifest at its root. Packs are the
-// community contribution mechanism for ICS Simulator — instructors can share
+// community contribution mechanism for OTForge — instructors can share
 // pre-built scenarios, custom device types, sector-specific Suricata rules, and
 // Zeek scripts without modifying the core application.
 //
 // Pack ZIP layout:
 //   pack.json                  — this manifest (required)
-//   scenarios/                 — .icslab scenario files
+//   scenarios/                 — .otflab scenario files
 //   devices/
 //     registry.json            — array of PackDeviceType definitions
 //     icons/                   — SVG icon files referenced by registry.json
@@ -20,12 +20,12 @@ import type { Sector, DeviceCategory, Protocol } from './icslab'
 // ── Pack manifest ──────────────────────────────────────────────────────────────
 
 /**
- * Root manifest stored as pack.json at the top level of an .icspack ZIP.
+ * Root manifest stored as pack.json at the top level of an .otfpack ZIP.
  *
  * All path strings are relative to the pack's root directory (i.e., relative
  * to where pack.json lives after the ZIP is extracted).
  */
-export interface ICSPackManifest {
+export interface OTForgePackManifest {
   /** Always "1.0" — used to detect future format breaking changes. */
   formatVersion: '1.0'
 
@@ -55,8 +55,8 @@ export interface ICSPackManifest {
   sector?: Sector
 
   /**
-   * Relative paths to .icslab scenario files bundled in this pack.
-   * e.g. ["scenarios/pipeline-attack.icslab", "scenarios/pump-station.icslab"]
+   * Relative paths to .otflab scenario files bundled in this pack.
+   * e.g. ["scenarios/pipeline-attack.otflab", "scenarios/pump-station.otflab"]
    */
   scenarios: string[]
 
@@ -140,7 +140,7 @@ export interface PackDeviceType {
  */
 export interface InstalledPack {
   /** The parsed pack.json manifest. */
-  manifest: ICSPackManifest
+  manifest: OTForgePackManifest
 
   /** Absolute path to the extracted pack directory on disk. */
   installPath: string
@@ -156,7 +156,7 @@ export interface InstalledPack {
 
   /**
    * Display metadata for each bundled scenario.
-   * Populated by reading each .icslab file's meta.name (or falling back to
+   * Populated by reading each .otflab file's meta.name (or falling back to
    * the filename if the file cannot be parsed).
    */
   scenarioMetas: PackScenarioMeta[]
@@ -179,11 +179,11 @@ export interface ResolvedPackDeviceType extends PackDeviceType {
 }
 
 /**
- * Lightweight scenario metadata entry read from a bundled .icslab file.
+ * Lightweight scenario metadata entry read from a bundled .otflab file.
  * Avoids sending the full scenario object just to populate the Pack Manager list.
  */
 export interface PackScenarioMeta {
-  /** Relative path to the .icslab file within the pack (matches manifest.scenarios entry). */
+  /** Relative path to the .otflab file within the pack (matches manifest.scenarios entry). */
   relativePath: string
   /** Scenario name from meta.name, or the filename if parsing failed. */
   name: string

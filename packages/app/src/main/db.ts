@@ -18,7 +18,7 @@
 
 import { ClassicLevel } from 'classic-level'
 import { join } from 'path'
-import type { ICSLabScenario } from '@ics-sim/schema'
+import type { OTForgeScenario } from '@otforge/schema'
 
 /** Singleton LevelDB instance — initialized once on app startup. */
 let _db: ClassicLevel<string, string> | null = null
@@ -27,7 +27,7 @@ let _db: ClassicLevel<string, string> | null = null
  * Opens (or re-uses) the LevelDB database stored in `userDataPath/db/`.
  *
  * @param userDataPath - Electron's app.getPath('userData') directory.
- *   On Windows this is typically %APPDATA%\ics-simulator.
+ *   On Windows this is typically %APPDATA%\otforge.
  * @returns The open ClassicLevel instance (also stored as a module singleton).
  */
 export function initDb(userDataPath: string): ClassicLevel<string, string> {
@@ -57,9 +57,9 @@ export function getDb(): ClassicLevel<string, string> {
  * Persists the current scenario to LevelDB.
  * Called after import, after adding/removing devices, and before simulation start.
  *
- * @param scenario - The full ICSLabScenario object to persist.
+ * @param scenario - The full OTForgeScenario object to persist.
  */
-export async function saveActiveScenario(scenario: ICSLabScenario): Promise<void> {
+export async function saveActiveScenario(scenario: OTForgeScenario): Promise<void> {
   await getDb().put('active-scenario', JSON.stringify(scenario))
 }
 
@@ -69,10 +69,10 @@ export async function saveActiveScenario(scenario: ICSLabScenario): Promise<void
  * @returns The scenario if one was saved, or null if the key is absent
  *   (fresh install, or user deleted data).
  */
-export async function loadActiveScenario(): Promise<ICSLabScenario | null> {
+export async function loadActiveScenario(): Promise<OTForgeScenario | null> {
   try {
     const raw = await getDb().get('active-scenario')
-    return JSON.parse(raw) as ICSLabScenario
+    return JSON.parse(raw) as OTForgeScenario
   } catch {
     // LevelDB throws a NotFound error if the key does not exist — that is expected.
     return null

@@ -87,7 +87,7 @@ describe('ZONE_DEFAULTS', () => {
 
 describe('dockerNetworkName', () => {
   it('produces "<projectName>_<zone>-net" format', () => {
-    expect(dockerNetworkName('ics-sim-demo', 'ot')).toBe('ics-sim-demo_ot-net')
+    expect(dockerNetworkName('otforge-demo', 'ot')).toBe('otforge-demo_ot-net')
   })
 
   it('works for all six Purdue zones', () => {
@@ -98,8 +98,8 @@ describe('dockerNetworkName', () => {
   })
 
   it('preserves the project name exactly — no additional sanitization', () => {
-    expect(dockerNetworkName('ics-sim-water-treatment-plant', 'control')).toBe(
-      'ics-sim-water-treatment-plant_control-net'
+    expect(dockerNetworkName('otforge-water-treatment-plant', 'control')).toBe(
+      'otforge-water-treatment-plant_control-net'
     )
   })
 })

@@ -26,7 +26,7 @@
  *   Enterprise/internet devices use purple and orange matching their zone accent.
  */
 
-import type { DeviceCategory, NetworkZone, ResolvedPackDeviceType } from '@ics-sim/schema'
+import type { DeviceCategory, NetworkZone, ResolvedPackDeviceType } from '@otforge/schema'
 import { DeviceIcon } from '../icons/DeviceIcons'
 
 /** Describes a group of related palette items shown under a section header. */
@@ -68,7 +68,7 @@ const PALETTE: PaletteSection[] = [
   {
     // Phase 11: Physics-simulated process units.
     // Each instance runs a real-time physics model (water-tank / pipeline /
-    // generator / generic) in the ics-sim-process container. The PLC reads
+    // generator / generic) in the otforge-process container. The PLC reads
     // sensor values as Modbus registers and writes control outputs back.
     label: 'Process Simulation',
     layers: ['ot'],

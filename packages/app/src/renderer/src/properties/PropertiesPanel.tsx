@@ -27,7 +27,7 @@
  *   When the simulation is not running, a note explains it must be started first.
  */
 
-import type { DeviceConfig, SecurityLayer } from '@ics-sim/schema'
+import type { DeviceConfig, SecurityLayer } from '@otforge/schema'
 import { DeviceIcon } from '../icons/DeviceIcons'
 import { ZONE_COLORS } from '../canvas/DeviceNode'
 import { FirewallPanel, IDSPanel } from './SecurityPanel'

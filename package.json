@@ -1,13 +1,13 @@
 {
-  "name": "ics-simulator",
+  "name": "otforge",
   "version": "0.1.0",
   "description": "Open-source ICS/SCADA cybersecurity training platform — Electron + Docker",
   "license": "MIT",
   "author": "Ian Burres <iburres@att.net>",
-  "homepage": "https://github.com/iburres/ics-simulator",
+  "homepage": "https://github.com/iburres/otforge",
   "repository": {
     "type": "git",
-    "url": "https://github.com/iburres/ics-simulator.git"
+    "url": "https://github.com/iburres/otforge.git"
   },
   "workspaces": [
     "packages/*"

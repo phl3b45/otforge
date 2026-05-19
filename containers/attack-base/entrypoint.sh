@@ -17,27 +17,27 @@
 
 set -e
 
-echo "[ics-attack] =============================================="
-echo "[ics-attack] Device:   ${DEVICE_ID}"
-echo "[ics-attack] Category: ${DEVICE_CATEGORY}"
-echo "[ics-attack] Zone:     External network (attacker-controlled)"
-echo "[ics-attack] =============================================="
+echo "[otforge-attack] =============================================="
+echo "[otforge-attack] Device:   ${DEVICE_ID}"
+echo "[otforge-attack] Category: ${DEVICE_CATEGORY}"
+echo "[otforge-attack] Zone:     External network (attacker-controlled)"
+echo "[otforge-attack] =============================================="
 echo ""
-echo "[ics-attack] CLI Tools:     nmap, masscan, netcat, tshark, scapy, pymodbus"
-echo "[ics-attack] Frameworks:    metasploit-framework, armitage"
-echo "[ics-attack] Passwords:     hydra, medusa, john, hashcat"
-echo "[ics-attack] ICS Protocol:  pymodbus, dnp3-python, opcua, bacpypes3, python-snap7"
-echo "[ics-attack] Desktop:       Xfce4 via noVNC at container port 6080"
-echo "[ics-attack]                (Wireshark GUI, Armitage, Firefox available)"
+echo "[otforge-attack] CLI Tools:     nmap, masscan, netcat, tshark, scapy, pymodbus"
+echo "[otforge-attack] Frameworks:    metasploit-framework, armitage"
+echo "[otforge-attack] Passwords:     hydra, medusa, john, hashcat"
+echo "[otforge-attack] ICS Protocol:  pymodbus, dnp3-python, opcua, bacpypes3, python-snap7"
+echo "[otforge-attack] Desktop:       Xfce4 via noVNC at container port 6080"
+echo "[otforge-attack]                (Wireshark GUI, Armitage, Firefox available)"
 echo ""
 
 # ── Network interface report ──────────────────────────────────────────────────
-echo "[ics-attack] Network interfaces:"
+echo "[otforge-attack] Network interfaces:"
 ip addr show
 echo ""
 
 # ── Start TigerVNC server ─────────────────────────────────────────────────────
-echo "[ics-attack] Starting TigerVNC server on display :1 (port 5901)..."
+echo "[otforge-attack] Starting TigerVNC server on display :1 (port 5901)..."
 
 # Clean up any stale lock files from a previous unclean shutdown
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
@@ -60,7 +60,7 @@ VNC_PID=$!
 # Wait for VNC socket to appear before starting websockify
 for i in $(seq 1 15); do
     if [ -S /tmp/.X11-unix/X1 ] || ss -tln | grep -q ':5901'; then
-        echo "[ics-attack] VNC server ready (attempt ${i})"
+        echo "[otforge-attack] VNC server ready (attempt ${i})"
         break
     fi
     sleep 1
@@ -80,11 +80,11 @@ done
 # a brief window where TigerVNC has the socket open but rejects incoming connections
 # while it finishes initialising the X session. A TCP connection probe is more
 # reliable than a sleep-based heuristic.
-echo "[ics-attack] Waiting for VNC to accept TCP connections on port 5901..."
+echo "[otforge-attack] Waiting for VNC to accept TCP connections on port 5901..."
 for i in $(seq 1 20); do
     # Try a TCP connection; nc exits 0 immediately on success, 1 on refused/timeout
     if nc -z -w1 localhost 5901 2>/dev/null; then
-        echo "[ics-attack] VNC accepting connections (attempt ${i})"
+        echo "[otforge-attack] VNC accepting connections (attempt ${i})"
         break
     fi
     sleep 1
@@ -94,7 +94,7 @@ done
 # websockify translates WebSocket frames from the Electron BrowserWindow (noVNC page)
 # into raw VNC TCP frames that TigerVNC understands. The --wrap-mode=ignore flag
 # prevents websockify from exiting when the VNC connection drops (e.g. client refresh).
-echo "[ics-attack] Starting noVNC websockify bridge on port 6080..."
+echo "[otforge-attack] Starting noVNC websockify bridge on port 6080..."
 websockify \
     --web /opt/novnc/ \
     --wrap-mode=ignore \
@@ -105,19 +105,19 @@ NOVNC_PID=$!
 # Verify websockify is listening on port 6080 before declaring the container ready.
 # Without this check the host-side isPortOpen() probe may succeed while websockify
 # is still in its startup phase and the WebSocket handshake fails.
-echo "[ics-attack] Waiting for noVNC websockify to listen on port 6080..."
+echo "[otforge-attack] Waiting for noVNC websockify to listen on port 6080..."
 for i in $(seq 1 15); do
     if nc -z -w1 localhost 6080 2>/dev/null; then
-        echo "[ics-attack] noVNC ready on port 6080 (attempt ${i})"
+        echo "[otforge-attack] noVNC ready on port 6080 (attempt ${i})"
         break
     fi
     sleep 1
 done
 
-echo "[ics-attack] Desktop ready — connect at container port 6080"
-echo "[ics-attack] VNC: no password required (SecurityTypes None; isolated within Docker network)"
+echo "[otforge-attack] Desktop ready — connect at container port 6080"
+echo "[otforge-attack] VNC: no password required (SecurityTypes None; isolated within Docker network)"
 echo ""
-echo "[ics-attack] Waiting for terminal sessions (docker exec)..."
+echo "[otforge-attack] Waiting for terminal sessions (docker exec)..."
 
 # ── Keep container alive ──────────────────────────────────────────────────────
 # The Electron xterm.js terminal attaches via `docker exec -i <name> /bin/bash`.

@@ -1,7 +1,7 @@
 /**
  * docker-client.ts — Thin wrapper around the Docker Compose CLI.
  *
- * The ICS Simulator runs each scenario as a set of Docker containers defined by
+ * The OTForge runs each scenario as a set of Docker containers defined by
  * a generated docker-compose.yml. This module encapsulates every `docker compose`
  * command so the rest of the codebase never constructs raw shell strings.
  *
@@ -26,7 +26,7 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import { writeFile, mkdir, rm } from 'fs/promises'
 import { join } from 'path'
-import type { ContainerStatus } from '@ics-sim/schema'
+import type { ContainerStatus } from '@otforge/schema'
 
 const execAsync = promisify(exec)
 
@@ -95,8 +95,8 @@ export class DockerClient {
 
   /**
    * @param userDataPath - Electron's app.getPath('userData') directory.
-   *   On Windows: %APPDATA%\ics-simulator
-   *   On macOS:   ~/Library/Application Support/ics-simulator
+   *   On Windows: %APPDATA%\otforge
+   *   On macOS:   ~/Library/Application Support/otforge
    */
   constructor(userDataPath: string) {
     this.workDir = join(userDataPath, 'scenarios')
@@ -315,7 +315,7 @@ export class DockerClient {
         .map(line => {
           const obj = JSON.parse(line) as { Name: string; State: string; Health: string }
           const health = mapDockerHealth(obj.Health)
-          // Strip the project name prefix Docker adds to container names (e.g., "ics-sim-demo-plc-1" → "plc-1")
+          // Strip the project name prefix Docker adds to container names (e.g., "otforge-demo-plc-1" → "plc-1")
           const entry: ContainerStatus = {
             nodeId: obj.Name.replace(`${projectName}-`, ''),
             containerId: obj.Name,

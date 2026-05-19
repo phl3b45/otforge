@@ -4,11 +4,11 @@
  * Opened by the "Export" toolbar button (Author mode, idle only). Presents two
  * export paths:
  *
- *   Author Copy  — Full unlocked .icslab. Visual layer, security layer, and all
+ *   Author Copy  — Full unlocked .otflab. Visual layer, security layer, and all
  *                  metadata are included. For sharing with other instructors or
  *                  backing up your own work.
  *
- *   Student Copy — Locked .icslab. The visual layer (node positions, topology
+ *   Student Copy — Locked .otflab. The visual layer (node positions, topology
  *                  diagram) and the security layer (firewall rules, IDS config)
  *                  are stripped. Students receive the device list and network
  *                  config so Docker can spin up the environment, but they cannot
@@ -23,14 +23,14 @@
  */
 
 import { useState } from 'react'
-import type { ICSLabScenario } from '@ics-sim/schema'
+import type { OTForgeScenario } from '@otforge/schema'
 
 /** Which export mode the user has selected in the modal. */
 type ExportMode = 'author' | 'student'
 
 interface ExportModalProps {
   /** The scenario to export. */
-  scenario: ICSLabScenario
+  scenario: OTForgeScenario
   /** Called when the modal is dismissed (after export or via Cancel). */
   onClose: () => void
   /**

@@ -30,12 +30,12 @@
  */
 
 import { useState, useCallback, useId } from 'react'
-import type { DeviceConfig, PLCProgramConfig, Protocol, ImportedRoutine } from '@ics-sim/schema'
+import type { DeviceConfig, PLCProgramConfig, Protocol, ImportedRoutine } from '@otforge/schema'
 
 // ── Default ST program template ───────────────────────────────────────────────
 
 const DEFAULT_ST_PROGRAM = `(* ============================================================
-   ICS Simulator — PLC Program Template
+   OTForge — PLC Program Template
    Language: IEC 61131-3 Structured Text (ST)
 
    Instructions:

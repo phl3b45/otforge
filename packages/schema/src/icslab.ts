@@ -1,4 +1,4 @@
-// .icslab scenario file format — the canonical exchange format for ICS Simulator scenarios.
+// .otflab scenario file format — the canonical exchange format for OTForge scenarios.
 // All four layers are present in unlocked scenarios. Locked scenarios omit visual/security
 // layer details to prevent topology extraction by students.
 
@@ -114,7 +114,7 @@ export interface NetworkSegment {
   zone: NetworkZone
   subnet: string // e.g. "172.20.10.0/24"
   gateway: string // e.g. "172.20.10.1"
-  dockerNetwork: string // e.g. "ics-sim-ot-net"
+  dockerNetwork: string // e.g. "otforge-ot-net"
 }
 
 export interface StaticRoute {
@@ -242,7 +242,7 @@ export interface ProcessUnitConfig {
 }
 
 /**
- * Runtime configuration for an ics-sim-dns container (Phase 12).
+ * Runtime configuration for an otforge-dns container (Phase 12).
  *
  * The container runs dnsmasq serving an authoritative zone for a fictitious
  * industrial company. Students start here with OSINT and then pivot to the
@@ -370,9 +370,9 @@ export interface TutorialStep {
   successCheck?: string
 }
 
-// ── Root .icslab document ──────────────────────────────────────────────────────
+// ── Root .otflab document ──────────────────────────────────────────────────────
 
-export interface ICSLabMeta {
+export interface OTForgeMeta {
   formatVersion: '1.0'
   name: string
   description: string
@@ -380,7 +380,7 @@ export interface ICSLabMeta {
   author: string
   createdAt: string // ISO 8601
   updatedAt: string
-  appVersion: string // minimum ICS Simulator version required
+  appVersion: string // minimum OTForge version required
   locked: boolean
   brief: string // Markdown — mission objectives shown in Student mode
   requirements: ResourceEstimate
@@ -392,8 +392,8 @@ export interface ICSLabMeta {
   tutorialSteps?: TutorialStep[]
 }
 
-export interface ICSLabScenario {
-  meta: ICSLabMeta
+export interface OTForgeScenario {
+  meta: OTForgeMeta
   visual: VisualLayer // omitted in locked export
   network: NetworkLayer
   devices: DeviceLayer

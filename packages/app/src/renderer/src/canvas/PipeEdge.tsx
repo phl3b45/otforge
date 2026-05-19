@@ -24,7 +24,7 @@
  */
 
 import { type EdgeProps, getSmoothStepPath, EdgeLabelRenderer, BaseEdge } from '@xyflow/react'
-import type { Protocol } from '@ics-sim/schema'
+import type { Protocol } from '@otforge/schema'
 
 /** Pipe stroke color by protocol — matches ProtocolEdge color scheme. */
 const PIPE_COLORS: Record<Protocol, string> = {

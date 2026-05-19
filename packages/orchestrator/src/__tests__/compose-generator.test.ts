@@ -27,7 +27,7 @@
 import { describe, it, expect } from 'vitest'
 import yaml from 'js-yaml'
 import { generateCompose } from '../compose-generator'
-import type { ICSLabScenario, DeviceConfig, NetworkZone } from '@ics-sim/schema'
+import type { OTForgeScenario, DeviceConfig, NetworkZone } from '@otforge/schema'
 
 // ── Parsed compose types ──────────────────────────────────────────────────────
 
@@ -59,21 +59,21 @@ interface ParsedCompose {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Generates compose YAML and returns the parsed object. */
-function gen(scenario: ICSLabScenario, projectName = 'test-proj'): ParsedCompose {
+function gen(scenario: OTForgeScenario, projectName = 'test-proj'): ParsedCompose {
   return yaml.load(generateCompose(scenario, projectName)) as ParsedCompose
 }
 
 type DeviceOverrides = Partial<DeviceConfig> & Pick<DeviceConfig, 'category' | 'ipAddress'>
 
 /**
- * Builds a minimal type-correct ICSLabScenario for testing.
+ * Builds a minimal type-correct OTForgeScenario for testing.
  * Only fields that generateCompose() reads are populated.
  */
 function makeScenario(
   deviceEntries: Array<[string, DeviceOverrides]>,
   segmentZones: Array<{ zone: NetworkZone; subnet: string; gateway: string }> = []
-): ICSLabScenario {
-  const devices: ICSLabScenario['devices']['devices'] = {}
+): OTForgeScenario {
+  const devices: OTForgeScenario['devices']['devices'] = {}
   for (const [id, d] of deviceEntries) {
     devices[id] = { nodeId: id, protocols: [], ...d }
   }
@@ -160,15 +160,15 @@ describe('Docker networks', () => {
 describe('image assignment', () => {
   it('uses the GHCR OpenPLC image for PLC devices', () => {
     const compose = gen(makeScenario([['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]]))
-    expect(compose.services['plc-1'].image).toMatch(/ics-sim-openplc/)
+    expect(compose.services['plc-1'].image).toMatch(/otforge-openplc/)
   })
 
-  it('uses the alpine stub image for RTU devices (until ics-sim-modbus is published)', () => {
+  it('uses the alpine stub image for RTU devices (until otforge-modbus is published)', () => {
     const compose = gen(makeScenario([['rtu-1', { category: 'rtu', ipAddress: '10.200.10.10' }]]))
     expect(compose.services['rtu-1'].image).toBe('alpine:latest')
   })
 
-  it('uses the alpine stub image for IED devices (until ics-sim-dnp3 is published)', () => {
+  it('uses the alpine stub image for IED devices (until otforge-dnp3 is published)', () => {
     const compose = gen(makeScenario([['ied-1', { category: 'ied', ipAddress: '10.200.10.10' }]]))
     expect(compose.services['ied-1'].image).toBe('alpine:latest')
   })
@@ -209,9 +209,9 @@ describe('service name and container name', () => {
   it('sets project name from the projectName argument', () => {
     const compose = gen(
       makeScenario([['s1', { category: 'sensor', ipAddress: '10.200.10.10' }]]),
-      'ics-sim-water-plant'
+      'otforge-water-plant'
     )
-    expect(compose.name).toBe('ics-sim-water-plant')
+    expect(compose.name).toBe('otforge-water-plant')
   })
 })
 
@@ -333,7 +333,7 @@ describe('attack-machine device', () => {
   })
 
   it('publishes noVNC port 6080 on deterministic host port 6900 for the first attack machine', () => {
-    // Phase 12: switched from linuxserver KasmVNC (:3000) to ics-sim-attack-base noVNC (:6080)
+    // Phase 12: switched from linuxserver KasmVNC (:3000) to otforge-attack-base noVNC (:6080)
     expect(attackCompose().services['kali-1'].ports).toContain('6900:6080')
   })
 

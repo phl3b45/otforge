@@ -47,7 +47,7 @@
  *   OPC Unified Architecture Part 1 (OPC Foundation)
  */
 
-import type { DeviceCategory, Protocol } from '@ics-sim/schema'
+import type { DeviceCategory, Protocol } from '@otforge/schema'
 
 /**
  * The ICS device category compatibility matrix.

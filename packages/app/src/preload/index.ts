@@ -34,14 +34,14 @@ import type {
   SimulationStopResult,
   ContainerStatus,
   LicenseValidationResult,
-  ICSLabScenario,
+  OTForgeScenario,
   PLCDeployResult,
   PLCRuntimeStatus,
   PlcImportResult,
   PackInstallResult,
   PackListResult,
   PackUninstallResult
-} from '@ics-sim/schema'
+} from '@otforge/schema'
 
 /**
  * The complete API surface exposed to the renderer via window.electronAPI.
@@ -72,18 +72,18 @@ const api = {
   // ── Scenario file I/O ─────────────────────────────────────────────────────────
   scenario: {
     /**
-     * Opens a native file picker and imports a .icslab scenario file.
+     * Opens a native file picker and imports a .otflab scenario file.
      * Validates schema and checks memory requirements before returning.
      */
     import: (): Promise<ScenarioImportResult> => ipcRenderer.invoke('scenario:import'),
 
     /**
-     * Saves the current scenario to a .icslab file.
+     * Saves the current scenario to a .otflab file.
      * @param scenario - Current canvas scenario state.
      * @param options  - Export options (locked flag, optional file path).
      */
     export: (
-      scenario: ICSLabScenario,
+      scenario: OTForgeScenario,
       options: ScenarioExportOptions
     ): Promise<ScenarioExportResult> =>
       ipcRenderer.invoke('scenario:export', { scenario, options }),
@@ -92,11 +92,11 @@ const api = {
      * Validates an in-memory scenario without reading from disk.
      * Used to check a user-built canvas scenario before export.
      */
-    validate: (scenario: ICSLabScenario): Promise<{ valid: boolean; errors: string[] }> =>
+    validate: (scenario: OTForgeScenario): Promise<{ valid: boolean; errors: string[] }> =>
       ipcRenderer.invoke('scenario:validate', scenario),
 
     /**
-     * Deletes the .icslab file at the given absolute path from disk.
+     * Deletes the .otflab file at the given absolute path from disk.
      *
      * Called by the Delete Scenario action in App.tsx after the user confirms.
      * The renderer passes the filePath it received from scenario:import or
@@ -115,7 +115,7 @@ const api = {
      * Generates docker-compose.yml, writes it to disk, and runs `docker compose up`.
      * @param scenario - The full scenario to simulate.
      */
-    start: (scenario: ICSLabScenario): Promise<SimulationStartResult> =>
+    start: (scenario: OTForgeScenario): Promise<SimulationStartResult> =>
       ipcRenderer.invoke('simulation:start', scenario),
 
     /**
@@ -290,7 +290,7 @@ const api = {
   // ── Community scenario packs (Phase 9) ───────────────────────────────────────
   packs: {
     /**
-     * Opens a native file picker for .icspack ZIP files, extracts the pack to
+     * Opens a native file picker for .otfpack ZIP files, extracts the pack to
      * <userData>/packs/<packId>/, validates the manifest, and returns the resolved
      * InstalledPack with pre-loaded icon data URLs ready for display.
      *
@@ -315,7 +315,7 @@ const api = {
       ipcRenderer.invoke('pack:uninstall', { packId }),
 
     /**
-     * Loads a bundled .icslab scenario from the given pack and returns it as a
+     * Loads a bundled .otflab scenario from the given pack and returns it as a
      * ScenarioImportResult so the renderer can open it immediately.
      *
      * @param packId       - Pack id from the manifest.

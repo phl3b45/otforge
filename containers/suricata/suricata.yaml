@@ -1,6 +1,6 @@
 %YAML 1.1
 ---
-# ICS Simulator — Suricata overlay configuration
+# OTForge — Suricata overlay configuration
 # Extends the base jasonish/suricata defaults with ICS-specific settings.
 
 vars:
@@ -53,5 +53,5 @@ outputs:
       filename: /var/log/suricata/fast.log
 
 rule-files:
-  - /etc/suricata/rules/ics-sim.rules
+  - /etc/suricata/rules/otforge.rules
   - /var/lib/suricata/rules/suricata.rules

@@ -1,7 +1,7 @@
 /**
  * network-config.ts — Default subnet and gateway configuration for the 6-zone Purdue Model.
  *
- * ICS Simulator implements the full Purdue Reference Model (IEC 62443-3-2 / NIST SP 800-82):
+ * OTForge implements the full Purdue Reference Model (IEC 62443-3-2 / NIST SP 800-82):
  *
  *   OT           (Levels 0–2)  10.200.10.0/24 — PLCs, RTUs, IEDs, sensors, actuators
  *   Control      (Level 3)     10.200.20.0/24 — HMIs, historians, application/database servers
@@ -20,7 +20,7 @@
  * their network.segments array.
  */
 
-import type { NetworkZone } from '@ics-sim/schema'
+import type { NetworkZone } from '@otforge/schema'
 
 /**
  * Default subnet and gateway for each network zone.
@@ -187,7 +187,7 @@ export function findFreeSubnets(
  * @returns The full Docker network name string.
  *
  * @example
- *   dockerNetworkName('ics-sim-demo', 'ot')  // → 'ics-sim-demo_ot-net'
+ *   dockerNetworkName('otforge-demo', 'ot')  // → 'otforge-demo_ot-net'
  */
 export function dockerNetworkName(projectName: string, zone: NetworkZone): string {
   return `${projectName}_${zone}-net`

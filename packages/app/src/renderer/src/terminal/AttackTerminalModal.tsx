@@ -30,7 +30,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import type { DeviceConfig } from '@ics-sim/schema'
+import type { DeviceConfig } from '@otforge/schema'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -116,7 +116,7 @@ export function AttackTerminalModal({
     fitAddonRef.current = fitAddon
 
     // Welcome banner printed locally — the actual bash prompt follows from the container
-    term.writeln('\x1b[32m[ICS Simulator]\x1b[0m Connecting to attack machine...')
+    term.writeln('\x1b[32m[OTForge]\x1b[0m Connecting to attack machine...')
     term.writeln('\x1b[90mKali Linux · External network segment\x1b[0m')
     term.writeln('')
 

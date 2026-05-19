@@ -1,7 +1,7 @@
 /**
- * schema-validator.ts — Runtime validation for ICSLabScenario JSON documents.
+ * schema-validator.ts — Runtime validation for OTForgeScenario JSON documents.
  *
- * .icslab files are user-created JSON files that the app imports from disk. Because
+ * .otflab files are user-created JSON files that the app imports from disk. Because
  * the files come from an untrusted source (filesystem, email attachment, USB drive),
  * we validate their structure before doing anything with them. This prevents silent
  * data corruption and gives the user a clear error message if the file is malformed.
@@ -18,7 +18,7 @@
  *   typical developer/researcher laptop. Each device adds at least one Docker container.
  */
 
-import type { ICSLabScenario } from '@ics-sim/schema'
+import type { OTForgeScenario } from '@otforge/schema'
 
 /** Returned by validateScenario() — callers check `valid` and display `errors` if false. */
 export interface ValidationResult {
@@ -31,7 +31,7 @@ export interface ValidationResult {
 const MAX_DEVICES = 20
 
 /**
- * Validates that a raw JSON value conforms to the ICSLabScenario schema.
+ * Validates that a raw JSON value conforms to the OTForgeScenario schema.
  *
  * Checks the four required top-level sections (meta, network, devices, security)
  * and validates critical fields within each. The check is intentionally shallow —
@@ -53,7 +53,7 @@ export function validateScenario(raw: unknown): ValidationResult {
     return { valid: false, errors: ['Scenario must be a JSON object'] }
   }
 
-  const s = raw as Partial<ICSLabScenario>
+  const s = raw as Partial<OTForgeScenario>
 
   // ── meta section ────────────────────────────────────────────────────────────
   if (!s.meta) errors.push('Missing required field: meta')
@@ -102,17 +102,17 @@ export function validateScenario(raw: unknown): ValidationResult {
  * Converts a human-readable scenario name into a Docker Compose project name.
  *
  * Docker Compose project names must be lowercase and contain only letters, digits,
- * and hyphens. We prefix with "ics-sim-" to namespace all project resources and
+ * and hyphens. We prefix with "otforge-" to namespace all project resources and
  * avoid collisions with other Docker projects on the same machine.
  *
  * @param scenarioName - The scenario's display name (e.g., "Water Treatment Plant #1").
- * @returns A sanitized project name (e.g., "ics-sim-water-treatment-plant-1").
+ * @returns A sanitized project name (e.g., "otforge-water-treatment-plant-1").
  *
  * @example
- *   toProjectName('Oil & Gas — Refinery')  // → 'ics-sim-oil-gas-refinery'
+ *   toProjectName('Oil & Gas — Refinery')  // → 'otforge-oil-gas-refinery'
  */
 export function toProjectName(scenarioName: string): string {
-  return `ics-sim-${scenarioName
+  return `otforge-${scenarioName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-') // Replace any non-alphanumeric run with a single hyphen
     .replace(/^-+|-+$/g, '')}` // Strip leading/trailing hyphens from the result

@@ -1,5 +1,5 @@
 #!/bin/bash
-# entrypoint.sh — nftables firewall configuration for the ics-sim-firewall container.
+# entrypoint.sh — nftables firewall configuration for the otforge-firewall container.
 #
 # Builds an nftables ruleset from environment variables injected by the compose
 # generator (packages/orchestrator/src/compose-generator.ts) then keeps running.

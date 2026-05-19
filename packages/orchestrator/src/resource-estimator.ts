@@ -22,7 +22,7 @@
  */
 
 import os from 'os'
-import type { ICSLabScenario, ResourceEstimate } from '@ics-sim/schema'
+import type { OTForgeScenario, ResourceEstimate } from '@otforge/schema'
 
 // ── Per-container RAM budgets (MB) ────────────────────────────────────────────
 // These match the `deploy.resources.limits.memory` values in the compose generator.
@@ -61,7 +61,7 @@ const FIXED_INFRA_RAM =
  * @param scenario - The scenario whose device graph to evaluate.
  * @returns ResourceEstimate with estimatedRamMb, estimatedCpuCores, containerCount.
  */
-export function estimateResources(scenario: ICSLabScenario): ResourceEstimate {
+export function estimateResources(scenario: OTForgeScenario): ResourceEstimate {
   const devices = Object.values(scenario.devices.devices)
   const containerCount = devices.length
 

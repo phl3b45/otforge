@@ -7,17 +7,17 @@
  *
  * State:
  *   - All fields are local controlled inputs initialized from the scenario meta.
- *   - Save calls onSave with the updated ICSLabMeta; the modal does not write to
+ *   - Save calls onSave with the updated OTForgeMeta; the modal does not write to
  *     the scenario directly (App.tsx owns that state).
  *   - Cancel / Escape discards local edits and closes without saving.
  *
- * @param meta    - Current ICSLabMeta to populate the form fields.
+ * @param meta    - Current OTForgeMeta to populate the form fields.
  * @param onSave  - Called with the updated meta when the user clicks Save.
  * @param onClose - Called when the modal is dismissed without saving.
  */
 
 import { useEffect, useState } from 'react'
-import type { ICSLabMeta, Sector } from '@ics-sim/schema'
+import type { OTForgeMeta, Sector } from '@otforge/schema'
 
 /** Human-readable labels for the sector select. */
 const SECTOR_OPTIONS: { value: Sector; label: string }[] = [
@@ -30,9 +30,9 @@ const SECTOR_OPTIONS: { value: Sector; label: string }[] = [
 
 interface MetadataModalProps {
   /** Current scenario metadata to pre-populate the form. */
-  meta: ICSLabMeta
+  meta: OTForgeMeta
   /** Called with the updated meta object when the user clicks Save. */
-  onSave: (updated: ICSLabMeta) => void
+  onSave: (updated: OTForgeMeta) => void
   /** Called when the modal is dismissed without saving. */
   onClose: () => void
 }
@@ -41,7 +41,7 @@ interface MetadataModalProps {
  * Full-screen overlay modal for editing scenario metadata.
  *
  * Fields:
- *   - Scenario Name  — required; shown in the toolbar and .icslab filename.
+ *   - Scenario Name  — required; shown in the toolbar and .otflab filename.
  *   - Description    — optional; one-line summary shown in the scenario list.
  *   - Author         — optional; instructor name shown on the mission brief.
  *   - Sector         — select; determines which sector-specific tools/icons apply.

@@ -31,7 +31,7 @@ import {
   type EdgeProps,
   type Edge
 } from '@xyflow/react'
-import type { Protocol } from '@ics-sim/schema'
+import type { Protocol } from '@otforge/schema'
 
 /**
  * Data payload carried by each ProtocolEdge in the React Flow edge graph.

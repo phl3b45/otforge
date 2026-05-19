@@ -21,7 +21,7 @@
  *   <DeviceIcon category="sensor" size={20} className="my-icon" />
  */
 
-import type { DeviceCategory } from '@ics-sim/schema'
+import type { DeviceCategory } from '@otforge/schema'
 
 /**
  * Shared SVG presentation attributes applied to every icon.

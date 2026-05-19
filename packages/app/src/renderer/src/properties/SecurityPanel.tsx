@@ -30,7 +30,7 @@
  */
 
 import { useState, useCallback } from 'react'
-import type { SecurityLayer, ACLRule, NetworkZone } from '@ics-sim/schema'
+import type { SecurityLayer, ACLRule, NetworkZone } from '@otforge/schema'
 
 /** Props shared by both security sub-panels. */
 interface SecurityPanelProps {

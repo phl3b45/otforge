@@ -1,7 +1,7 @@
-# ICS Simulator
+# OTForge
 
-[![Build](https://github.com/iburres/ics-simulator/actions/workflows/build.yml/badge.svg)](https://github.com/iburres/ics-simulator/actions/workflows/build.yml)
-[![Docker Images](https://github.com/iburres/ics-simulator/actions/workflows/docker.yml/badge.svg)](https://github.com/iburres/ics-simulator/actions/workflows/docker.yml)
+[![Build](https://github.com/iburres/otforge/actions/workflows/build.yml/badge.svg)](https://github.com/iburres/otforge/actions/workflows/build.yml)
+[![Docker Images](https://github.com/iburres/otforge/actions/workflows/docker.yml/badge.svg)](https://github.com/iburres/otforge/actions/workflows/docker.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A free, open-source ICS/SCADA cybersecurity training platform for researchers, educators, and students. Build realistic industrial control system environments on your laptop — no hardware, no subscription, no cost.
@@ -12,7 +12,7 @@ Developed by **Ian Burres**, Professor of Practice at the University of Texas at
 
 ## What It Does
 
-ICS Simulator lets you design, deploy, and attack realistic ICS/SCADA environments using a visual drag-and-drop canvas. Each device in your scenario runs as a real Docker container on an isolated virtual network — protocol traffic is genuine, not simulated at the application layer.
+OTForge lets you design, deploy, and attack realistic ICS/SCADA environments using a visual drag-and-drop canvas. Each device in your scenario runs as a real Docker container on an isolated virtual network — protocol traffic is genuine, not simulated at the application layer.
 
 **Author a scenario** → drag PLCs, RTUs, IEDs, sensors, and network devices onto the canvas, wire them with protocol edges, write IEC 61131-3 ladder logic, configure the firewall — then click **Run**. Docker Compose spins up the full environment in seconds.
 
@@ -36,7 +36,7 @@ ICS Simulator lets you design, deploy, and attack realistic ICS/SCADA environmen
 - Zone-aware firewall rule editor with nftables enforcement
 - Self-healing IP assignment — the compose generator automatically resolves duplicate IPs on every simulation start
 - Delete Scenario button — clears all devices with a confirmation prompt
-- Export scenarios as `.icslab` files — share with students or the community
+- Export scenarios as `.otflab` files — share with students or the community
 - Network Settings modal — configure Docker subnet addresses per zone
 
 ### PLC IDE
@@ -109,8 +109,8 @@ Real protocol packets flow on Docker virtual networks — scanner tools and expl
 ### Run from source
 
 ```bash
-git clone https://github.com/iburres/ics-simulator.git
-cd ics-simulator
+git clone https://github.com/iburres/otforge.git
+cd otforge
 npm install
 npm run dev
 ```
@@ -135,7 +135,7 @@ npm run build:linux
 ## Project Structure
 
 ```
-ics-simulator/
+otforge/
 ├── packages/
 │   ├── app/                  # Electron application
 │   │   └── src/
@@ -152,14 +152,14 @@ ics-simulator/
 │   │               ├── tutorial/     # TutorialPanel guided step-by-step overlay
 │   │               └── icons/        # SVG device icons
 │   ├── orchestrator/         # Docker Compose generator + DockerClient
-│   └── schema/               # Shared TypeScript types (ICSLabScenario, DeviceConfig…)
+│   └── schema/               # Shared TypeScript types (OTForgeScenario, DeviceConfig…)
 ├── containers/               # Docker image source (one per device category)
 │   ├── openplc/              # OpenPLC Runtime
 │   ├── suricata/             # Suricata IPS with ICS rules
 │   ├── zeek/                 # Zeek network monitor
 │   └── firewall/             # nftables firewall
-├── scenarios/                # Bundled .icslab scenario files
-│   └── tutorial-01-modbus-coil-write.icslab   # Tutorial 01: Modbus Coil Write
+├── scenarios/                # Bundled .otflab scenario files
+│   └── tutorial-01-modbus-coil-write.otflab   # Tutorial 01: Modbus Coil Write
 └── .github/
     └── workflows/            # CI: build, Docker image publish, CodeQL, secret scan
 ```
@@ -185,7 +185,7 @@ System services (InfluxDB, Loki, Grafana, FUXA, Promtail) occupy `.240`–`.249`
 
 ## Scenario Format
 
-Scenarios are saved as `.icslab` JSON files with four layers:
+Scenarios are saved as `.otflab` JSON files with four layers:
 
 ```json
 {
@@ -197,15 +197,15 @@ Scenarios are saved as `.icslab` JSON files with four layers:
 }
 ```
 
-Share your scenarios with the community — open a pull request against the [ics-sim-scenarios](https://github.com/iburres/ics-sim-scenarios) repository (coming soon).
+Share your scenarios with the community — open a pull request against the [otforge-scenarios](https://github.com/iburres/otforge-scenarios) repository (coming soon).
 
-### Community Scenario Packs (.icspack)
+### Community Scenario Packs (.otfpack)
 
-Pack multiple scenarios, custom device types, and sector-specific detection rules into a single `.icspack` ZIP:
+Pack multiple scenarios, custom device types, and sector-specific detection rules into a single `.otfpack` ZIP:
 
 ```
 pack.json                    — manifest (id, name, version, author, sector, ...)
-scenarios/                   — pre-built .icslab scenario files
+scenarios/                   — pre-built .otflab scenario files
 devices/
   registry.json              — custom device types (label + Docker image override)
   icons/                     — SVG icons displayed in the palette
@@ -237,7 +237,7 @@ Install packs via **Toolbar → Packs → Install Pack** (Author mode). Installe
 | — | Delete Scenario button with confirmation | ✅ Complete |
 | 7 | FUXA HMI embed + PLC → HMI Modbus wiring | ✅ Complete |
 | 8 | Author / Student mode split + locked scenario distribution | ✅ Complete |
-| 9 | Community scenario pack format (.icspack ZIP — Pack Manager, custom device types, bundled Suricata/Zeek rules) | ✅ Complete |
+| 9 | Community scenario pack format (.otfpack ZIP — Pack Manager, custom device types, bundled Suricata/Zeek rules) | ✅ Complete |
 | 10 | Conpot legacy device emulation (Siemens S7, IEC 104) | ✅ Complete |
 | 11 | Physical process simulation (water tank, pipeline, generator dynamics) | ✅ Complete |
 | 12 | Attack infrastructure — company website (Meridian Process Controls), DNS server, Kali noVNC desktop | ✅ Complete |

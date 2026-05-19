@@ -33,7 +33,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { TutorialStep } from '@ics-sim/schema'
+import type { TutorialStep } from '@otforge/schema'
 
 // ── Props ──────────────────────────────────────────────────────────────────────
 

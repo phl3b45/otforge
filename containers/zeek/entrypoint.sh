@@ -1,5 +1,5 @@
 #!/bin/bash
-# entrypoint.sh — Zeek network monitor startup for the ics-sim-zeek container.
+# entrypoint.sh — Zeek network monitor startup for the otforge-zeek container.
 #
 # Reads script configuration injected by compose-generator.ts and starts Zeek
 # in passive analysis mode on the specified interface.

@@ -27,7 +27,7 @@
  * @param onLayerChange - Callback when the user clicks a different tab.
  */
 
-import type { NetworkZone, ICSLabScenario } from '@ics-sim/schema'
+import type { NetworkZone, OTForgeScenario } from '@otforge/schema'
 
 /**
  * The five Purdue zones that appear as navigable layer tabs.
@@ -119,7 +119,7 @@ function inferLayerFromCategory(category: string): PurdueLayerZone {
  * @param scenario - The active scenario, or null.
  * @returns A map from PurdueLayerZone to device count.
  */
-function countDevicesByLayer(scenario: ICSLabScenario | null): Record<PurdueLayerZone, number> {
+function countDevicesByLayer(scenario: OTForgeScenario | null): Record<PurdueLayerZone, number> {
   const counts: Record<PurdueLayerZone, number> = {
     ot: 0,
     control: 0,
@@ -149,7 +149,7 @@ function countDevicesByLayer(scenario: ICSLabScenario | null): Record<PurdueLaye
 
 interface LayerTabBarProps {
   activeLayer: NetworkZone
-  scenario: ICSLabScenario | null
+  scenario: OTForgeScenario | null
   onLayerChange: (layer: NetworkZone) => void
 }
 
