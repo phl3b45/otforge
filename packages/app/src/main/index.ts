@@ -648,13 +648,16 @@ function registerIPCHandlers(): void {
         targetPath = result.filePath
       }
 
-      // Locked scenarios omit visual and security layers (student distribution format)
+      // Locked scenarios omit the visual layer (node positions) so students cannot
+      // reverse-engineer the full topology. The security layer is replaced with an
+      // empty stub so the file passes schema validation on import — the actual
+      // firewall rules and IDS config are intentionally hidden from students.
       const exportData = options.locked
         ? {
             ...scenario,
             meta: { ...scenario.meta, locked: true },
-            visual: undefined,
-            security: undefined
+            visual: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+            security: { firewallRules: [], idsConfig: { enabled: false, alerts: [] } }
           }
         : scenario
 

@@ -902,6 +902,10 @@ export default function App() {
       if (result.scenario.meta.tutorialSteps?.length) {
         setShowTutorial(true)
       }
+    } else if (result.error && result.error !== 'Import cancelled') {
+      // Surface validation and parse errors — without this the user sees a blank
+      // screen with no feedback when a .otflab file fails schema validation.
+      window.alert(`Could not open scenario:\n\n${result.error}`)
     }
   }, [])
 

