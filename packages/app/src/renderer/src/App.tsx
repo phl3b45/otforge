@@ -169,8 +169,6 @@ function LaunchScreen({
  * @param showMonitor        - Whether the monitor panel drawer is currently open.
  * @param onImport           - Opens the file picker.
  * @param onNew              - Clears the canvas for a new scenario.
- * @param onStart            - Starts the simulation.
- * @param onStop             - Stops the simulation.
  * @param onHome             - Returns to the launch screen (disabled while running).
  * @param onMonitorToggle    - Toggles the Grafana+Loki monitor panel open/closed.
  * @param onSettingsOpen     - Opens the Network Settings modal.
@@ -187,7 +185,6 @@ function LaunchScreen({
 function Toolbar({
   scenario,
   simStatus,
-  docker,
   showGrid,
   showMonitor,
   appMode,
@@ -195,8 +192,6 @@ function Toolbar({
   hasTutorial,
   onImport,
   onNew,
-  onStart,
-  onStop,
   onHome,
   onGridToggle,
   onMonitorToggle,
@@ -211,7 +206,6 @@ function Toolbar({
 }: {
   scenario: OTForgeScenario | null
   simStatus: SimStatus
-  docker: DockerStatus | null
   /**
    * Whether the 25 × 25 snap grid is currently visible.
    * False is passed during simulation so the grid toggle disappears entirely;
@@ -226,8 +220,6 @@ function Toolbar({
   installedPackCount: number
   onImport: () => void
   onNew: () => void
-  onStart: () => void
-  onStop: () => void
   onHome: () => void
   /** Toggles the snap grid on/off. */
   onGridToggle: () => void
@@ -269,14 +261,6 @@ function Toolbar({
   const isStarting = simStatus === 'starting'
   const isRunning = simStatus === 'running'
   const isStopping = simStatus === 'stopping'
-  // showStop controls which button variant appears in the toolbar right section
-  const showStop = isRunning || isStarting
-  const canStart = !!docker?.available && !!scenario && deviceCount > 0 && isIdle
-  const startTitle = !docker?.available
-    ? 'Docker is not running'
-    : deviceCount === 0
-      ? 'Add at least one device'
-      : ''
   // Monitor button is only meaningful when the simulation is running
   const canMonitor = isRunning
   // Settings button is always available (network config applies to the next simulation start)
@@ -494,22 +478,6 @@ function Toolbar({
               {hasAttackMachine ? '⚔ Attack Ready' : '+ Attack Machine'}
             </button>
           )
-        )}
-
-        {/* Stop button shown while running/starting; Run button shown while idle/stopping */}
-        {showStop ? (
-          <button className="btn btn-sm btn-danger" onClick={onStop} disabled={isStopping}>
-            {isStopping ? 'Stopping…' : 'Stop Simulation'}
-          </button>
-        ) : (
-          <button
-            className="btn btn-sm btn-run"
-            onClick={onStart}
-            disabled={!canStart}
-            title={startTitle}
-          >
-            {isStarting ? 'Starting…' : 'Run Simulation'}
-          </button>
         )}
       </div>
     </header>
@@ -1403,6 +1371,23 @@ export default function App() {
     setAttackTerminalDevice(null)
   }, [])
 
+  // ── Simulation control state (used in sim-layer-row Run/Stop button) ──────────
+  // These mirror the lifecycle booleans inside Toolbar but live in App so the
+  // Run/Stop button can be rendered in the sim-layer-row (alongside LayerTabBar)
+  // rather than inside the toolbar ribbon.
+  const simIsIdle = simStatus === 'idle'
+  const simIsStarting = simStatus === 'starting'
+  const simIsRunning = simStatus === 'running'
+  const simIsStopping = simStatus === 'stopping'
+  const simShowStop = simIsRunning || simIsStarting
+  const simDeviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
+  const simCanStart = !!docker?.available && !!scenario && simDeviceCount > 0 && simIsIdle
+  const simStartTitle = !docker?.available
+    ? 'Docker is not running'
+    : simDeviceCount === 0
+      ? 'Add at least one device'
+      : ''
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (view === 'launch') {
@@ -1416,15 +1401,12 @@ export default function App() {
       <Toolbar
         scenario={scenario}
         simStatus={simStatus}
-        docker={docker}
         showGrid={effectiveShowGrid}
         showMonitor={showMonitor}
         appMode={appMode}
         installedPackCount={installedPacks.length}
         onImport={handleImport}
         onNew={handleNew}
-        onStart={handleStart}
-        onStop={handleStop}
         onHome={handleHome}
         onGridToggle={handleGridToggle}
         onMonitorToggle={handleMonitorToggle}
@@ -1453,8 +1435,36 @@ export default function App() {
           </button>
         </div>
       )}
-      {/* Purdue model layer tabs — sit between toolbar and the 3-column workspace */}
-      <LayerTabBar activeLayer={activeLayer} scenario={scenario} onLayerChange={setActiveLayer} />
+      {/*
+       * Simulation layer row — Purdue model tabs + Run/Stop control on the same bar.
+       *
+       * The Run/Stop button lives here (not in the toolbar ribbon) so it is visually
+       * separated from editing tools and clearly associated with the layer navigation.
+       * It is intentionally larger than toolbar buttons to make it easy to find.
+       */}
+      <div className="sim-layer-row">
+        <LayerTabBar activeLayer={activeLayer} scenario={scenario} onLayerChange={setActiveLayer} />
+        <div className="sim-control-slot">
+          {simShowStop ? (
+            <button
+              className="btn btn-sim btn-danger"
+              onClick={handleStop}
+              disabled={simIsStopping}
+            >
+              {simIsStopping ? 'Stopping…' : 'Stop Simulation'}
+            </button>
+          ) : (
+            <button
+              className="btn btn-sim btn-run"
+              onClick={handleStart}
+              disabled={!simCanStart}
+              title={simStartTitle}
+            >
+              {simIsStarting ? 'Starting…' : 'Run Simulation'}
+            </button>
+          )}
+        </div>
+      </div>
       {/* 3-column workspace: (palette | mission) | canvas | properties */}
       <div className="workspace">
         {/*

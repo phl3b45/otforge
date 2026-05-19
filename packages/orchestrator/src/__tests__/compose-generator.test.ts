@@ -396,8 +396,13 @@ describe('attack-machine device', () => {
       ]
     )
     const compose = gen(scenario)
-    // dns: field should be an array containing the dns-server's IP
-    expect((compose.services['kali-1'] as { dns?: string[] }).dns).toEqual(['10.200.50.5'])
+    // dns: field must include the scenario dns-server IP first, then 8.8.8.8 as a public
+    // fallback so Kali can resolve external names via attacker-net even when the scenario's
+    // DNS server is air-gapped (DNS_UPSTREAM="").
+    expect((compose.services['kali-1'] as { dns?: string[] }).dns).toEqual([
+      '10.200.50.5',
+      '8.8.8.8'
+    ])
   })
 
   it('does NOT set dns: when no dns-server device is in the scenario', () => {

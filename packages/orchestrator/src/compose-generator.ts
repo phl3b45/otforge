@@ -459,7 +459,10 @@ export function generateCompose(
       )
       if (dnsDevice) {
         const dnsIp = resolveDeviceIp(dnsDevice.ipAddress, scenario, effectiveZones)
-        services[serviceName].dns = [dnsIp]
+        // Include 8.8.8.8 as a fallback so Kali can resolve public names (and browse the
+        // internet) via attacker-net even when the scenario's DNS server is air-gapped
+        // (DNS_UPSTREAM=""). Without this fallback, Firefox and apt can't reach the internet.
+        services[serviceName].dns = [dnsIp, '8.8.8.8']
       }
     }
 
