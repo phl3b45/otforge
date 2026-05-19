@@ -137,9 +137,9 @@ describe('validateScenario', () => {
       expect(validateScenario(raw).valid).toBe(false)
     })
 
-    it('rejects an empty segments array — compose generator needs at least one subnet', () => {
+    it('accepts an empty segments array — compose generator falls back to ZONE_DEFAULTS', () => {
       const raw = { ...VALID_RAW, network: { segments: [] } }
-      expect(validateScenario(raw).errors).toContainEqual(expect.stringContaining('segments'))
+      expect(validateScenario(raw).valid).toBe(true)
     })
 
     it('rejects a non-array segments value', () => {

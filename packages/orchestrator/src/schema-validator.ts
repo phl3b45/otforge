@@ -65,10 +65,11 @@ export function validateScenario(raw: unknown): ValidationResult {
   }
 
   // ── network section ──────────────────────────────────────────────────────────
+  // segments may be empty — the compose generator falls back to ZONE_DEFAULTS
+  // when no explicit subnets are declared (common for new scenarios).
   if (!s.network) errors.push('Missing required field: network')
-  else if (!Array.isArray(s.network.segments) || s.network.segments.length === 0) {
-    // At least one subnet segment is required for the compose generator to create Docker networks
-    errors.push('network.segments must be a non-empty array')
+  else if (!Array.isArray(s.network.segments)) {
+    errors.push('network.segments must be an array')
   }
 
   // ── devices section ──────────────────────────────────────────────────────────
