@@ -153,6 +153,27 @@ describe('Docker networks', () => {
       expect(net.driver).toBe('bridge')
     }
   })
+
+  it('marks all Purdue zone networks as internal: true to block outbound internet', () => {
+    // internal: true tells Docker not to add an outbound NAT route.
+    // All OT/IT/enterprise/DMZ zones must be isolated — only Kali (attacker-net) is exempt.
+    const compose = gen(makeScenario([['s1', { category: 'sensor', ipAddress: '10.200.10.10' }]]))
+    const internalNets = [
+      'ot-net',
+      'control-net',
+      'plant-dmz-net',
+      'enterprise-net',
+      'internet-dmz-net'
+    ]
+    for (const name of internalNets) {
+      expect((compose.networks[name] as { internal?: boolean }).internal).toBe(true)
+    }
+  })
+
+  it('does NOT mark attacker-net as internal — Kali needs outbound internet access', () => {
+    const compose = gen(makeScenario([['s1', { category: 'sensor', ipAddress: '10.200.10.10' }]]))
+    expect((compose.networks['attacker-net'] as { internal?: boolean }).internal).toBeUndefined()
+  })
 })
 
 // ── Device service generation ─────────────────────────────────────────────────
@@ -308,17 +329,27 @@ describe('firewall device', () => {
 
 describe('attack-machine device', () => {
   /**
-   * The Kali Linux attack machine must be isolated on attacker-net ONLY.
-   * It must not reach OT, Control Center, Plant DMZ, Enterprise, or Internet DMZ
-   * directly — the intent is that students must pivot through vulnerabilities
-   * to reach inner zones, not simply connect to them by default.
+   * Kali Linux is dual-homed: attacker-net (primary — has outbound internet access
+   * because no internal: true) and internet-dmz-net (second leg — gives Kali direct
+   * L2 adjacency to the web server and DNS server in the Internet DMZ zone).
+   * This lets students run curl/nmap/exploits against scenario targets without
+   * needing internet access on the target hosts, which are all on internal: true networks.
    */
   const attackCompose = () =>
     gen(makeScenario([['kali-1', { category: 'attack-machine', ipAddress: '10.200.60.10' }]]))
 
-  it('attaches ONLY to attacker-net — never to any Purdue zone network', () => {
+  it('attaches to attacker-net (primary) and internet-dmz-net (target reach)', () => {
     const nets = Object.keys(attackCompose().services['kali-1'].networks)
-    expect(nets).toEqual(['attacker-net'])
+    expect(nets).toContain('attacker-net')
+    expect(nets).toContain('internet-dmz-net')
+  })
+
+  it('does NOT attach to OT, Control, Plant-DMZ, or Enterprise networks', () => {
+    const nets = Object.keys(attackCompose().services['kali-1'].networks)
+    expect(nets).not.toContain('ot-net')
+    expect(nets).not.toContain('control-net')
+    expect(nets).not.toContain('plant-dmz-net')
+    expect(nets).not.toContain('enterprise-net')
   })
 
   it('grants NET_ADMIN and NET_RAW for nmap raw scans and ARP operations', () => {
@@ -330,6 +361,11 @@ describe('attack-machine device', () => {
     expect(attackCompose().services['kali-1'].networks['attacker-net'].ipv4_address).toBe(
       '10.200.60.10'
     )
+  })
+
+  it('assigns .250 on internet-dmz-net (reserved system-service slot for Kali)', () => {
+    const ip = attackCompose().services['kali-1'].networks['internet-dmz-net'].ipv4_address
+    expect(ip).toBe('10.200.50.250')
   })
 
   it('publishes noVNC port 6080 on deterministic host port 6900 for the first attack machine', () => {
@@ -346,6 +382,27 @@ describe('attack-machine device', () => {
     )
     expect(compose.services['kali-1'].ports).toContain('6900:6080')
     expect(compose.services['kali-2'].ports).toContain('6901:6080')
+  })
+
+  it('sets dns: to the dns-server device IP when one is present in the scenario', () => {
+    const scenario = makeScenario(
+      [
+        ['kali-1', { category: 'attack-machine', ipAddress: '10.200.60.10' }],
+        ['dns-1', { category: 'dns-server', ipAddress: '10.200.50.5' }]
+      ],
+      [
+        { zone: 'attacker', subnet: '10.200.60.0/24', gateway: '10.200.60.1' },
+        { zone: 'internet-dmz', subnet: '10.200.50.0/24', gateway: '10.200.50.1' }
+      ]
+    )
+    const compose = gen(scenario)
+    // dns: field should be an array containing the dns-server's IP
+    expect((compose.services['kali-1'] as { dns?: string[] }).dns).toEqual(['10.200.50.5'])
+  })
+
+  it('does NOT set dns: when no dns-server device is in the scenario', () => {
+    const compose = attackCompose()
+    expect((compose.services['kali-1'] as { dns?: string[] }).dns).toBeUndefined()
   })
 })
 

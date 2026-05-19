@@ -170,6 +170,11 @@ interface ComposeService {
    * Without adequate shm, the Chromium instance inside KasmVNC crashes on startup.
    */
   shm_size?: string
+  /**
+   * DNS resolver override — set on the attack machine to point at the scenario's
+   * dns-server device so exercise hostnames resolve inside the simulation.
+   */
+  dns?: string[]
   deploy: { resources: { limits: { memory: string; cpus: string } } }
 }
 
@@ -177,6 +182,14 @@ interface ComposeService {
 interface ComposeNetwork {
   driver: string
   driver_opts?: Record<string, string>
+  /**
+   * When true, Docker creates an isolated bridge with no outbound NAT.
+   * All Purdue Model zones except attacker-net set this to enforce that
+   * OT/IT/enterprise/DMZ devices cannot reach the public internet.
+   * attacker-net omits this flag so Kali retains outbound internet access
+   * for tool updates, package installs, and student browsing exercises.
+   */
+  internal?: boolean
   ipam: { driver: string; config: Array<{ subnet: string; gateway: string }> }
 }
 
@@ -234,6 +247,9 @@ export function generateCompose(
     segmentByZone[seg.zone] = { subnet: seg.subnet, gateway: seg.gateway }
     networks[netName] = {
       driver: 'bridge',
+      // Isolate every zone from outbound internet except attacker-net.
+      // Kali (attacker-net) is the only host that should reach the public internet.
+      ...(seg.zone !== 'attacker' && { internal: true }),
       ipam: {
         driver: 'default',
         config: [{ subnet: seg.subnet, gateway: seg.gateway }]
@@ -257,6 +273,8 @@ export function generateCompose(
       const netName = `${zone}-net`
       networks[netName] = {
         driver: 'bridge',
+        // Same isolation policy as the segment loop above.
+        ...(zone !== 'attacker' && { internal: true }),
         ipam: {
           driver: 'default',
           config: [{ subnet: effectiveZones[zone].subnet, gateway: effectiveZones[zone].gateway }]
@@ -293,10 +311,11 @@ export function generateCompose(
   // Reserved ranges per network:
   //   .1        — bridge gateway (Docker)
   //   .240–.249 — system services (influxdb, loki, grafana, fuxa, promtail)
+  //   .250      — attack machine's second leg on internet-dmz-net
   //   .252      — zeek
   //   .253      — suricata
   //   .254      — firewall
-  const reservedHosts = new Set([1, 240, 241, 242, 243, 244, 252, 253, 254])
+  const reservedHosts = new Set([1, 240, 241, 242, 243, 244, 250, 252, 253, 254])
   const usedIpsPerNet = new Map<string, Set<number>>([
     ['ot-net', new Set(reservedHosts)],
     ['control-net', new Set(reservedHosts)],
@@ -417,13 +436,31 @@ export function generateCompose(
     // The same port index ordering is reproduced in main/index.ts → activeAttackPorts map.
     if (device.category === 'attack-machine') {
       const webPort = ATTACK_NOVNC_PORT_BASE + attackPortIndex
+      // Kali is dual-homed:
+      //   attacker-net   — primary interface; no internal: true so Docker NATs outbound
+      //                    traffic through the host, giving Kali internet access.
+      //   internet-dmz-net — second leg giving direct L2 adjacency to the scenario's
+      //                    web server and DNS server. .250 is reserved for this purpose
+      //                    (see reservedHosts above).
+      const internetDmzBase = effectiveZones['internet-dmz'].subnet.replace('.0/24', '')
       services[serviceName].networks = {
-        'attacker-net': { ipv4_address: device.ipAddress }
+        'attacker-net': { ipv4_address: device.ipAddress },
+        'internet-dmz-net': { ipv4_address: `${internetDmzBase}.250` }
       }
       services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
       // Port 6080: noVNC WebSocket bridge served by our custom otforge-attack-base image
       services[serviceName].ports = [`${webPort}:6080`]
       attackPortIndex++
+      // Point Kali's resolver at the scenario's dns-server so exercise hostnames
+      // (e.g., meridian-process.com) resolve inside the simulation without needing
+      // the public internet.
+      const dnsDevice = Object.values(scenario.devices.devices).find(
+        d => d.category === 'dns-server'
+      )
+      if (dnsDevice) {
+        const dnsIp = resolveDeviceIp(dnsDevice.ipAddress, scenario, effectiveZones)
+        services[serviceName].dns = [dnsIp]
+      }
     }
   }
 
