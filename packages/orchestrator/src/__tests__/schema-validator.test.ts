@@ -289,6 +289,6 @@ describe('toProjectName', () => {
   it('handles a name consisting entirely of special characters', () => {
     // Should produce just the prefix with nothing after it — or a prefix-only result
     const result = toProjectName('!!! ???')
-    expect(result).toMatch(/^ics-sim/)
+    expect(result).toMatch(/^otforge/)
   })
 })
