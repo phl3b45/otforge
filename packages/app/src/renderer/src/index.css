@@ -2760,20 +2760,49 @@ code.prop-value {
   color: #fff;
 }
 
-/* "+ Attack Machine" — idle, no machine configured yet */
-.btn-attack-add {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
+/*
+ * Fixed-position variant — bottom-right corner of the viewport.
+ * Rendered directly in the App shell (not inside the toolbar) so it sits
+ * over the canvas without disrupting the toolbar flow.
+ * z-index 120 keeps it above the workspace (z 100) but below modals (200+).
+ */
+.btn-delete-scenario-fixed {
+  position: fixed;
+  bottom: 32px;
+  right: 20px;
+  z-index: 120;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
-.btn-attack-add:hover:not(:disabled) {
-  border-color: var(--accent-red);
+/*
+ * Attack Machine button — three visual states:
+ *
+ *  .btn-attack-add    — sim idle, no machine yet. Red outline matching
+ *                       Delete Scenario so offensive capability reads at the
+ *                       same visual weight as other destructive actions.
+ *
+ *  .btn-attack-active — sim idle, machine IS in the scenario. Same red outline;
+ *                       pointer-events: none avoids disabled="" which would let
+ *                       the browser auto-dim the color.
+ *
+ *  .btn-attack-launch — sim running. Solid green — signals the machine is live
+ *                       and clickable. Distinct from the red idle state so the
+ *                       color change communicates the mode shift clearly.
+ */
+
+/* "+ Attack Machine" — idle, no machine yet. Red outline like Delete Scenario. */
+.btn-attack-add {
+  background: transparent;
+  border: 1px solid var(--accent-red);
   color: var(--accent-red);
 }
 
-/* "⚔ Attack Ready" — idle, machine is in the scenario.
- * Not using disabled="" so the browser does not auto-dim the color. */
+.btn-attack-add:hover:not(:disabled) {
+  background: var(--accent-red);
+  color: #fff;
+}
+
+/* "⚔ Attack Ready" — idle, machine is configured. Same red as btn-attack-add. */
 .btn-attack-active {
   background: transparent;
   border: 1px solid var(--accent-red);
@@ -2781,17 +2810,16 @@ code.prop-value {
   pointer-events: none;
 }
 
-/* "⚔ Attack Machine" — simulation is running; click opens the noVNC window.
- * Intentionally identical to .btn-danger so it reads at the same visual weight
- * as Stop Simulation — both are irreversible live-simulation actions. */
+/* "⚔ Attack Machine" — simulation running; green signals active + launchable. */
 .btn-attack-launch {
   background: transparent;
-  border: 1px solid var(--accent-red);
-  color: var(--accent-red);
+  border: 1px solid #3fb950;
+  color: #3fb950;
 }
 
 .btn-attack-launch:hover:not(:disabled) {
-  background: rgba(248, 81, 73, 0.1);
+  background: #3fb950;
+  color: #0d1117;
 }
 
 /* ── Network Settings modal ───────────────────────────────────────────────────

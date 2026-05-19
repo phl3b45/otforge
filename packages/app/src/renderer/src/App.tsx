@@ -176,7 +176,6 @@ function LaunchScreen({
  * @param onHome             - Returns to the launch screen (disabled while running).
  * @param onMonitorToggle    - Toggles the Grafana+Loki monitor panel open/closed.
  * @param onSettingsOpen     - Opens the Network Settings modal.
- * @param onDelete           - Clears all devices and resets the scenario after confirmation.
  * @param onAttackMachineAdd - Adds an attack machine device to the current scenario.
  * @param onAttackMachineLaunch - Opens the attack machine OS window.
  * @param onHmiOpen          - Opens the FUXA HMI in a separate OS window.
@@ -198,7 +197,6 @@ function Toolbar({
   hasTutorial,
   onImport,
   onNew,
-  onDelete,
   onStart,
   onStop,
   onHome,
@@ -230,8 +228,6 @@ function Toolbar({
   installedPackCount: number
   onImport: () => void
   onNew: () => void
-  /** Clears all devices and resets the current scenario after a confirmation prompt. */
-  onDelete: () => void
   onStart: () => void
   onStop: () => void
   onHome: () => void
@@ -402,21 +398,6 @@ function Toolbar({
         )}
 
         {/*
-         * Delete scenario — only visible when idle with a scenario loaded in Author mode.
-         * Asks for confirmation before clearing all devices so accidental clicks
-         * don't lose unsaved work.
-         */}
-        {isIdle && scenario && appMode === 'author' && (
-          <button
-            className="btn btn-sm btn-ghost btn-delete-scenario"
-            onClick={onDelete}
-            title="Clear all devices and reset this scenario"
-          >
-            Delete Scenario
-          </button>
-        )}
-
-        {/*
          * Grid toggle — only shown in Author mode while idle (students cannot edit,
          * so a snap grid has no utility for them). The grid is always 25 × 25 cells.
          */}
@@ -471,6 +452,15 @@ function Toolbar({
          * The attack machine is intentionally excluded from the Purdue layer canvas tabs.
          * Instructors add it here; students launch it from this button when the sim runs.
          */}
+        {/*
+         * Attack Machine button — three visual states:
+         *   idle (no machine)  → red outline "+ Attack Machine" (adds the device)
+         *   idle (has machine) → red outline "⚔ Attack Ready" (indicator, not clickable)
+         *   running            → solid green "⚔ Attack Machine" (launches noVNC window)
+         *
+         * Red idle state matches Delete Scenario so both destructive/offensive tools
+         * share the same visual weight. Green running state signals "active and ready."
+         */}
         {isRunning && hasAttackMachine && firstAttackNodeId ? (
           <button
             className="btn btn-sm btn-attack-launch"
@@ -484,9 +474,6 @@ function Toolbar({
             <button
               className={`btn btn-sm ${hasAttackMachine ? 'btn-attack-active' : 'btn-attack-add'}`}
               onClick={hasAttackMachine ? undefined : onAttackMachineAdd}
-              // Only disable during transitional states when there is no machine yet.
-              // When a machine IS present the button is an indicator (no click action);
-              // keeping it enabled prevents the browser from auto-dimming the red color.
               disabled={!hasAttackMachine && (isStarting || isStopping)}
               title={
                 hasAttackMachine
@@ -1439,7 +1426,6 @@ export default function App() {
         installedPackCount={installedPacks.length}
         onImport={handleImport}
         onNew={handleNew}
-        onDelete={handleDelete}
         onStart={handleStart}
         onStop={handleStop}
         onHome={handleHome}
@@ -1635,6 +1621,23 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/*
+       * Delete Scenario — fixed at the bottom-right corner of the viewport.
+       * Only shown in Author mode while the simulation is idle so it is never
+       * accidentally clicked during a live session. Using fixed positioning keeps
+       * it out of the toolbar flow and visually separates it from operational
+       * controls (Run / Stop) while keeping it discoverable.
+       */}
+      {simStatus === 'idle' && scenario && appMode === 'author' && (
+        <button
+          className="btn btn-sm btn-delete-scenario btn-delete-scenario-fixed"
+          onClick={handleDelete}
+          title="Clear all devices from this scenario and optionally delete the file from disk"
+        >
+          Delete Scenario
+        </button>
       )}
     </div>
   )

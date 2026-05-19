@@ -115,7 +115,9 @@ function settingsPath(): string {
  */
 function getScenariosLibraryDir(): string {
   if (is.dev) {
-    return pathJoin(process.cwd(), 'scenarios')
+    // app.getAppPath() returns <project>/packages/app in electron-vite dev mode.
+    // The bundled scenarios/ folder lives two levels up at the project root.
+    return pathJoin(app.getAppPath(), '..', '..', 'scenarios')
   }
   return pathJoin(app.getPath('documents'), 'ICS Simulator', 'Scenarios')
 }
