@@ -332,8 +332,9 @@ describe('attack-machine device', () => {
     )
   })
 
-  it('publishes KasmVNC port 3000 on deterministic host port 6900 for the first attack machine', () => {
-    expect(attackCompose().services['kali-1'].ports).toContain('6900:3000')
+  it('publishes noVNC port 6080 on deterministic host port 6900 for the first attack machine', () => {
+    // Phase 12: switched from linuxserver KasmVNC (:3000) to ics-sim-attack-base noVNC (:6080)
+    expect(attackCompose().services['kali-1'].ports).toContain('6900:6080')
   })
 
   it('assigns sequential host ports to multiple attack machines — 6900, 6901, etc.', () => {
@@ -343,8 +344,8 @@ describe('attack-machine device', () => {
         ['kali-2', { category: 'attack-machine', ipAddress: '10.200.60.11' }]
       ])
     )
-    expect(compose.services['kali-1'].ports).toContain('6900:3000')
-    expect(compose.services['kali-2'].ports).toContain('6901:3000')
+    expect(compose.services['kali-1'].ports).toContain('6900:6080')
+    expect(compose.services['kali-2'].ports).toContain('6901:6080')
   })
 })
 
