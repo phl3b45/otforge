@@ -869,15 +869,14 @@ function buildDeviceEnv(
       env.push(`PIPELINE_PUMP_MAX_LPM=${pu.pipelinePumpMaxLpm}`)
   }
 
-  // Phase 12: DNS server — inject domain and web server IP from scenario metadata.
-  // The container's Dockerfile already sets DNS_DOMAIN=meridian-process.com as the
-  // default; these overrides let advanced scenarios customize the zone at deploy time.
-  // WEB_SERVER_IP defaults to 203.0.113.10 in the container; only override when
-  // the scenario's internet-server device has a known static IP.
-  if (device.category === 'dns-server') {
-    // No-op: defaults in the container Dockerfile are correct for the tutorial scenario.
-    // Scenario authors who need a different domain/IP can add env overrides via the
-    // Properties Panel (stored as custom environment fields on the DeviceConfig).
+  // Phase 12: DNS server — inject domain and web server IP from the optional DnsConfig.
+  // The container Dockerfile already sets DNS_DOMAIN=meridian-process.com and
+  // WEB_SERVER_IP=203.0.113.10 as defaults; these overrides are only emitted when
+  // the scenario explicitly configures different values, keeping the Compose YAML clean.
+  if (device.dns) {
+    if (device.dns.domain) env.push(`DNS_DOMAIN=${device.dns.domain}`)
+    if (device.dns.webServerIp) env.push(`WEB_SERVER_IP=${device.dns.webServerIp}`)
+    if (device.dns.upstream) env.push(`DNS_UPSTREAM=${device.dns.upstream}`)
   }
 
   // PLC program pre-load (Phase 4):

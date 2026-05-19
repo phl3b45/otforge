@@ -2655,6 +2655,20 @@ code.prop-value {
   box-shadow: 0 0 0 1px var(--accent-teal);
 }
 
+/* Tutorial button — visible whenever the active scenario has tutorialSteps.
+ * Warm amber distinguishes it from operational buttons (teal = monitor, blue = HMI)
+ * and signals "educational guidance" to instructors and students alike. */
+.btn-tutorial {
+  background: rgba(210, 153, 34, 0.12);
+  border: 1px solid #d29922;
+  color: #d29922;
+}
+
+.btn-tutorial:hover {
+  background: rgba(210, 153, 34, 0.22);
+  color: #e3b341;
+}
+
 /* Open HMI button — visible while sim is running; uses accent-blue so it reads
  * as distinct from the teal Monitor button beside it. */
 .btn-hmi {
@@ -4074,4 +4088,346 @@ code.prop-value {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 340px;
+}
+
+/* ── TutorialPanel — floating step-by-step guided tutorial overlay ────────────
+ *
+ * The panel is absolutely positioned within the fixed viewport. It sits above
+ * the canvas workspace (z-index 150) but below full-screen modals (200+).
+ * The header serves as the drag handle; body and footer collapse on minimise.
+ *
+ * Color palette mirrors the dark industrial theme used across the application:
+ *   bg-panel      → #161b22  (card background)
+ *   accent-blue   → #1f6feb  (progress fill, primary button)
+ *   accent-green  → #2ea043  (success check, copy-done feedback)
+ *   border        → #30363d
+ */
+
+.tutorial-panel {
+  position: fixed;
+  z-index: 150;
+  width: 360px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  color: #c9d1d9;
+  /* Smooth height transition when minimising */
+  transition: box-shadow 0.15s;
+  /* Prevent text selection while dragging */
+  user-select: none;
+}
+
+.tutorial-panel--minimized {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Header (drag handle) ─────────────────────────────────────────────────── */
+
+.tutorial-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #0d1117;
+  border-bottom: 1px solid #30363d;
+  border-radius: 8px 8px 0 0;
+  cursor: grab;
+  min-height: 40px;
+}
+
+.tutorial-panel--minimized .tutorial-header {
+  border-bottom: none;
+  border-radius: 8px;
+}
+
+.tutorial-header:active {
+  cursor: grabbing;
+}
+
+.tutorial-header-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.tutorial-header-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: #e6edf3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tutorial-header-counter {
+  font-size: 0.75rem;
+  color: #8b949e;
+  flex-shrink: 0;
+  padding: 0 4px;
+}
+
+.tutorial-btn-icon {
+  background: none;
+  border: none;
+  color: #8b949e;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  transition:
+    color 0.1s,
+    background 0.1s;
+  flex-shrink: 0;
+}
+
+.tutorial-btn-icon:hover {
+  color: #e6edf3;
+  background: #21262d;
+}
+
+/* ── Progress bar ─────────────────────────────────────────────────────────── */
+
+.tutorial-progress-bar {
+  height: 3px;
+  background: #21262d;
+  flex-shrink: 0;
+}
+
+.tutorial-progress-fill {
+  height: 100%;
+  background: #1f6feb;
+  border-radius: 0 2px 2px 0;
+  transition: width 0.3s ease;
+}
+
+/* ── Body ─────────────────────────────────────────────────────────────────── */
+
+.tutorial-body {
+  padding: 14px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  max-height: 340px;
+  /* Custom scrollbar to match dark theme */
+  scrollbar-width: thin;
+  scrollbar-color: #30363d transparent;
+}
+
+.tutorial-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.tutorial-body::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 2px;
+}
+
+.tutorial-content {
+  line-height: 1.55;
+  user-select: text; /* Allow text selection inside the body */
+}
+
+.tutorial-para {
+  margin: 0 0 8px;
+  color: #c9d1d9;
+}
+
+.tutorial-para:last-child {
+  margin-bottom: 0;
+}
+
+.tutorial-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  color: #c9d1d9;
+}
+
+.tutorial-list li {
+  margin-bottom: 4px;
+}
+
+.tutorial-inline-code {
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 0.82em;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: #79c0ff;
+}
+
+/* ── Command block ────────────────────────────────────────────────────────── */
+
+.tutorial-command-block {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tutorial-command-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8b949e;
+  padding: 5px 10px 0;
+}
+
+.tutorial-command-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 4px 8px 8px;
+  gap: 8px;
+}
+
+.tutorial-command-pre {
+  flex: 1;
+  margin: 0;
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 0.82rem;
+  color: #e6edf3;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+  user-select: text;
+}
+
+.tutorial-copy-btn {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  border-radius: 4px;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+  margin-top: 2px;
+}
+
+.tutorial-copy-btn:hover {
+  background: #30363d;
+  color: #e6edf3;
+}
+
+.tutorial-copy-btn--copied {
+  background: #1a3a26;
+  border-color: #2ea043;
+  color: #2ea043;
+}
+
+/* ── Success check hint ───────────────────────────────────────────────────── */
+
+.tutorial-success-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  background: #1a3a26;
+  border: 1px solid #2ea043;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  color: #56d364;
+  line-height: 1.4;
+  user-select: text;
+}
+
+.tutorial-success-icon {
+  font-size: 0.9rem;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+/* ── Navigation footer ────────────────────────────────────────────────────── */
+
+.tutorial-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-top: 1px solid #21262d;
+  gap: 8px;
+}
+
+.tutorial-nav-btn {
+  padding: 5px 14px;
+  font-size: 0.8rem;
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  border-radius: 5px;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+  white-space: nowrap;
+}
+
+.tutorial-nav-btn:hover:not(:disabled) {
+  background: #30363d;
+  color: #e6edf3;
+}
+
+.tutorial-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.tutorial-nav-btn--primary {
+  background: #1f6feb;
+  border-color: #1f6feb;
+  color: #fff;
+  font-weight: 600;
+}
+
+.tutorial-nav-btn--primary:hover:not(:disabled) {
+  background: #388bfd;
+  border-color: #388bfd;
+  color: #fff;
+}
+
+/* ── Step dots ────────────────────────────────────────────────────────────── */
+
+.tutorial-dots {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.tutorial-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #30363d;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    transform 0.15s;
+  flex-shrink: 0;
+}
+
+.tutorial-dot:hover {
+  background: #58a6ff;
+  transform: scale(1.2);
+}
+
+.tutorial-dot--done {
+  background: #238636;
+}
+
+.tutorial-dot--active {
+  background: #1f6feb;
+  transform: scale(1.3);
 }

@@ -241,6 +241,27 @@ export interface ProcessUnitConfig {
   pipelinePumpMaxLpm?: number
 }
 
+/**
+ * Runtime configuration for an ics-sim-dns container (Phase 12).
+ *
+ * The container runs dnsmasq serving an authoritative zone for a fictitious
+ * industrial company. Students start here with OSINT and then pivot to the
+ * OT network using IPs/credentials they discover in the web server HTML source.
+ *
+ * All fields are optional — the container Dockerfile sets safe defaults:
+ *   DNS_DOMAIN      = meridian-process.com
+ *   WEB_SERVER_IP   = 203.0.113.10   (RFC 5737 documentation prefix)
+ *   DNS_UPSTREAM    = 8.8.8.8
+ */
+export interface DnsConfig {
+  /** Authoritative domain served by this dnsmasq instance (default: meridian-process.com). */
+  domain?: string
+  /** A-record IP injected for www.<domain> — should match the internet-server IP (default: 203.0.113.10). */
+  webServerIp?: string
+  /** Upstream recursive resolver for non-authoritative queries (default: 8.8.8.8). */
+  upstream?: string
+}
+
 export interface DeviceConfig {
   nodeId: string // matches CanvasNode.id
   category: DeviceCategory
@@ -252,6 +273,7 @@ export interface DeviceConfig {
   s7?: S7Config // Siemens S7comm config (legacy-plc devices, Phase 10)
   iec104?: Iec104Config // IEC 60870-5-104 config (iec104-rtu devices, Phase 10)
   processUnit?: ProcessUnitConfig // Physics process simulation config (Phase 11)
+  dns?: DnsConfig // DNS server config (dns-server devices, Phase 12)
   plcProgram?: PLCProgramConfig
   dockerImage?: string // override default image for this device type
 }
@@ -321,6 +343,33 @@ export interface ResourceEstimate {
   containerCount: number
 }
 
+// ── Tutorial system ────────────────────────────────────────────────────────────
+
+/**
+ * A single step in a guided tutorial scenario (Phase 13 — Tutorial 01).
+ *
+ * Tutorial steps are embedded in the scenario's `meta.tutorialSteps` array and
+ * displayed in the TutorialPanel floating overlay in both Author and Student modes.
+ *
+ * The `command` field, if present, is rendered in a copy-to-clipboard code block
+ * so students can paste it directly into the attack terminal without typos.
+ *
+ * The `successCheck` field is a plain-English hint about what the student should
+ * observe to confirm the step succeeded (not machine-evaluated — educational UX).
+ */
+export interface TutorialStep {
+  /** Unique identifier for this step — used as React key and progress anchor. */
+  id: string
+  /** Short title shown in the step header (e.g. "Step 1 — Discover the Target"). */
+  title: string
+  /** Full instructional body in Markdown (rendered in the panel). */
+  body: string
+  /** Optional shell command shown in a copy-to-clipboard code block. */
+  command?: string
+  /** Optional plain-English hint describing what success looks like. */
+  successCheck?: string
+}
+
 // ── Root .icslab document ──────────────────────────────────────────────────────
 
 export interface ICSLabMeta {
@@ -335,6 +384,12 @@ export interface ICSLabMeta {
   locked: boolean
   brief: string // Markdown — mission objectives shown in Student mode
   requirements: ResourceEstimate
+  /**
+   * Guided tutorial steps embedded in the scenario.
+   * When present, the TutorialPanel floating overlay is shown automatically
+   * on scenario load, walking the student through the attack chain step by step.
+   */
+  tutorialSteps?: TutorialStep[]
 }
 
 export interface ICSLabScenario {

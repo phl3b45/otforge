@@ -50,6 +50,7 @@ import { MetadataModal } from './metadata/MetadataModal'
 import { ExportModal } from './export/ExportModal'
 import { MissionPanel } from './mission/MissionPanel'
 import { PackManagerModal } from './packs/PackManagerModal'
+import { TutorialPanel } from './tutorial/TutorialPanel'
 import './index.css'
 
 /**
@@ -175,6 +176,8 @@ function LaunchScreen({
  * @param onExportOpen       - Opens the Export dialog (Author mode only).
  * @param onPacksOpen        - Opens the Pack Manager (Author mode only).
  * @param installedPackCount - Number of installed packs shown as a badge on the Packs button.
+ * @param hasTutorial        - True when the active scenario has tutorialSteps; shows Tutorial button.
+ * @param onTutorialOpen     - Reopens the TutorialPanel overlay (always available when hasTutorial).
  */
 function Toolbar({
   scenario,
@@ -184,6 +187,7 @@ function Toolbar({
   showMonitor,
   appMode,
   installedPackCount,
+  hasTutorial,
   onImport,
   onNew,
   onDelete,
@@ -198,7 +202,8 @@ function Toolbar({
   onHmiOpen,
   onMetadataOpen,
   onExportOpen,
-  onPacksOpen
+  onPacksOpen,
+  onTutorialOpen
 }: {
   scenario: ICSLabScenario | null
   simStatus: SimStatus
@@ -249,6 +254,10 @@ function Toolbar({
   onExportOpen: () => void
   /** Opens the Pack Manager. Always available in Author mode. */
   onPacksOpen: () => void
+  /** True when the active scenario includes tutorialSteps — shows the Tutorial button. */
+  hasTutorial: boolean
+  /** Reopens the TutorialPanel floating overlay. Available whenever hasTutorial is true. */
+  onTutorialOpen: () => void
 }) {
   const scenarioName = scenario?.meta.name ?? 'Untitled Scenario'
   const deviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
@@ -358,6 +367,22 @@ function Toolbar({
           >
             Packs
             {installedPackCount > 0 && <span className="packs-badge">{installedPackCount}</span>}
+          </button>
+        )}
+
+        {/*
+         * Tutorial button — shown whenever the active scenario has tutorial steps,
+         * in both Author and Student modes. Reopens the TutorialPanel overlay after
+         * the student has minimised or closed it. The 🎓 icon makes it recognisable
+         * without reading the label.
+         */}
+        {hasTutorial && (
+          <button
+            className="btn btn-sm btn-tutorial"
+            onClick={onTutorialOpen}
+            title="Open the step-by-step tutorial guide"
+          >
+            🎓 Tutorial
           </button>
         )}
 
@@ -706,6 +731,15 @@ export default function App() {
   const [showPackManager, setShowPackManager] = useState<boolean>(false)
 
   /**
+   * Whether the TutorialPanel guided overlay is visible.
+   * Auto-shown when a scenario containing tutorialSteps is loaded or opened.
+   * The student can dismiss it at any time; it does not reappear on the same
+   * scenario unless the app is relaunched (no persistence intentional — always
+   * available via a "Tutorial" button in the toolbar or on scenario open).
+   */
+  const [showTutorial, setShowTutorial] = useState<boolean>(false)
+
+  /**
    * All community scenario packs currently installed in <userData>/packs/.
    * Loaded on mount via pack:list IPC and refreshed after any install/uninstall.
    * Empty array on first launch.
@@ -775,6 +809,10 @@ export default function App() {
     if (result.scenario) {
       setScenario(result.scenario)
       setView('canvas')
+      // Auto-show the tutorial panel when the imported scenario has guided steps
+      if (result.scenario.meta.tutorialSteps?.length) {
+        setShowTutorial(true)
+      }
     }
   }, [])
 
@@ -1226,6 +1264,8 @@ export default function App() {
         onMetadataOpen={handleMetadataOpen}
         onExportOpen={handleExportOpen}
         onPacksOpen={handlePacksOpen}
+        hasTutorial={!!scenario?.meta.tutorialSteps?.length}
+        onTutorialOpen={() => setShowTutorial(true)}
       />
       {/*
        * Simulation error banner — shown when the most recent start attempt failed.
@@ -1346,6 +1386,17 @@ export default function App() {
           onOpenScenario={handlePackOpenScenario}
           onClose={handlePacksClose}
         />
+      )}
+
+      {/*
+       * Tutorial panel — floating guided overlay shown when the active scenario
+       * contains tutorialSteps. Rendered on top of all workspace content but below
+       * full-screen modals (PlcIde, AttackTerminal). The student can close it with
+       * × and re-open it via the "Tutorial" button that appears in the toolbar
+       * whenever the active scenario has tutorial steps.
+       */}
+      {showTutorial && scenario?.meta.tutorialSteps?.length && (
+        <TutorialPanel steps={scenario.meta.tutorialSteps} onClose={() => setShowTutorial(false)} />
       )}
     </div>
   )
