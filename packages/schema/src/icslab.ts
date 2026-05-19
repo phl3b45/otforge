@@ -276,6 +276,16 @@ export interface DeviceConfig {
   dns?: DnsConfig // DNS server config (dns-server devices, Phase 12)
   plcProgram?: PLCProgramConfig
   dockerImage?: string // override default image for this device type
+  /**
+   * Additional Purdue Model zone networks to attach this device to, beyond the
+   * zone determined by its ipAddress. Used to model intentional misconfigurations
+   * (e.g., an attack machine given direct OT access to simulate missing segmentation)
+   * or multi-homed devices (e.g., a jump host spanning enterprise and control zones).
+   *
+   * Each zone name maps to that zone's Docker bridge network; the compose generator
+   * auto-assigns a free IP in the .200-.239 host range of that subnet.
+   */
+  extraNetworks?: NetworkZone[]
 }
 
 export interface DeviceLayer {

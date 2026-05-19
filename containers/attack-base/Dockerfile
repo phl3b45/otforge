@@ -8,12 +8,17 @@ ARG DEBIAN_FRONTEND=noninteractive
 # tigervnc-standalone-server provides the VNC server on display :1 (port 5901).
 # novnc/websockify are NOT taken from apt here (Kali mirror reliability is poor
 # for these packages); they are installed from PyPI in Layer 7 instead.
+# firefox-esr: the only browser that starts reliably inside a rootless Xfce4/VNC
+# session without Snap or additional sandboxing config. Chromium requires
+# --no-sandbox when run as root, making it unsuitable for student lab use.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Desktop environment
     xfce4 xfce4-terminal xfce4-taskmanager \
     dbus-x11 x11-xserver-utils xdg-utils \
     # VNC server (WebSocket bridge comes from pip in Layer 7)
     tigervnc-standalone-server \
+    # Browser — available from the Xfce4 desktop for OSINT steps
+    firefox-esr \
     # Fonts needed for a usable Xfce session
     fonts-dejavu-core fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*

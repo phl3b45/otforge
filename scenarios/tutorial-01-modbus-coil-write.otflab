@@ -297,7 +297,7 @@
         "category": "internet-server",
         "ipAddress": "10.200.50.10",
         "protocols": ["none"],
-        "dockerImage": "ghcr.io/iburres/ics-sim-web-company:latest"
+        "dockerImage": "ghcr.io/iburres/otforge-web-company:latest"
       },
       "dns-1": {
         "nodeId": "dns-1",
@@ -306,14 +306,16 @@
         "protocols": ["none"],
         "dns": {
           "domain": "meridian-process.com",
-          "webServerIp": "10.200.50.10"
+          "webServerIp": "10.200.50.10",
+          "upstream": ""
         }
       },
       "attack-1": {
         "nodeId": "attack-1",
         "category": "attack-machine",
         "ipAddress": "10.200.60.10",
-        "protocols": ["none"]
+        "protocols": ["none"],
+        "extraNetworks": ["ot"]
       }
     }
   },

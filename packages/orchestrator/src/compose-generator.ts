@@ -462,6 +462,34 @@ export function generateCompose(
         services[serviceName].dns = [dnsIp]
       }
     }
+
+    // ── Extra network attachments (extraNetworks field) ────────────────────────
+    // Attaches this device to additional zone networks beyond the one determined
+    // by its ipAddress. Used to model intentional misconfigurations (e.g., an
+    // attack machine given direct OT access to demonstrate missing segmentation)
+    // or legitimately multi-homed devices (e.g., a jump host in two zones).
+    //
+    // IPs are auto-assigned in the .200–.239 host range via claimIp() to stay
+    // clear of both user devices (.10–.199) and infrastructure reservations
+    // (.240–.254). The auto-assigned range is non-overlapping with the device's
+    // primary IP (which is already claimed above).
+    if (device.extraNetworks) {
+      for (const extraZone of device.extraNetworks) {
+        const extraNetName = `${extraZone}-net`
+        // Skip if the device is already on this network (avoids duplicate attachment)
+        if (services[serviceName].networks[extraNetName]) continue
+        // Pick a free IP in the .200–.239 "extra network" host range
+        const extraBase = effectiveZones[extraZone].subnet.replace('.0/24', '')
+        let extraHost = 200
+        const usedSet = usedIpsPerNet.get(extraNetName) ?? new Set<number>()
+        while (usedSet.has(extraHost) && extraHost < 240) extraHost++
+        usedSet.add(extraHost)
+        usedIpsPerNet.set(extraNetName, usedSet)
+        services[serviceName].networks[extraNetName] = {
+          ipv4_address: `${extraBase}.${extraHost}`
+        }
+      }
+    }
   }
 
   // ── Fixed infrastructure services ─────────────────────────────────────────

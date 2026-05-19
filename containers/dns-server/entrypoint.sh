@@ -21,16 +21,16 @@ WEB_SERVER_IP="${WEB_SERVER_IP:-203.0.113.10}"
 MAIL_SERVER_IP="${MAIL_SERVER_IP:-${WEB_SERVER_IP}}"
 DNS_UPSTREAM="${DNS_UPSTREAM:-8.8.8.8}"
 
-echo "[ics-dns] ================================================"
-echo "[ics-dns] Domain:      ${DNS_DOMAIN}"
-echo "[ics-dns] Web server:  ${WEB_SERVER_IP}"
-echo "[ics-dns] Mail server: ${MAIL_SERVER_IP}"
+echo "[otforge-dns] ================================================"
+echo "[otforge-dns] Domain:      ${DNS_DOMAIN}"
+echo "[otforge-dns] Web server:  ${WEB_SERVER_IP}"
+echo "[otforge-dns] Mail server: ${MAIL_SERVER_IP}"
 if [ -n "${DNS_UPSTREAM}" ]; then
-    echo "[ics-dns] Upstream:    ${DNS_UPSTREAM}"
+    echo "[otforge-dns] Upstream:    ${DNS_UPSTREAM}"
 else
-    echo "[ics-dns] Upstream:    <none — air-gapped mode>"
+    echo "[otforge-dns] Upstream:    <none — air-gapped mode>"
 fi
-echo "[ics-dns] ================================================"
+echo "[otforge-dns] ================================================"
 echo ""
 
 # Write the zone configuration into /tmp (world-writable in Alpine containers)
@@ -72,13 +72,13 @@ if [ -n "${DNS_UPSTREAM}" ]; then
     echo "server=${DNS_UPSTREAM}" >> /tmp/dnsmasq.conf
 fi
 
-echo "[ics-dns] Zone records:"
+echo "[otforge-dns] Zone records:"
 grep "^address=" /tmp/dnsmasq.conf | while IFS= read -r line; do
-    echo "[ics-dns]   ${line}"
+    echo "[otforge-dns]   ${line}"
 done
 echo ""
-echo "[ics-dns] Listening on port 53 (UDP + TCP)..."
-echo "[ics-dns] Queries will appear below:"
+echo "[otforge-dns] Listening on port 53 (UDP + TCP)..."
+echo "[otforge-dns] Queries will appear below:"
 echo ""
 
 # --no-daemon  run in foreground so Docker captures stdout/stderr
