@@ -149,6 +149,7 @@ ics-simulator/
 │   │               ├── terminal/     # Attack terminal modal (KasmVNC)
 │   │               ├── monitor/      # Grafana + Loki monitor panel
 │   │               ├── settings/     # Network subnet settings modal
+│   │               ├── tutorial/     # TutorialPanel guided step-by-step overlay
 │   │               └── icons/        # SVG device icons
 │   ├── orchestrator/         # Docker Compose generator + DockerClient
 │   └── schema/               # Shared TypeScript types (ICSLabScenario, DeviceConfig…)
@@ -157,6 +158,8 @@ ics-simulator/
 │   ├── suricata/             # Suricata IPS with ICS rules
 │   ├── zeek/                 # Zeek network monitor
 │   └── firewall/             # nftables firewall
+├── scenarios/                # Bundled .icslab scenario files
+│   └── tutorial-01-modbus-coil-write.icslab   # Tutorial 01: Modbus Coil Write
 └── .github/
     └── workflows/            # CI: build, Docker image publish, CodeQL, secret scan
 ```
@@ -238,7 +241,8 @@ Install packs via **Toolbar → Packs → Install Pack** (Author mode). Installe
 | 10 | Conpot legacy device emulation (Siemens S7, IEC 104) | ✅ Complete |
 | 11 | Physical process simulation (water tank, pipeline, generator dynamics) | ✅ Complete |
 | 12 | Attack infrastructure — company website (Meridian Process Controls), DNS server, Kali noVNC desktop | ✅ Complete |
-| 13 | macOS + Linux packaging and distribution | 🔜 Planned |
+| 13 | Guided tutorial system — TutorialPanel overlay, Tutorial 01 (Modbus Coil Write), DnsConfig schema | ✅ Complete |
+| 14 | macOS + Linux packaging and distribution | 🔜 Planned |
 
 ---
 
