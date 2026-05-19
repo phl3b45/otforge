@@ -204,7 +204,7 @@ export function AttackTerminalModal({
   return (
     <div
       className="attack-modal-overlay"
-      onClick={e => {
+      onMouseDown={e => {
         // Close only when clicking the dim backdrop, not the panel itself
         if (e.target === e.currentTarget) onClose()
       }}

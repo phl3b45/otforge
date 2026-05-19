@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ExportModal.tsx — Scenario export dialog with Author / Student mode selection.
  *
  * Opened by the "Export" toolbar button (Author mode, idle only). Presents two
@@ -79,7 +79,7 @@ export function ExportModal({ scenario, onClose, onExportSuccess }: ExportModalP
   return (
     <div
       className="modal-overlay"
-      onClick={e => {
+      onMouseDown={e => {
         if (e.target === e.currentTarget) onClose()
       }}
     >

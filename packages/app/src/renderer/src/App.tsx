@@ -686,7 +686,7 @@ function PlcIdeModal({
   return (
     <div
       className="plc-modal-overlay"
-      onClick={e => {
+      onMouseDown={e => {
         // Only close when clicking the dim backdrop itself, not child elements
         if (e.target === e.currentTarget) onClose()
       }}

@@ -285,7 +285,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   return (
     <div
       className="settings-overlay"
-      onClick={e => {
+      onMouseDown={e => {
         // Close when clicking the dim backdrop; ignore clicks inside the modal
         if (e.target === e.currentTarget) onClose()
       }}

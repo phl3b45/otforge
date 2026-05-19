@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PackManagerModal.tsx — Community scenario pack installer and manager.
  *
  * Opened by the "Packs" toolbar button (Author mode only). Displays all installed
@@ -133,7 +133,7 @@ export function PackManagerModal({
   return (
     <div
       className="modal-overlay"
-      onClick={e => {
+      onMouseDown={e => {
         if (e.target === e.currentTarget) onClose()
       }}
     >

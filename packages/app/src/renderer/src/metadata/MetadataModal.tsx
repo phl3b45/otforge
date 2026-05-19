@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MetadataModal.tsx — Scenario metadata editor modal.
  *
  * Opened by the "Metadata" toolbar button (Author mode, idle only). Allows the
@@ -80,7 +80,7 @@ export function MetadataModal({ meta, onSave, onClose }: MetadataModalProps) {
   return (
     <div
       className="modal-overlay"
-      onClick={e => {
+      onMouseDown={e => {
         if (e.target === e.currentTarget) onClose()
       }}
     >

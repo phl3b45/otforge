@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PlcIdePanel.tsx — PLC program editor for IEC 61131-3 ST and Ladder Logic.
  *
  * Renders in two modes:
@@ -493,7 +493,7 @@ function RoutinePickerModal({
   return (
     <div
       className="modal-overlay routine-picker-overlay"
-      onClick={e => {
+      onMouseDown={e => {
         if (e.target === e.currentTarget) onClose()
       }}
     >
