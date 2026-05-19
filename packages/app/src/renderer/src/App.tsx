@@ -326,8 +326,8 @@ function Toolbar({
         </button>
 
         {/*
-         * Metadata — edit scenario name, description, author, sector, mission brief.
-         * Only visible to the instructor (Author mode) while idle.
+         * Scenario Builder — edit scenario name, description, author, sector, and
+         * mission brief. Only visible to the instructor (Author mode) while idle.
          */}
         {isIdle && scenario && appMode === 'author' && (
           <button
@@ -335,7 +335,7 @@ function Toolbar({
             onClick={onMetadataOpen}
             title="Edit scenario name, description, and mission brief"
           >
-            Metadata
+            Scenario Builder
           </button>
         )}
 

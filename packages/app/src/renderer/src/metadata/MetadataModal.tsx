@@ -89,7 +89,7 @@ export function MetadataModal({ meta, onSave, onClose }: MetadataModalProps) {
         <div className="modal-header">
           <div className="modal-title">
             <span className="modal-title-icon">✎</span>
-            Scenario Metadata
+            Scenario Builder
           </div>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             ×

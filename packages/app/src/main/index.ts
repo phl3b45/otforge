@@ -1014,9 +1014,12 @@ function registerIPCHandlers(): void {
     if (!port) {
       return { error: 'No noVNC port found — is the simulation running?' }
     }
-    // The linuxserver/kali-linux image serves KasmVNC at the root path on port 3000.
-    // No path suffix, no query params needed — KasmVNC auto-connects on page load.
-    return { url: `http://localhost:${port}/` }
+    // noVNC v1.5.0 (ics-sim-attack-base) serves vnc.html at /opt/novnc/ via websockify.
+    // ?autoconnect=true  — connect immediately without the manual "Connect" button click
+    // ?resize=scale      — scale the 1920×1080 Kali desktop to fit the webview/window
+    // Without autoconnect the page loads the connect form but the user has no way to
+    // know the correct WebSocket path, causing "cannot connect to server" errors.
+    return { url: `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale` }
   })
 
   // ── License (Phase 12 stubs) ──────────────────────────────────────────────────
@@ -1156,8 +1159,11 @@ function registerIPCHandlers(): void {
         }
       }
 
-      // KasmVNC (linuxserver/kali-linux) serves the XFCE4 desktop at the root path.
-      const vncUrl = `http://localhost:${port}/`
+      // noVNC v1.5.0 (ics-sim-attack-base): load vnc.html with autoconnect + scale.
+      // /vnc.html is the standard noVNC entry point; index.html is a symlink to it.
+      // ?autoconnect=true makes noVNC connect immediately without user interaction.
+      // ?resize=scale scales the 1920×1080 Kali desktop to fill the BrowserWindow.
+      const vncUrl = `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale`
 
       const attackWindow = new BrowserWindow({
         width: 1280,
