@@ -101,14 +101,33 @@ RUN wget -qO /tmp/novnc.tar.gz \
 RUN msfdb init 2>/dev/null || true
 
 # ── VNC configuration ─────────────────────────────────────────────────────────
-# No VNC password — the server is started with -SecurityTypes None in entrypoint.sh.
+#
+# TigerVNC (newer Kali packages) stores its config in ~/.config/tigervnc/ instead
+# of the legacy ~/.vnc/ directory. On first run, vncserver tries to `mv ~/.vnc →
+# ~/.config/tigervnc`. That migration ALWAYS fails inside Docker because ~/.config/
+# doesn't exist as a parent directory, so vncserver exits with code 1 before
+# starting the X server.
+#
+# Fix: pre-create ~/.config/tigervnc so vncserver skips the migration entirely.
+# A ~/.vnc symlink keeps legacy tooling happy without triggering the buggy mv.
+#
+# No VNC password — started with -SecurityTypes None in entrypoint.sh.
 # VNC is only accessible within Docker's internal network (port 5901 is not
 # published to the host), so password-less VNC is safe for lab use.
-RUN mkdir -p /root/.vnc
+RUN mkdir -p /root/.config/tigervnc \
+    && ln -sf /root/.config/tigervnc /root/.vnc
 
-# Xstartup launches Xfce4 when VNC connects
-RUN printf '#!/bin/bash\nunset SESSION_MANAGER\nunset DBUS_SESSION_BUS_ADDRESS\nexec startxfce4\n' \
-    > /root/.vnc/xstartup && chmod +x /root/.vnc/xstartup
+# Xstartup is executed by TigerVNC once the X session is created (display :1).
+# Must live at the vncUserDir path (~/.config/tigervnc/xstartup) because
+# TigerVNC looks there before falling back to /etc/X11/Xtigervnc-session.
+#
+# dbus-launch --exit-with-session: starts a D-Bus session bus and ties its
+# lifetime to the Xfce4 session. Without dbus-launch many Xfce4 components
+# (panel plugins, notifications, file manager) fail with D-Bus errors.
+# unset SESSION_MANAGER / DBUS_SESSION_BUS_ADDRESS: clear any inherited values
+# that would confuse Xfce4 about which bus to talk to.
+RUN printf '#!/bin/bash\nunset SESSION_MANAGER\nunset DBUS_SESSION_BUS_ADDRESS\nexec dbus-launch --exit-with-session startxfce4\n' \
+    > /root/.config/tigervnc/xstartup && chmod +x /root/.config/tigervnc/xstartup
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

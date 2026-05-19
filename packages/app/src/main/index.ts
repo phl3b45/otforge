@@ -28,6 +28,7 @@ import type {
   ScenarioImportResult,
   ScenarioExportResult,
   ScenarioExportOptions,
+  ScenarioDeleteFileResult,
   SimulationStartResult,
   SimulationStopResult,
   ContainerStatus,
@@ -98,6 +99,33 @@ interface NetworkSettings {
 function settingsPath(): string {
   return pathJoin(app.getPath('userData'), 'settings.json')
 }
+
+/**
+ * Returns the absolute path to the scenarios library directory.
+ *
+ * In development (electron-vite dev server running from the project root):
+ *   <project-root>/scenarios/
+ *   e.g. C:\Users\iburr\ICS-Simulator\scenarios
+ *
+ * In production (packaged app):
+ *   <user Documents>/ICS Simulator/Scenarios/
+ *   Instructors can drop .icslab files here and they appear in the open dialog.
+ *
+ * The directory is created on first call if it does not exist.
+ */
+function getScenariosLibraryDir(): string {
+  if (is.dev) {
+    return pathJoin(process.cwd(), 'scenarios')
+  }
+  return pathJoin(app.getPath('documents'), 'ICS Simulator', 'Scenarios')
+}
+
+/**
+ * Absolute path of the .icslab file most recently opened or saved by the user.
+ * Set by scenario:import and scenario:export; cleared by scenario:deleteFile.
+ * Used by scenario:deleteFile to know which file to remove from disk.
+ */
+let activeScenarioFilePath: string | null = null
 
 /**
  * Reads the stored NetworkSettings from disk.
@@ -514,8 +542,12 @@ function registerIPCHandlers(): void {
    *   error message string on failure/cancellation.
    */
   ipcMain.handle('scenario:import', async (): Promise<ScenarioImportResult> => {
+    // Default to the scenarios library folder so the user lands in the right place.
+    // getScenariosLibraryDir() returns the project scenarios/ dir in dev and
+    // Documents/ICS Simulator/Scenarios in production.
     const result = await dialog.showOpenDialog(mainWindow!, {
-      title: 'Import ICS Scenario',
+      title: 'Open ICS Scenario',
+      defaultPath: getScenariosLibraryDir(),
       filters: [{ name: 'ICS Lab Scenario', extensions: ['icslab'] }],
       properties: ['openFile']
     })
@@ -524,9 +556,11 @@ function registerIPCHandlers(): void {
       return { ok: false, error: 'Import cancelled' }
     }
 
+    const chosenPath = result.filePaths[0]
+
     let raw: unknown
     try {
-      raw = JSON.parse(await readFile(result.filePaths[0], 'utf-8'))
+      raw = JSON.parse(await readFile(chosenPath, 'utf-8'))
     } catch (err) {
       return { ok: false, error: `Failed to parse scenario: ${(err as Error).message}` }
     }
@@ -562,8 +596,11 @@ function registerIPCHandlers(): void {
       if (response === 1) return { ok: false, error: 'Import cancelled' }
     }
 
+    // Track the file path so scenario:deleteFile knows what to remove.
+    activeScenarioFilePath = chosenPath
+
     await saveActiveScenario(scenario)
-    return { ok: true, scenario, resourceEstimate }
+    return { ok: true, scenario, resourceEstimate, filePath: chosenPath }
   })
 
   /**
@@ -595,12 +632,15 @@ function registerIPCHandlers(): void {
     ): Promise<ScenarioExportResult> => {
       let targetPath = options.filePath
 
-      // Show a save dialog if no explicit path was provided
+      // Show a save dialog if no explicit path was provided.
+      // Default to the scenarios library folder so custom scenarios are saved
+      // alongside the bundled tutorials, making them easy to find on next Open.
       if (!targetPath) {
+        const cleanName = scenario.meta.name.replace(/\s+/g, '-')
         const result = await dialog.showSaveDialog(mainWindow!, {
-          title: 'Export ICS Scenario',
+          title: 'Save ICS Scenario',
           filters: [{ name: 'ICS Lab Scenario', extensions: ['icslab'] }],
-          defaultPath: `${scenario.meta.name.replace(/\s+/g, '-')}.icslab`
+          defaultPath: pathJoin(getScenariosLibraryDir(), `${cleanName}.icslab`)
         })
         if (result.canceled || !result.filePath) return { ok: false, error: 'Export cancelled' }
         targetPath = result.filePath
@@ -618,9 +658,39 @@ function registerIPCHandlers(): void {
 
       try {
         await writeFile(targetPath, JSON.stringify(exportData, null, 2), 'utf-8')
+        // Track the saved path so scenario:deleteFile knows what to remove later.
+        activeScenarioFilePath = targetPath
         return { ok: true, filePath: targetPath }
       } catch (err) {
         return { ok: false, error: `Failed to write scenario: ${(err as Error).message}` }
+      }
+    }
+  )
+
+  /**
+   * Deletes the .icslab scenario file at the given path from disk.
+   *
+   * Called by the renderer's Delete Scenario action after the user confirms.
+   * The renderer passes the file path it received from scenario:import or
+   * scenario:export. If the path does not exist or cannot be removed, returns
+   * { ok: false, error } rather than throwing — the renderer always clears the
+   * canvas regardless of whether the file delete succeeds.
+   *
+   * @param filePath - Absolute path to the .icslab file to remove.
+   */
+  ipcMain.handle(
+    'scenario:deleteFile',
+    async (_e, { filePath }: { filePath: string }): Promise<ScenarioDeleteFileResult> => {
+      try {
+        await rm(filePath, { force: true })
+        // Clear the active path so a subsequent deleteFile on the same session
+        // can't accidentally re-delete an unrelated file.
+        if (activeScenarioFilePath === filePath) {
+          activeScenarioFilePath = null
+        }
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: `Failed to delete scenario: ${(err as Error).message}` }
       }
     }
   )
@@ -700,7 +770,13 @@ function registerIPCHandlers(): void {
         await writeGrafanaProvisioning(scenarioDir, projectName, controlBase)
 
         const composeYaml = generateCompose(scenario, projectName, scenarioDir, zones)
-        const result = await dockerClient.startScenario(projectName, composeYaml)
+
+        // Pass a callback that fires if docker image inspect reveals missing images.
+        // The renderer listens for simulation:pullStatus { pulling: true } and shows
+        // an "Importing Containers" overlay so the user knows why startup is slow.
+        const result = await dockerClient.startScenario(projectName, composeYaml, () => {
+          mainWindow?.webContents.send('simulation:pullStatus', { pulling: true })
+        })
 
         if (!result.ok) {
           activeProjectName = null

@@ -122,18 +122,24 @@ export class DockerClient {
    * Steps:
    *   1. Create `<workDir>/<projectName>/` if it does not exist.
    *   2. Write the YAML string as `docker-compose.yml` in that directory.
-   *   3. Run `docker compose up -d --remove-orphans` to launch all services.
+   *   3. Check if any required container images are missing from the local cache.
+   *   4. If images are missing, call `onPullNeeded()` so the renderer can show an
+   *      "Importing Containers" overlay before the long docker pull begins.
+   *   5. Run `docker compose up -d --remove-orphans` to launch all services.
    *      `--remove-orphans` removes containers from a previous run of the same
    *      project that are no longer defined in the new compose file.
    *
    * @param projectName  - Sanitized scenario name used as the Compose project name.
    *   Must match the Docker Compose project name constraint: lowercase alphanumeric + hyphen.
    * @param composeYaml  - Complete docker-compose.yml content as a YAML string.
+   * @param onPullNeeded - Optional callback fired before a docker pull if at least one
+   *   image is not already cached locally. Use to show a progress overlay in the UI.
    * @returns { ok: true } on success, { ok: false, error } on failure.
    */
   async startScenario(
     projectName: string,
-    composeYaml: string
+    composeYaml: string,
+    onPullNeeded?: () => void
   ): Promise<{ ok: boolean; error?: string }> {
     const scenarioDir = join(this.workDir, projectName)
     const composeFile = join(scenarioDir, 'docker-compose.yml')
@@ -142,6 +148,15 @@ export class DockerClient {
       // recursive: true makes mkdir a no-op if the directory already exists
       await mkdir(scenarioDir, { recursive: true })
       await writeFile(composeFile, composeYaml, 'utf-8')
+
+      // Pre-flight image check: if any images are not in the local Docker cache, the
+      // `docker compose up` below will pull them before starting containers. Notify the
+      // caller so the UI can show an "Importing Containers" overlay during the pull.
+      if (onPullNeeded) {
+        const missing = await this.anyImagesMissing(composeYaml)
+        if (missing) onPullNeeded()
+      }
+
       // --quiet-pull suppresses per-layer download progress lines from stderr.
       // Without it, pulling 10+ images on first launch generates 10–50 MB of
       // progress output that overflows maxBuffer even at 50 MB on slow connections.
@@ -201,6 +216,43 @@ export class DockerClient {
 
       return { ok: false, error: shortError }
     }
+  }
+
+  /**
+   * Checks whether any Docker images referenced by a compose YAML are missing from
+   * the local image cache. Used as a pre-flight check before `docker compose up` so
+   * the UI can show a "Pulling images" notification before the long network operation.
+   *
+   * Image names are extracted from the YAML using a regex that matches `image:` lines
+   * at the service level (indented 4+ spaces). This is intentionally simple — it
+   * handles the standard indentation produced by compose-generator.ts. Templated
+   * image names (with `${VAR}`) are skipped since they cannot be inspected directly.
+   *
+   * @param composeYaml - Complete docker-compose.yml content as a YAML string.
+   * @returns true if at least one referenced image is not in the local cache.
+   */
+  private async anyImagesMissing(composeYaml: string): Promise<boolean> {
+    // Match lines like "    image: ghcr.io/foo/bar:latest" (4+ spaces of indentation)
+    const imageRegex = /^\s{4,}image:\s+(.+?)(?:\s*#.*)?$/gm
+    const images: string[] = []
+    let match: RegExpExecArray | null
+    while ((match = imageRegex.exec(composeYaml)) !== null) {
+      const imageName = match[1].trim()
+      // Skip template-style names; they can't be inspected without variable expansion
+      if (!imageName.includes('${') && imageName.length > 0) {
+        images.push(imageName)
+      }
+    }
+
+    for (const image of images) {
+      try {
+        // `docker image inspect` exits with 1 if the image is not local; exits 0 if present.
+        await run(`docker image inspect --format "{{.Id}}" "${image}"`)
+      } catch {
+        return true // found at least one missing image
+      }
+    }
+    return false
   }
 
   /**

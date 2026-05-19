@@ -15,9 +15,17 @@
  *   - simStatus:         The simulation lifecycle state machine
  *   - containerStatuses: Live container health data from Docker Compose ps
  *   - showMonitor:       Whether the Grafana+Loki monitor panel drawer is open
+ *   - builderModeActive: Whether the instructor has explicitly activated edit mode
+ *                        (default false — canvas is view-only until Scenario Builder is saved)
+ *   - pullActive:        Whether Docker is currently pulling container images
  *
  * Simulation status state machine:
  *   idle ──→ starting ──→ running ──→ stopping ──→ idle
+ *
+ * Editor mode state machine:
+ *   view mode (default after open/import)
+ *     ──→ [click Scenario Builder + save metadata] ──→ builder mode
+ *     ──→ [load new scenario] ──→ view mode (reset)
  *
  * IPC flow:
  *   All Docker/scenario/simulation operations call window.electronAPI (contextBridge),
@@ -326,14 +334,21 @@ function Toolbar({
         </button>
 
         {/*
-         * Scenario Builder — edit scenario name, description, author, sector, and
-         * mission brief. Only visible to the instructor (Author mode) while idle.
+         * Scenario Builder — always visible to the instructor (Author mode) so they
+         * know the button is available. Disabled during simulation transitions because
+         * metadata changes only take effect on the next simulation start. Clicking this
+         * opens MetadataModal; saving activates builder mode and enables drag-and-drop.
          */}
-        {isIdle && scenario && appMode === 'author' && (
+        {scenario && appMode === 'author' && (
           <button
             className="btn btn-sm btn-ghost"
             onClick={onMetadataOpen}
-            title="Edit scenario name, description, and mission brief"
+            disabled={isRunning || isStarting || isStopping}
+            title={
+              isRunning || isStarting || isStopping
+                ? 'Cannot edit scenario while simulation is running'
+                : 'Edit scenario name, description, and mission brief — activates builder mode'
+            }
           >
             Scenario Builder
           </button>
@@ -546,6 +561,40 @@ function SimStatusBadge({ status }: { status: SimStatus }) {
   )
 }
 
+// ── Canvas View Hint ───────────────────────────────────────────────────────────
+
+/**
+ * Left-panel placeholder shown when the canvas is in View Mode (author + builder
+ * mode not yet activated). Prompts the instructor to click Scenario Builder.
+ *
+ * In View Mode, the DevicePalette is hidden and drag-and-drop is disabled so
+ * students cannot accidentally modify a scenario opened for review.
+ *
+ * @param onOpenBuilder - Opens the MetadataModal to activate builder mode.
+ */
+function CanvasViewHint({ onOpenBuilder }: { onOpenBuilder: () => void }) {
+  return (
+    <div className="canvas-view-hint">
+      <div className="canvas-view-hint-icon">🔒</div>
+      <p>
+        You are in <strong>View Mode</strong>.
+      </p>
+      <p>
+        Click <strong>Scenario Builder</strong> in the toolbar to enable editing and build your
+        scenario.
+      </p>
+      <button
+        className="btn btn-sm btn-ghost"
+        onClick={onOpenBuilder}
+        style={{ marginTop: 8 }}
+        title="Open the Scenario Builder to activate edit mode"
+      >
+        Open Scenario Builder
+      </button>
+    </div>
+  )
+}
+
 // ── Status bar ─────────────────────────────────────────────────────────────────
 
 /**
@@ -740,6 +789,35 @@ export default function App() {
   const [showTutorial, setShowTutorial] = useState<boolean>(false)
 
   /**
+   * Whether the instructor has activated Builder Mode for the current scenario.
+   *
+   * Default: false (View Mode) — canvas is read-only and the device palette is hidden.
+   * Activated by: clicking Scenario Builder → filling metadata → clicking Save.
+   * Reset to false whenever a new scenario is loaded or imported, so each session
+   * starts in View/Tutorial mode by default.
+   *
+   * Purpose: prevents accidental drag-and-drop edits when the scenario is opened
+   * for review or when a student is following the tutorial.
+   */
+  const [builderModeActive, setBuilderModeActive] = useState<boolean>(false)
+
+  /**
+   * Whether Docker is actively pulling container images during a simulation start.
+   * Set to true via the simulation:pullStatus IPC push event from the main process.
+   * Triggers the "Importing Containers" overlay during the 'starting' phase.
+   * Reset automatically when simStatus leaves 'starting'.
+   */
+  const [pullActive, setPullActive] = useState<boolean>(false)
+
+  /**
+   * Absolute path of the .icslab file currently open in the canvas.
+   * Set when a scenario is loaded via Open (scenario:import) or saved via
+   * Export (scenario:export). Cleared when a new blank scenario is created.
+   * Used by the Delete Scenario action to remove the file from disk.
+   */
+  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null)
+
+  /**
    * All community scenario packs currently installed in <userData>/packs/.
    * Loaded on mount via pack:list IPC and refreshed after any install/uninstall.
    * Empty array on first launch.
@@ -797,18 +875,49 @@ export default function App() {
       })
     })
 
+    // Subscribe to Docker image pull progress events.
+    // The main process sends this when it detects that at least one required image
+    // is not cached locally and a docker compose up will trigger a pull.
+    // We show the "Importing Containers" overlay so the user knows a long operation
+    // is in progress rather than seeing the app appear to hang.
+    const unsubPull = window.electronAPI.on.simulationPullStatus(({ pulling }) => {
+      setPullActive(pulling)
+    })
+
     // Clean up IPC listeners when the component unmounts
     return () => {
       unsubStatus()
+      unsubPull()
     }
   }, [])
 
-  /** Opens the file picker, imports a .icslab file, and navigates to the canvas. */
+  // Automatically clear the "Importing Containers" overlay when the simulation
+  // leaves the 'starting' phase (either to 'running' on success or 'idle' on failure)
+  useEffect(() => {
+    if (simStatus !== 'starting') {
+      setPullActive(false)
+    }
+  }, [simStatus])
+
+  /**
+   * Opens the file picker, imports a .icslab scenario, and navigates to the canvas.
+   *
+   * Builder mode is reset to false (View Mode) on every import so the canvas starts
+   * read-only regardless of whether the scenario is locked or not. Instructors must
+   * explicitly click Scenario Builder to activate editing. Students (locked scenarios)
+   * never enter builder mode.
+   *
+   * If the scenario has tutorial steps, the Tutorial panel is auto-shown so students
+   * immediately see their guided instructions.
+   */
   const handleImport = useCallback(async () => {
     const result = await window.electronAPI.scenario.import()
     if (result.scenario) {
       setScenario(result.scenario)
+      setBuilderModeActive(false) // always start in View Mode after opening a file
       setView('canvas')
+      // Track the file path so Delete Scenario can remove it from disk.
+      setCurrentFilePath(result.filePath ?? null)
       // Auto-show the tutorial panel when the imported scenario has guided steps
       if (result.scenario.meta.tutorialSteps?.length) {
         setShowTutorial(true)
@@ -816,16 +925,64 @@ export default function App() {
     }
   }, [])
 
-  /** Clears all state and opens a blank canvas (new scenario workflow). */
+  /**
+   * Creates a blank scenario and navigates to the canvas in View Mode.
+   *
+   * Immediately opens the Scenario Builder (MetadataModal) so the instructor fills
+   * in the scenario name, sector, and mission brief before editing the canvas.
+   * Saving the modal activates Builder Mode; cancelling leaves the canvas in View Mode
+   * (the user can click Scenario Builder in the toolbar to re-open it later).
+   *
+   * If there are unsaved devices on the current canvas, prompts for confirmation
+   * before discarding work.
+   */
   const handleNew = useCallback(() => {
-    setScenario(null)
+    // Warn if current canvas has unsaved devices
+    if (scenario && Object.keys(scenario.devices.devices).length > 0) {
+      const ok = window.confirm(
+        `Start a new scenario? All devices on the current canvas will be lost.`
+      )
+      if (!ok) return
+    }
+    const now = new Date().toISOString()
+    setScenario({
+      meta: {
+        formatVersion: '1.0' as const,
+        name: 'Untitled Scenario',
+        description: '',
+        sector: 'generic' as const,
+        author: '',
+        createdAt: now,
+        updatedAt: now,
+        appVersion: '0.1.0',
+        locked: false,
+        brief: '',
+        requirements: { estimatedRamMb: 0, estimatedCpuCores: 1, containerCount: 0 }
+      },
+      visual: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      network: { segments: [], routes: [] },
+      devices: { devices: {} },
+      security: {
+        defaultFirewallPolicy: 'deny' as const,
+        firewallRules: [],
+        ids: { enabledRulesets: [], disabledRuleIds: [], zeekScripts: [] },
+        logging: { retentionDays: 30, influxdbEnabled: true, lokiEnabled: true }
+      },
+      registry: [],
+      packLayers: []
+    })
     setSelectedDevice(null)
     setSelectedZone(null)
     setSimStatus('idle')
     setContainerStatuses([])
     setSimError(null)
+    setBuilderModeActive(false)
+    setShowTutorial(false)
+    setCurrentFilePath(null) // new blank scenario has no associated file yet
     setView('canvas')
-  }, [])
+    // Open Scenario Builder immediately so the instructor fills in metadata first
+    setShowMetadataModal(true)
+  }, [scenario])
 
   /**
    * Prompts for confirmation then clears all devices from the current scenario,
@@ -833,17 +990,34 @@ export default function App() {
    * and network config are preserved) so the user doesn't lose their settings.
    * Only callable when the simulation is idle.
    */
-  const handleDelete = useCallback(() => {
+  const handleDelete = useCallback(async () => {
     if (!scenario) return
+
+    // Tailor the confirmation message based on whether we have a file to delete.
+    const fileNote = currentFilePath
+      ? '\n\nThis will also delete the file from the scenarios folder.'
+      : ''
     const confirmed = window.confirm(
-      `Delete all devices in "${scenario.meta.name}"?\n\nThis cannot be undone.`
+      `Delete "${scenario.meta.name}"?\n\nThis will clear all devices from the canvas.${fileNote}\n\nThis cannot be undone.`
     )
     if (!confirmed) return
+
+    // Remove the file from disk if we know where it came from.
+    if (currentFilePath) {
+      const del = await window.electronAPI.scenario.deleteFile(currentFilePath)
+      if (!del.ok) {
+        // Non-fatal — the canvas is still cleared; warn the user but continue.
+        window.alert(`Could not delete scenario file:\n${del.error}`)
+      }
+      setCurrentFilePath(null)
+    }
+
+    // Clear devices and visual layout from the canvas.
     setScenario(prev => {
       if (!prev) return prev
       return {
         ...prev,
-        devices: { devices: {}, connections: [] },
+        devices: { devices: {} },
         // Clear visual positions too — scenarioToNodes reads visual.nodes first,
         // so leaving them populated keeps icons on screen even with no devices.
         visual: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }
@@ -852,7 +1026,7 @@ export default function App() {
     setSelectedDevice(null)
     setSelectedZone(null)
     setSimError(null)
-  }, [scenario])
+  }, [scenario, currentFilePath])
 
   /** Returns to the launch screen. Blocked while a simulation is running. */
   const handleHome = useCallback(() => {
@@ -986,8 +1160,12 @@ export default function App() {
   }, [])
 
   /**
-   * Applies updated metadata from the MetadataModal back into the scenario.
-   * Called when the user clicks Save in the metadata editor.
+   * Applies updated metadata from the MetadataModal back into the scenario and
+   * activates Builder Mode so the instructor can now drag and drop devices.
+   *
+   * This is the gating mechanism for edit access: the canvas is read-only until
+   * the instructor clicks Scenario Builder, fills in the metadata, and clicks Save.
+   * After that, `builderModeActive = true` unlocks the DevicePalette and canvas.
    *
    * @param updated - The new ICSLabMeta object from the form.
    */
@@ -996,6 +1174,7 @@ export default function App() {
       if (!prev) return prev
       return { ...prev, meta: updated }
     })
+    setBuilderModeActive(true) // Scenario Builder saved → activate builder/edit mode
     setShowMetadataModal(false)
   }, [])
 
@@ -1007,6 +1186,15 @@ export default function App() {
   /** Closes the Export dialog modal. */
   const handleExportClose = useCallback(() => {
     setShowExportModal(false)
+  }, [])
+
+  /**
+   * Receives the absolute file path from ExportModal after a successful save.
+   * Updates currentFilePath so the Delete Scenario action can remove the
+   * file from disk if the user later wants to delete it.
+   */
+  const handleExportSuccess = useCallback((filePath: string) => {
+    setCurrentFilePath(filePath)
   }, [])
 
   /** Opens the Pack Manager modal. */
@@ -1287,9 +1475,19 @@ export default function App() {
       {/* 3-column workspace: (palette | mission) | canvas | properties */}
       <div className="workspace">
         {/*
-         * Left column: DevicePalette in Author mode, MissionPanel in Student mode.
-         * MissionPanel replaces the palette entirely — students cannot add devices,
-         * so showing a device library would be confusing and misleading.
+         * Left column — three possible panels:
+         *
+         *   Student mode (locked scenario):
+         *     MissionPanel — read-only mission brief + objectives from scenario.meta.brief
+         *
+         *   Author + Builder Mode active:
+         *     DevicePalette — drag-and-drop device library for building scenarios
+         *
+         *   Author + View Mode (default after open/import, or before Scenario Builder is saved):
+         *     CanvasViewHint — placeholder that explains how to activate Builder Mode
+         *
+         * This three-state model prevents accidental edits: the canvas and palette are
+         * locked until the instructor explicitly clicks Scenario Builder and saves metadata.
          */}
         {appMode === 'student' && scenario ? (
           <MissionPanel
@@ -1297,18 +1495,20 @@ export default function App() {
             author={scenario.meta.author}
             brief={scenario.meta.brief}
           />
-        ) : (
+        ) : builderModeActive ? (
           <DevicePalette
             activeLayer={activeLayer}
-            readOnly={appMode === 'student'}
+            readOnly={false}
             packDeviceTypes={allPackDeviceTypes}
           />
+        ) : (
+          <CanvasViewHint onOpenBuilder={handleMetadataOpen} />
         )}
         <ScadaCanvas
           scenario={scenario}
           activeLayer={activeLayer}
           showGrid={effectiveShowGrid}
-          readOnly={appMode === 'student'}
+          readOnly={appMode === 'student' || !builderModeActive}
           packDeviceTypes={allPackDeviceTypes}
           onSelectDevice={handleSelectDevice}
           onScenarioChange={handleScenarioChange}
@@ -1371,7 +1571,11 @@ export default function App() {
        * Only available in Author mode while idle.
        */}
       {showExportModal && scenario && (
-        <ExportModal scenario={scenario} onClose={handleExportClose} />
+        <ExportModal
+          scenario={scenario}
+          onClose={handleExportClose}
+          onExportSuccess={handleExportSuccess}
+        />
       )}
 
       {/*
@@ -1394,9 +1598,43 @@ export default function App() {
        * full-screen modals (PlcIde, AttackTerminal). The student can close it with
        * × and re-open it via the "Tutorial" button that appears in the toolbar
        * whenever the active scenario has tutorial steps.
+       *
+       * devices is passed so the panel can resolve {{nodeId.ip}} template variables
+       * in step commands and body text with the actual configured device IP addresses,
+       * making tutorial commands copy-paste correct for the current scenario config.
        */}
       {showTutorial && scenario?.meta.tutorialSteps?.length && (
-        <TutorialPanel steps={scenario.meta.tutorialSteps} onClose={() => setShowTutorial(false)} />
+        <TutorialPanel
+          steps={scenario.meta.tutorialSteps}
+          devices={scenario.devices.devices}
+          onClose={() => setShowTutorial(false)}
+        />
+      )}
+
+      {/*
+       * "Importing Containers" overlay — displayed during simulation start when Docker
+       * needs to pull at least one container image for the first time. The main process
+       * sends a simulation:pullStatus event with { pulling: true } before running
+       * docker compose up, and we show this overlay so the user understands why
+       * startup is taking longer than normal.
+       *
+       * z-index 400 puts it above the toolbar (z 50), workspace (100), tutorial panel
+       * (150), and all modals (200-300) so it is never obscured.
+       */}
+      {simStatus === 'starting' && pullActive && (
+        <div className="pull-overlay" role="alertdialog" aria-label="Importing containers">
+          <div className="pull-overlay-card">
+            <div className="pull-spinner" aria-hidden="true" />
+            <div className="pull-overlay-text">
+              <strong>Importing Containers</strong>
+              <p>
+                Downloading Docker images for the first time.
+                <br />
+                This may take a few minutes depending on your connection speed.
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

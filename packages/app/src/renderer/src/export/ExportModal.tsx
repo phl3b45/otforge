@@ -33,6 +33,12 @@ interface ExportModalProps {
   scenario: ICSLabScenario
   /** Called when the modal is dismissed (after export or via Cancel). */
   onClose: () => void
+  /**
+   * Called after a successful export with the absolute path of the saved file.
+   * App.tsx uses this to update currentFilePath so the Delete Scenario action
+   * can remove the file from disk.
+   */
+  onExportSuccess?: (filePath: string) => void
 }
 
 /**
@@ -45,7 +51,7 @@ interface ExportModalProps {
  * Shows a success path (file path + green confirmation) or an error message
  * if the export fails. The user can dismiss either state with Close.
  */
-export function ExportModal({ scenario, onClose }: ExportModalProps) {
+export function ExportModal({ scenario, onClose, onExportSuccess }: ExportModalProps) {
   const [mode, setMode] = useState<ExportMode>('author')
   const [exporting, setExporting] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; filePath?: string; error?: string } | null>(
@@ -59,6 +65,10 @@ export function ExportModal({ scenario, onClose }: ExportModalProps) {
         locked: mode === 'student'
       })
       setResult(res)
+      // Notify App.tsx of the saved path so Delete Scenario can remove it from disk.
+      if (res.ok && res.filePath) {
+        onExportSuccess?.(res.filePath)
+      }
     } catch (err) {
       setResult({ ok: false, error: (err as Error).message })
     } finally {

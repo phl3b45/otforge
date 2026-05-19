@@ -12,9 +12,14 @@
  *   - Previous / Next navigation with keyboard support (← →)
  *   - Minimise button — collapses to a header-only strip so the canvas is visible
  *   - Close button — hides the panel (scenario progress is NOT reset)
+ *   - IP template resolution — {{nodeId.ip}} is replaced with the device's
+ *     actual configured IP address from the scenario's device map, making tutorial
+ *     commands work regardless of which IP scheme the instructor assigned.
  *
  * Props:
  *   steps    — Array of TutorialStep objects from scenario.meta.tutorialSteps
+ *   devices  — Optional map of nodeId → { ipAddress } from scenario.devices.devices;
+ *              used to resolve {{nodeId.ip}} and {{nodeId.subnet}} template vars
  *   onClose  — Called when the user clicks ×; parent sets showTutorial=false
  *
  * State owned here (not persisted across sessions — intentional for student UX):
@@ -32,11 +37,60 @@ import type { TutorialStep } from '@ics-sim/schema'
 
 // ── Props ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Minimal device shape needed for IP template resolution.
+ * Using a structural subset avoids importing the full DeviceConfig schema here.
+ */
+interface DeviceIpEntry {
+  ipAddress: string
+}
+
 interface TutorialPanelProps {
   /** All tutorial steps from the scenario. Must be non-empty. */
   steps: TutorialStep[]
+  /**
+   * Map of nodeId → device config, used to resolve {{nodeId.ip}} and
+   * {{nodeId.subnet}} template variables in step commands and body text.
+   * If omitted, template variables are left unreplaced (shown as-is).
+   */
+  devices?: Record<string, DeviceIpEntry>
   /** Called when the user clicks the × close button. */
   onClose: () => void
+}
+
+// ── IP template resolver ───────────────────────────────────────────────────────
+
+/**
+ * Replaces {{nodeId.ip}} and {{nodeId.subnet}} template variables in a text string
+ * with the corresponding device IP address or /24 subnet from the devices map.
+ *
+ * Template variable reference:
+ *   {{plc-1.ip}}      → e.g. "10.200.10.10"  (device's configured IP address)
+ *   {{plc-1.subnet}}  → e.g. "10.200.10.0/24" (host portion zeroed, /24 appended)
+ *
+ * Unresolved variables (device not in map, or no devices prop) are left unchanged
+ * so students see the template literal as a hint rather than an empty string.
+ *
+ * @param text    - Raw text possibly containing {{nodeId.ip}} or {{nodeId.subnet}}
+ * @param devices - nodeId → device map from scenario.devices.devices
+ * @returns Text with template variables substituted by real IP values
+ */
+function resolveTemplates(text: string, devices?: Record<string, DeviceIpEntry>): string {
+  if (!devices) return text
+  return text.replace(/\{\{([^}.]+)\.(ip|subnet)\}\}/g, (match, nodeId, field) => {
+    const device = devices[nodeId]
+    if (!device?.ipAddress) return match // leave unresolved so students see the var name
+    if (field === 'ip') return device.ipAddress
+    if (field === 'subnet') {
+      // Derive /24 subnet by zeroing the last octet of the IP address.
+      // e.g. "10.200.10.10" → "10.200.10.0/24"
+      const parts = device.ipAddress.split('.')
+      if (parts.length === 4) {
+        return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`
+      }
+    }
+    return match
+  })
 }
 
 // ── Helper: simple Markdown → plain-text paragraph breaks ─────────────────────
@@ -117,7 +171,7 @@ function inlineFormat(text: string): React.ReactNode[] {
  * Rendered as a fixed-position overlay that the student can drag to any corner
  * of the screen without covering the canvas or the attack terminal.
  */
-export function TutorialPanel({ steps, onClose }: TutorialPanelProps): React.JSX.Element {
+export function TutorialPanel({ steps, devices, onClose }: TutorialPanelProps): React.JSX.Element {
   // Which step is currently displayed (0-based index)
   const [currentIndex, setCurrentIndex] = useState<number>(0)
   // Whether the panel body is collapsed to header-only strip
@@ -138,10 +192,10 @@ export function TutorialPanel({ steps, onClose }: TutorialPanelProps): React.JSX
 
   // ── Default position: bottom-right corner, 24 px inset ──────────────────────
   // Calculated on first render using window dimensions to avoid hardcoding.
-  // The panel is 360 px wide and ~500 px tall (variable); place it bottom-right.
+  // The panel is 440 px wide (matching .tutorial-panel CSS); place it bottom-right.
   useEffect(() => {
-    const panelW = 360
-    const panelH = 480
+    const panelW = 440
+    const panelH = 520
     setPosition({
       x: Math.max(0, window.innerWidth - panelW - 24),
       y: Math.max(0, window.innerHeight - panelH - 48)
@@ -202,16 +256,24 @@ export function TutorialPanel({ steps, onClose }: TutorialPanelProps): React.JSX
 
   // ── Copy command to clipboard ────────────────────────────────────────────────
 
+  // Resolve {{nodeId.ip}} and {{nodeId.subnet}} variables in the current step's
+  // command and body text using the live device IP map from the scenario.
+  const resolvedCommand = step.command ? resolveTemplates(step.command, devices) : undefined
+  const resolvedBody = resolveTemplates(step.body, devices)
+  const resolvedSuccessCheck = step.successCheck
+    ? resolveTemplates(step.successCheck, devices)
+    : undefined
+
   const handleCopy = useCallback(async () => {
-    if (!step.command) return
+    if (!resolvedCommand) return
     try {
-      await navigator.clipboard.writeText(step.command)
+      await navigator.clipboard.writeText(resolvedCommand)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
       // Clipboard access denied (e.g. non-https Electron context) — silently ignore
     }
-  }, [step.command])
+  }, [resolvedCommand])
 
   // Navigation helpers
   const goNext = useCallback(() => {
@@ -285,15 +347,18 @@ export function TutorialPanel({ steps, onClose }: TutorialPanelProps): React.JSX
       {/* ── Body ── */}
       {!minimized && (
         <div className="tutorial-body">
-          {/* Instructional text — Markdown subset rendered as React nodes */}
-          <div className="tutorial-content">{renderBody(step.body)}</div>
+          {/* Instructional text — Markdown subset rendered as React nodes.
+              IP template variables ({{nodeId.ip}}) are resolved before rendering. */}
+          <div className="tutorial-content">{renderBody(resolvedBody)}</div>
 
-          {/* Command block — only shown when the step has a shell command */}
-          {step.command && (
+          {/* Command block — only shown when the step has a shell command.
+              The command is displayed with {{nodeId.ip}} already resolved so students
+              can copy and paste it without needing to look up the device IP first. */}
+          {resolvedCommand && (
             <div className="tutorial-command-block">
               <div className="tutorial-command-label">Command</div>
               <div className="tutorial-command-row">
-                <pre className="tutorial-command-pre">{step.command}</pre>
+                <pre className="tutorial-command-pre">{resolvedCommand}</pre>
                 <button
                   className={`tutorial-copy-btn${copied ? ' tutorial-copy-btn--copied' : ''}`}
                   onClick={handleCopy}
@@ -305,13 +370,13 @@ export function TutorialPanel({ steps, onClose }: TutorialPanelProps): React.JSX
             </div>
           )}
 
-          {/* Success check hint — shown when provided */}
-          {step.successCheck && (
+          {/* Success check hint — shown when provided. Template vars resolved. */}
+          {resolvedSuccessCheck && (
             <div className="tutorial-success-check">
               <span className="tutorial-success-icon" aria-hidden="true">
                 ✓
               </span>
-              <span>{step.successCheck}</span>
+              <span>{resolvedSuccessCheck}</span>
             </div>
           )}
         </div>

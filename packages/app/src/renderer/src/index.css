@@ -1597,37 +1597,68 @@ code.prop-value {
   background: #0d1117;
 }
 
-/* noVNC webview fills the full body area */
-.attack-novnc-webview {
-  flex: 1;
-  width: 100%;
-  border: none;
-  min-height: 0;
-}
+/* ── Desktop launcher — replaces old webview approach ──────────────────────── */
 
-.attack-desktop-loading {
+/* Idle state: show a centred launch button + usage instructions */
+.attack-desktop-launcher {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
-  color: var(--text-muted);
-  font-size: 0.875rem;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: #c9d1d9;
 }
 
-.attack-desktop-hint {
+.attack-desktop-launcher-icon {
+  font-size: 2.4rem;
+  opacity: 0.75;
+}
+
+.attack-desktop-launcher-title {
+  font-size: 1rem;
+  color: #e6edf3;
+}
+
+.attack-desktop-launcher-desc {
+  font-size: 0.82rem;
+  color: #8b949e;
+  line-height: 1.5;
+  max-width: 340px;
+}
+
+.attack-desktop-launcher-note {
   font-size: 0.75rem;
-  color: var(--text-muted);
-  opacity: 0.7;
+  color: #8b949e;
+  margin-top: 8px;
+  max-width: 340px;
+  line-height: 1.4;
+  opacity: 0.8;
 }
 
-.attack-desktop-hint code {
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
-  color: var(--accent-yellow);
-  background: rgba(210, 153, 34, 0.1);
-  padding: 1px 5px;
-  border-radius: 3px;
+/* Launched state: confirmation that the window is open */
+.attack-desktop-launched {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: #3fb950;
+}
+
+.attack-desktop-launched-icon {
+  font-size: 2.4rem;
+}
+
+.attack-desktop-launched p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #c9d1d9;
 }
 
 /* ── PropertiesPanel — attack machine section ── */
@@ -4114,7 +4145,7 @@ code.prop-value {
 .tutorial-panel {
   position: fixed;
   z-index: 150;
-  width: 360px;
+  width: 440px;
   background: #161b22;
   border: 1px solid #30363d;
   border-radius: 8px;
@@ -4221,7 +4252,10 @@ code.prop-value {
   flex-direction: column;
   gap: 10px;
   overflow-y: auto;
-  max-height: 340px;
+  /* Scale with the viewport so tall steps don't clip content. Min of 60 % viewport
+     height and 520 px ensures the body is roomy on a 1080 p display while still
+     fitting on small 768 p laptop screens. */
+  max-height: min(62vh, 520px);
   /* Custom scrollbar to match dark theme */
   scrollbar-width: thin;
   scrollbar-color: #30363d transparent;
@@ -4438,4 +4472,110 @@ code.prop-value {
 .tutorial-dot--active {
   background: #1f6feb;
   transform: scale(1.3);
+}
+
+/* ── Canvas View Hint — shown in the left panel when builder mode is not active ──
+ *
+ * Instructors see this placeholder when they open a scenario in view/tutorial mode.
+ * Clicking "Open Scenario Builder" opens the MetadataModal, which on Save activates
+ * builder mode and replaces this panel with the DevicePalette.
+ */
+
+.canvas-view-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 20px;
+  height: 100%;
+  text-align: center;
+  color: #8b949e;
+}
+
+.canvas-view-hint-icon {
+  font-size: 2rem;
+  opacity: 0.6;
+}
+
+.canvas-view-hint p {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-width: 200px;
+  color: #8b949e;
+  margin: 0;
+}
+
+.canvas-view-hint strong {
+  color: #c9d1d9;
+}
+
+/* ── Container Pull Overlay — shown when Docker is pulling images for the first time ──
+ *
+ * Appears on top of everything (z-index 400) while simStatus === 'starting' and
+ * the main process has confirmed that at least one image needs to be downloaded.
+ * Dismissed automatically when the simulation transitions to 'running' or fails.
+ */
+
+.pull-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Fade in so it doesn't feel abrupt */
+  animation: overlayFadeIn 0.25s ease;
+}
+
+@keyframes overlayFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.pull-overlay-card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 32px 36px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  max-width: 440px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.8);
+}
+
+.pull-spinner {
+  width: 38px;
+  height: 38px;
+  border: 3px solid #30363d;
+  border-top-color: #388bfd;
+  border-radius: 50%;
+  animation: spinnerRotate 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spinnerRotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pull-overlay-text strong {
+  display: block;
+  font-size: 1rem;
+  color: #e6edf3;
+  margin-bottom: 6px;
+}
+
+.pull-overlay-text p {
+  font-size: 0.82rem;
+  color: #8b949e;
+  line-height: 1.5;
+  margin: 0;
 }

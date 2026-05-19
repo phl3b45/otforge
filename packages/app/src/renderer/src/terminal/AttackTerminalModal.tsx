@@ -7,7 +7,16 @@
  *     Header  — device node ID · "Kali Linux Attack Machine" label · × close
  *     Tab bar — "Terminal" | "Desktop"
  *     Body    — Terminal tab: xterm.js connected to docker exec via IPC
- *               Desktop tab: noVNC webview (Wireshark, Armitage, full Xfce4)
+ *               Desktop tab: launcher button that opens the noVNC desktop in a
+ *                            separate OS-level BrowserWindow via attack:launchWindow IPC
+ *
+ * Why the Desktop tab uses a separate window instead of an embedded webview:
+ *   Electron's <webview> tag has WebSocket security restrictions that intermittently
+ *   block the noVNC WebSocket connection to localhost, causing "cannot connect to server"
+ *   errors even when websockify is running. The attack:launchWindow IPC handler opens a
+ *   full BrowserWindow (sandbox: true, nodeIntegration: false) which handles localhost
+ *   WebSocket connections correctly. An external window also lets students/instructors
+ *   place the Kali desktop on a second monitor independently of the main simulator.
  *
  * Terminal data flow:
  *   Keystrokes → xterm onData → window.electronAPI.terminal.write(data)
@@ -67,9 +76,13 @@ export function AttackTerminalModal({
   onClose: () => void
 }) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('terminal')
-  const [vncUrl, setVncUrl] = useState<string | null>(null)
-  const [vncError, setVncError] = useState<string | null>(null)
   const [termError, setTermError] = useState<string | null>(null)
+  /** Whether the desktop was successfully opened in an external BrowserWindow. */
+  const [desktopLaunched, setDesktopLaunched] = useState<boolean>(false)
+  /** Error message from the last attempt to open the desktop window. */
+  const [desktopError, setDesktopError] = useState<string | null>(null)
+  /** Whether a desktop launch is in progress (prevents double-clicks). */
+  const [desktopLaunching, setDesktopLaunching] = useState<boolean>(false)
 
   /** Ref to the div that xterm.js mounts into. */
   const termDivRef = useRef<HTMLDivElement>(null)
@@ -140,18 +153,36 @@ export function AttackTerminalModal({
     }
   }, [device.nodeId])
 
-  // ── noVNC URL fetch — triggered when user switches to Desktop tab ─────────
-  const handleDesktopTab = useCallback(async () => {
+  // ── Desktop tab switch ───────────────────────────────────────────────────
+  const handleDesktopTab = useCallback(() => {
     setActiveTab('desktop')
-    if (vncUrl) return // already fetched
+  }, [])
 
-    const result = await window.electronAPI.terminal.getVncUrl(device.nodeId)
-    if (result.url) {
-      setVncUrl(result.url)
-    } else {
-      setVncError(result.error ?? 'Could not determine noVNC URL')
+  /**
+   * Opens the Kali Linux Xfce4 desktop in a separate native OS window via the
+   * attack:launchWindow IPC handler. That handler opens a sandboxed BrowserWindow
+   * loading the noVNC page over localhost; the window is fully independent of the
+   * main simulator so it can be moved to a second monitor.
+   *
+   * Using a separate BrowserWindow instead of an embedded <webview> avoids Electron
+   * WebSocket restrictions that cause "cannot connect to server" errors in webviews.
+   * The main process also runs isPortOpen() before creating the window — if the
+   * container's websockify is not ready yet, the user sees a clear retry message.
+   */
+  const handleLaunchDesktop = useCallback(async () => {
+    setDesktopLaunching(true)
+    setDesktopError(null)
+    try {
+      const result = await window.electronAPI.attack.launchWindow(device.nodeId)
+      if (result.ok) {
+        setDesktopLaunched(true)
+      } else {
+        setDesktopError(result.error ?? 'Failed to open desktop window')
+      }
+    } finally {
+      setDesktopLaunching(false)
     }
-  }, [device.nodeId, vncUrl])
+  }, [device.nodeId])
 
   // ── Refit terminal when switching back to Terminal tab ───────────────────
   const handleTerminalTab = useCallback(() => {
@@ -224,25 +255,85 @@ export function AttackTerminalModal({
             <div ref={termDivRef} className="attack-terminal-xterm" />
           </div>
 
-          {/* Desktop panel — noVNC webview */}
+          {/*
+           * Desktop panel — launches the Kali Linux Xfce4 desktop in a separate OS window.
+           *
+           * Three states:
+           *   Idle       — shows a "Launch Desktop" button with usage instructions
+           *   Launched   — confirms the window is open; offers "Open Again" in case it was closed
+           *   Error      — shows the error message from the main process + a Retry button
+           *
+           * The desktop opens via attack:launchWindow which creates a sandboxed BrowserWindow
+           * pointing at the container's noVNC page (localhost:<hostPort>/vnc.html).
+           * This is more reliable than embedding a <webview> because BrowserWindow handles
+           * localhost WebSocket connections without the security restrictions of webviews.
+           */}
           {activeTab === 'desktop' && (
             <div className="attack-desktop-container">
-              {vncError ? (
+              {desktopError ? (
+                /* Error state — show the message from the main process */
                 <div className="attack-terminal-error">
-                  {vncError}
-                  <p>
-                    Ensure the simulation is running. The noVNC service starts ~5 s after the
-                    container boots.
+                  <strong>Could not open desktop</strong>
+                  <p style={{ marginTop: 6 }}>{desktopError}</p>
+                  <p style={{ marginTop: 4 }}>
+                    The Xfce4 desktop starts ~10 seconds after the container boots. Wait a moment
+                    and try again.
                   </p>
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    style={{ marginTop: 12 }}
+                    onClick={handleLaunchDesktop}
+                    disabled={desktopLaunching}
+                  >
+                    {desktopLaunching ? 'Opening…' : 'Retry'}
+                  </button>
                 </div>
-              ) : vncUrl ? (
-                <webview src={vncUrl} className="attack-novnc-webview" allowpopups="true" />
+              ) : desktopLaunched ? (
+                /* Success state — desktop window is open */
+                <div className="attack-desktop-launched">
+                  <span className="attack-desktop-launched-icon" aria-hidden="true">
+                    🖥
+                  </span>
+                  <p>
+                    <strong>Kali Linux desktop is open in a separate window.</strong>
+                  </p>
+                  <p>Move the window to a second monitor for the best experience.</p>
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    style={{ marginTop: 12 }}
+                    onClick={handleLaunchDesktop}
+                    disabled={desktopLaunching}
+                    title="Open another desktop window (or reopen if closed)"
+                  >
+                    {desktopLaunching ? 'Opening…' : 'Open Again'}
+                  </button>
+                </div>
               ) : (
-                <div className="attack-desktop-loading">
-                  <span className="status-dot checking" />
-                  Connecting to Xfce4 desktop…
-                  <p className="attack-desktop-hint">
-                    VNC password: <code>kali</code>
+                /* Idle state — show launcher with instructions */
+                <div className="attack-desktop-launcher">
+                  <span className="attack-desktop-launcher-icon" aria-hidden="true">
+                    🖥
+                  </span>
+                  <p className="attack-desktop-launcher-title">
+                    <strong>Kali Linux Xfce4 Desktop</strong>
+                  </p>
+                  <p className="attack-desktop-launcher-desc">
+                    Opens in a separate OS window via noVNC WebSocket bridge.
+                    <br />
+                    Move it to a second monitor for the best experience.
+                  </p>
+                  <button
+                    className="btn btn-sm btn-attack-launch"
+                    style={{ marginTop: 12 }}
+                    onClick={handleLaunchDesktop}
+                    disabled={desktopLaunching}
+                    title="Open the Kali Linux Xfce4 desktop in a separate window"
+                  >
+                    {desktopLaunching ? 'Opening…' : '⚔ Launch Desktop'}
+                  </button>
+                  <p className="attack-desktop-launcher-note">
+                    The desktop starts ~10 s after the container boots. If launch fails, wait a
+                    moment and retry.
                   </p>
                 </div>
               )}

@@ -18,6 +18,17 @@ export interface ScenarioImportResult {
   scenario?: ICSLabScenario
   error?: string
   resourceEstimate?: ResourceEstimate
+  /** Absolute path of the .icslab file that was opened. Used by the renderer to
+   *  track which file is currently loaded so the Delete Scenario action can
+   *  remove it from disk via the scenario:deleteFile IPC handler. */
+  filePath?: string
+}
+
+/** Result of the scenario:deleteFile IPC call. */
+export interface ScenarioDeleteFileResult {
+  ok: boolean
+  /** Human-readable description of the error, if any. */
+  error?: string
 }
 
 export interface ScenarioExportOptions {
@@ -201,6 +212,9 @@ export interface IPCChannels {
     ScenarioExportResult
   ]
   'scenario:validate': [ICSLabScenario, { valid: boolean; errors: string[] }]
+  /** Deletes the .icslab file at the given absolute path from disk.
+   *  Called by the renderer after the user confirms the Delete Scenario action. */
+  'scenario:deleteFile': [{ filePath: string }, ScenarioDeleteFileResult]
 
   // Simulation lifecycle
   'simulation:start': [ICSLabScenario, SimulationStartResult]

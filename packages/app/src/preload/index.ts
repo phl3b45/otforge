@@ -29,6 +29,7 @@ import type {
   ScenarioImportResult,
   ScenarioExportResult,
   ScenarioExportOptions,
+  ScenarioDeleteFileResult,
   SimulationStartResult,
   SimulationStopResult,
   ContainerStatus,
@@ -92,7 +93,20 @@ const api = {
      * Used to check a user-built canvas scenario before export.
      */
     validate: (scenario: ICSLabScenario): Promise<{ valid: boolean; errors: string[] }> =>
-      ipcRenderer.invoke('scenario:validate', scenario)
+      ipcRenderer.invoke('scenario:validate', scenario),
+
+    /**
+     * Deletes the .icslab file at the given absolute path from disk.
+     *
+     * Called by the Delete Scenario action in App.tsx after the user confirms.
+     * The renderer passes the filePath it received from scenario:import or
+     * scenario:export. Returns { ok: false, error } if the file cannot be
+     * removed — the renderer clears the canvas regardless.
+     *
+     * @param filePath - Absolute path returned by scenario:import or scenario:export.
+     */
+    deleteFile: (filePath: string): Promise<ScenarioDeleteFileResult> =>
+      ipcRenderer.invoke('scenario:deleteFile', { filePath })
   },
 
   // ── Simulation lifecycle ──────────────────────────────────────────────────────
@@ -375,6 +389,24 @@ const api = {
     terminalData: (cb: (data: string) => void) => {
       ipcRenderer.on('terminal:data', (_event, data) => cb(data))
       return () => ipcRenderer.removeAllListeners('terminal:data')
+    },
+
+    /**
+     * Fires when the main process detects that a docker compose up operation will
+     * need to pull container images that are not yet cached locally.
+     *
+     * { pulling: true }  — sent before docker compose up starts pulling images.
+     *                      The renderer should show an "Importing Containers" overlay.
+     * { pulling: false } — sent after all images are confirmed present locally.
+     *                      The renderer can hide the overlay (simStatus will also
+     *                      transition away from 'starting' shortly after).
+     *
+     * @param cb - Callback receiving { pulling: boolean }
+     * @returns Unsubscribe function — call in useEffect cleanup.
+     */
+    simulationPullStatus: (cb: (status: { pulling: boolean }) => void) => {
+      ipcRenderer.on('simulation:pullStatus', (_event, status) => cb(status))
+      return () => ipcRenderer.removeAllListeners('simulation:pullStatus')
     }
   }
 }
