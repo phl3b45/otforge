@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Remote Access Portal — Meridian Process Controls</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!--
+  ================================================================
+  MERIDIAN REMOTE ACCESS PORTAL v2.3
+  Last updated: 2024-03-15 — IT Dept
+
+  Deployment notes:
+    Production VPN gateway : vpn.meridian-process.com
+    OT process network     : 172.20.10.0/24  (Modbus TCP port 502)
+    Control center network : 172.20.30.0/24
+    Plant DMZ              : 172.20.50.0/24
+
+  Test environment (DO NOT use in production):
+    Admin username : admin
+    Admin password : Meridian2024!
+    TODO: rotate before Q3 security audit
+
+  ICS protocols accessible after VPN:
+    Modbus TCP  — 172.20.10.x:502   (PLC / RTU slave registers)
+    DNP3        — 172.20.10.x:20000 (outstation polling)
+    OPC-UA      — 172.20.30.x:4840  (historian tag reads)
+  ================================================================
+-->
+
+<header>
+  <a class="logo" href="index.html">
+    <div class="logo-mark">M</div>
+    <div class="logo-text">
+      <span class="logo-name">Meridian Process Controls</span>
+      <span class="logo-sub">Remote Access Portal</span>
+    </div>
+  </a>
+  <nav>
+    <a href="index.html">← Back to Website</a>
+  </nav>
+</header>
+
+<section style="min-height: 70vh; display: flex; align-items: center;
+                justify-content: center; padding: 2rem;">
+  <div>
+    <h1 style="text-align: center; font-size: 1.5rem; margin-bottom: 0.5rem; color: white;">
+      Client Remote Access
+    </h1>
+    <p style="text-align: center; color: var(--text-dim); margin-bottom: 2rem; font-size: 0.875rem;">
+      Authorized personnel only. All sessions are logged and audited per NERC CIP-005.
+    </p>
+
+    <div class="notice" style="max-width: 420px; margin: 0 auto 1.5rem;">
+      ⚠️ VPN connection required before login.<br>
+      Contact <strong>it@meridian-process.com</strong> for VPN credentials.
+    </div>
+
+    <div class="form-card" style="margin: 0 auto;">
+      <form onsubmit="return false;">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username"
+                 placeholder="username@meridian-process.com"
+                 autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="••••••••">
+        </div>
+        <button type="submit" class="btn btn-primary"
+                style="width: 100%; justify-content: center;">
+          Sign In
+        </button>
+      </form>
+      <p style="text-align: center; color: var(--text-dim); font-size: 0.8rem;
+                margin-top: 1rem;">
+        Forgot your password? Contact
+        <a href="mailto:it@meridian-process.com"
+           style="color: var(--accent2);">IT support</a>.
+      </p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>
+    &copy; 2024 Meridian Process Controls, Inc. —
+    Unauthorized access is prohibited and will be prosecuted under 18 U.S.C. § 1030.
+  </p>
+</footer>
+
+</body>
+</html>

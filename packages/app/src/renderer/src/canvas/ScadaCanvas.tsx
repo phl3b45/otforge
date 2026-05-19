@@ -222,6 +222,7 @@ const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
   // ── Internet DMZ (L5) ───────────────────────────────────────────────────────
   'email-server': ['none'],
   'internet-server': ['none'],
+  'dns-server': ['none'], // authoritative DNS server — meridian-process.com zone (Phase 12)
   // ── Red Team ─────────────────────────────────────────────────────────────────
   'attack-machine': ['none']
 }
@@ -255,6 +256,7 @@ const CATEGORY_LABELS: Record<DeviceCategory, string> = {
   'enterprise-desktop': 'Desktop',
   'email-server': 'Email Server',
   'internet-server': 'Internet Srv',
+  'dns-server': 'DNS Server', // Phase 12
   'attack-machine': 'Attack Machine'
 }
 
@@ -272,7 +274,7 @@ function categoryToZone(category: DeviceCategory): NetworkZone {
   )
     return 'enterprise'
   // Level 5 Internet DMZ
-  if (['email-server', 'internet-server'].includes(category)) return 'internet-dmz'
+  if (['email-server', 'internet-server', 'dns-server'].includes(category)) return 'internet-dmz'
   // Level 3.5 Plant DMZ (firewall and IDS/IPS go here; switch/router can appear in multiple zones
   // but default to plant-dmz as the primary network boundary layer)
   if (category === 'firewall' || category === 'ids-ips') return 'plant-dmz'

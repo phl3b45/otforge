@@ -67,6 +67,7 @@ export type DeviceCategory =
   // ── Internet DMZ (Level 5) ───────────────────────────────────────────────────
   | 'email-server'
   | 'internet-server'
+  | 'dns-server' // Authoritative/recursive DNS server — meridian-process.com zone (Phase 12)
   // ── Red Team ─────────────────────────────────────────────────────────────────
   | 'attack-machine'
 

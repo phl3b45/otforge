@@ -507,6 +507,33 @@ function Iec104RtuSvg() {
 }
 
 /**
+ * DNS Server — a compact server chassis with a globe (world-wide resolution) and
+ * a small "D" domain label above it. Instantly recognizable as a naming service
+ * and visually distinct from the generic Web Server globe (which has latitude arcs).
+ * The two short horizontal "query" lines below the globe represent A-record lookups.
+ * Placed in the Internet DMZ palette alongside the email and internet-facing servers.
+ */
+function DnsServerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* Globe body */}
+      <circle cx="12" cy="9" r="6" />
+      {/* Vertical meridian */}
+      <ellipse cx="12" cy="9" rx="2.5" ry="6" />
+      {/* Equator */}
+      <line x1="6" y1="9" x2="18" y2="9" />
+      {/* Server chassis base */}
+      <rect x="4" y="17" width="16" height="5" rx="1" />
+      {/* Connecting legs from globe to chassis */}
+      <line x1="8" y1="15" x2="8" y2="17" />
+      <line x1="16" y1="15" x2="16" y2="17" />
+      {/* Status LED */}
+      <circle cx="18" cy="19.5" r="0.8" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+/**
  * Attack Machine — monitor with a crosshair/target overlay, clearly distinguishing
  * this device from the HMI. The red color (set via palette) reinforces that this is
  * a hostile/red-team tool (Kali Linux container).
@@ -564,6 +591,7 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   // ── Internet DMZ (Level 5) ───────────────────────────────────────────────────
   'email-server': EmailServerSvg,
   'internet-server': InternetServerSvg,
+  'dns-server': DnsServerSvg, // authoritative DNS for meridian-process.com (Phase 12)
   // ── Red Team ─────────────────────────────────────────────────────────────────
   'attack-machine': AttackMachineSvg
 }

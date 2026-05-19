@@ -74,6 +74,8 @@ Real protocol packets flow on Docker virtual networks — scanner tools and expl
 | S7comm (Siemens S7) | Pure Python (RFC 1006 / COTP / S7 PDU) | TCP 102 |
 | IEC 60870-5-104 | Pure Python (APCI / ASDU) | TCP 2404 |
 | Modbus TCP (process sim) | pymodbus 3.7 + physics loop (water tank / pipeline / generator) | TCP 502 |
+| HTTP (company site) | nginx 1.27 — Meridian Process Controls OSINT target | TCP 80 |
+| DNS | dnsmasq — authoritative resolver for meridian-process.com | UDP/TCP 53 |
 
 ---
 
@@ -86,7 +88,7 @@ Real protocol packets flow on Docker virtual networks — scanner tools and expl
 | Exploitation | Metasploit Framework, Armitage (GUI) |
 | Credentials | Hydra, Medusa, Patator, John the Ripper, Hashcat |
 | ICS/OT specific | pymodbus, dnp3-python, opcua, bacpypes3, python-snap7 (S7comm), impacket, ike-scan |
-| Desktop | Full Kali Xfce4 via KasmVNC — launches in a dedicated OS window |
+| Desktop | Full Kali Xfce4 via noVNC (port 6080) — launches in a dedicated OS window |
 
 ---
 
@@ -235,7 +237,8 @@ Install packs via **Toolbar → Packs → Install Pack** (Author mode). Installe
 | 9 | Community scenario pack format (.icspack ZIP — Pack Manager, custom device types, bundled Suricata/Zeek rules) | ✅ Complete |
 | 10 | Conpot legacy device emulation (Siemens S7, IEC 104) | ✅ Complete |
 | 11 | Physical process simulation (water tank, pipeline, generator dynamics) | ✅ Complete |
-| 12 | macOS + Linux packaging and distribution | 🔜 Planned |
+| 12 | Attack infrastructure — company website (Meridian Process Controls), DNS server, Kali noVNC desktop | ✅ Complete |
+| 13 | macOS + Linux packaging and distribution | 🔜 Planned |
 
 ---
 

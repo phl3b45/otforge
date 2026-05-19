@@ -57,6 +57,14 @@ jobs:
           # generic. Exposes Modbus TCP on port 502; PROCESS_TYPE env var selects model.
           - image: ics-sim-process
             context: containers/process-sim
+          # Phase 12: Meridian Process Controls company website — nginx serving
+          # a realistic industrial automation company site for OSINT exercises.
+          - image: ics-sim-web-company
+            context: containers/web-company
+          # Phase 12: Authoritative DNS server for meridian-process.com — dnsmasq
+          # on Alpine. Logs all queries so students observe reconnaissance in real time.
+          - image: ics-sim-dns
+            context: containers/dns-server
 
     steps:
       - uses: actions/checkout@v4

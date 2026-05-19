@@ -146,7 +146,10 @@ const PALETTE: PaletteSection[] = [
     layers: ['internet-dmz'],
     items: [
       { category: 'email-server', label: 'Email Server' },
+      // internet-server: generic internet-facing server (e.g., company website via dockerImage override)
       { category: 'internet-server', label: 'Internet Server' },
+      // dns-server: authoritative DNS for the simulated company domain (Phase 12)
+      { category: 'dns-server', label: 'DNS Server' },
       { category: 'firewall', label: 'Firewall' }
     ]
   }
@@ -172,7 +175,9 @@ const PALETTE_COLORS: Partial<Record<DeviceCategory, string>> = {
   'enterprise-desktop': '#a371f7',
   // Internet DMZ devices — orange
   'email-server': '#f78166',
-  'internet-server': '#f78166'
+  'internet-server': '#f78166',
+  // DNS server — same orange family as other Internet DMZ devices (Phase 12)
+  'dns-server': '#f78166'
 }
 
 /**

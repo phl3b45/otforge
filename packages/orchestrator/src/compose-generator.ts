@@ -95,11 +95,15 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   // STUB: mailhog provides a lightweight SMTP+web UI for email simulation.
   // Replace with ics-sim-mail once published.
   'email-server': 'mailhog/mailhog:latest',
-  // STUB: nginx:alpine. Replace with ics-sim-webserver once published.
+  // STUB: nginx:alpine for generic internet-facing servers.
+  // The tutorial scenario overrides this with ics-sim-web-company via deviceConfig.dockerImage.
   'internet-server': 'nginx:alpine',
+  // Phase 12: Authoritative DNS server — dnsmasq serving the meridian-process.com zone.
+  'dns-server': 'ghcr.io/iburres/ics-sim-dns:latest',
   // ── Red Team ─────────────────────────────────────────────────────────────────
-  // linuxserver/kali-linux: full Kali XFCE4 desktop with KasmVNC on port 3000.
-  'attack-machine': 'lscr.io/linuxserver/kali-linux:latest'
+  // Custom Kali rolling image with full Xfce4 + noVNC (port 6080) + ICS attack tools.
+  // Built from containers/attack-base — replaces the old linuxserver/kali-linux stub.
+  'attack-machine': 'ghcr.io/iburres/ics-sim-attack-base:latest'
 }
 
 /**
@@ -142,8 +146,10 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   // ── Internet DMZ (Level 5) ───────────────────────────────────────────────────
   'email-server': { memory: 128, cpus: '0.25' }, // Postfix / mail relay
   'internet-server': { memory: 128, cpus: '0.25' }, // internet-facing web server
+  // Phase 12: dnsmasq on Alpine — extremely lightweight DNS server
+  'dns-server': { memory: 32, cpus: '0.05' },
   // ── Red Team ─────────────────────────────────────────────────────────────────
-  // 2 GB: full Xfce4 desktop + Wireshark GUI + Armitage + Metasploit + VNC server.
+  // 2 GB: full Xfce4 desktop + Wireshark GUI + Armitage + Metasploit + noVNC server.
   // Students are expected to have 16+ GB RAM; this budget reflects that baseline.
   'attack-machine': { memory: 2048, cpus: '2.0' }
 }
@@ -398,29 +404,25 @@ export function generateCompose(
     // Attack machine is always isolated on the dedicated Attacker network.
     // It is NOT on any Purdue Model zone — it lives outside the OT/IT/Enterprise perimeter.
     //
-    // Image: lscr.io/linuxserver/kali-linux:latest
-    //   Full Kali XFCE4 desktop served by KasmVNC over HTTP on container port 3000.
-    //   No custom image build required. PUID/PGID/TZ are required by the linuxserver
-    //   base image to create the correct non-root user inside the container.
-    //   shm_size: '1g' prevents KasmVNC's internal Chromium from crashing at startup.
+    // Image: ghcr.io/iburres/ics-sim-attack-base:latest (built from containers/attack-base)
+    //   Full Kali rolling desktop (Xfce4 + TigerVNC + noVNC) served on container port 6080.
+    //   Includes ICS attack tools: nmap, pymodbus, metasploit, wireshark, scapy, etc.
+    //   Students browse to http://localhost:<hostPort>/vnc.html to get the desktop GUI.
+    //   docker exec -it <name> /bin/bash also works for scripted CLI exercises.
     //
     // NET_ADMIN + NET_RAW enable nmap raw scans, ARP poisoning, tcpdump, etc.
     //
-    // Port 3000 (KasmVNC web desktop) is published to a deterministic host port so
-    // the Electron main process can open a separate OS BrowserWindow. The same
-    // port index ordering is reproduced in main/index.ts → activeAttackPorts map.
+    // Port 6080 (noVNC WebSocket) is published to a deterministic host port so
+    // the Electron main process can open a separate OS BrowserWindow at the noVNC URL.
+    // The same port index ordering is reproduced in main/index.ts → activeAttackPorts map.
     if (device.category === 'attack-machine') {
       const webPort = ATTACK_NOVNC_PORT_BASE + attackPortIndex
       services[serviceName].networks = {
         'attacker-net': { ipv4_address: device.ipAddress }
       }
       services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
-      services[serviceName].ports = [`${webPort}:3000`]
-      services[serviceName].shm_size = '1g'
-      // linuxserver base image requires these three vars to initialise the desktop user
-      const attackEnv = services[serviceName].environment ?? []
-      attackEnv.push('PUID=1000', 'PGID=1000', 'TZ=Etc/UTC')
-      services[serviceName].environment = attackEnv
+      // Port 6080: noVNC WebSocket bridge served by our custom ics-sim-attack-base image
+      services[serviceName].ports = [`${webPort}:6080`]
       attackPortIndex++
     }
   }
@@ -865,6 +867,17 @@ function buildDeviceEnv(
     if (pu.pipelineVolumeL !== undefined) env.push(`PIPELINE_VOLUME_L=${pu.pipelineVolumeL}`)
     if (pu.pipelinePumpMaxLpm !== undefined)
       env.push(`PIPELINE_PUMP_MAX_LPM=${pu.pipelinePumpMaxLpm}`)
+  }
+
+  // Phase 12: DNS server — inject domain and web server IP from scenario metadata.
+  // The container's Dockerfile already sets DNS_DOMAIN=meridian-process.com as the
+  // default; these overrides let advanced scenarios customize the zone at deploy time.
+  // WEB_SERVER_IP defaults to 203.0.113.10 in the container; only override when
+  // the scenario's internet-server device has a known static IP.
+  if (device.category === 'dns-server') {
+    // No-op: defaults in the container Dockerfile are correct for the tutorial scenario.
+    // Scenario authors who need a different domain/IP can add env overrides via the
+    // Properties Panel (stored as custom environment fields on the DeviceConfig).
   }
 
   // PLC program pre-load (Phase 4):

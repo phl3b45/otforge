@@ -263,6 +263,18 @@ export const VALID_CONNECTIONS: Partial<
     'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
   },
 
+  // ── DNS server — authoritative resolver for meridian-process.com ─────────────
+  // Phase 12: Passive server; only infrastructure devices connect to it on the
+  // canvas. It does not initiate ICS connections — all entries use 'none' (Ethernet).
+  // The attack machine can query it via dig/nslookup; those queries traverse the
+  // router/firewall and are modeled by the attack-machine → dns-server edge below.
+  'dns-server': {
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
   // ── Infrastructure: Ethernet pass-through — no ICS application protocols ───
   firewall: {
     plc: ['none'],
@@ -273,6 +285,9 @@ export const VALID_CONNECTIONS: Partial<
     'process-unit': ['none'], // Phase 11
     hmi: ['none'],
     historian: ['none'],
+    'application-server': ['none'],
+    'database-server': ['none'],
+    'engineering-workstation': ['none'],
     sensor: ['none'],
     actuator: ['none'],
     pump: ['none'],
@@ -283,6 +298,13 @@ export const VALID_CONNECTIONS: Partial<
     'ids-ips': ['none'],
     switch: ['none'],
     router: ['none'],
+    'domain-controller': ['none'],
+    'web-server': ['none'],
+    'business-server': ['none'],
+    'enterprise-desktop': ['none'],
+    'email-server': ['none'],
+    'internet-server': ['none'],
+    'dns-server': ['none'], // Phase 12
     'attack-machine': ['none']
   },
   'ids-ips': {
@@ -294,6 +316,9 @@ export const VALID_CONNECTIONS: Partial<
     'process-unit': ['none'], // Phase 11
     hmi: ['none'],
     historian: ['none'],
+    'application-server': ['none'],
+    'database-server': ['none'],
+    'engineering-workstation': ['none'],
     sensor: ['none'],
     actuator: ['none'],
     pump: ['none'],
@@ -304,6 +329,13 @@ export const VALID_CONNECTIONS: Partial<
     'ids-ips': ['none'],
     switch: ['none'],
     router: ['none'],
+    'domain-controller': ['none'],
+    'web-server': ['none'],
+    'business-server': ['none'],
+    'enterprise-desktop': ['none'],
+    'email-server': ['none'],
+    'internet-server': ['none'],
+    'dns-server': ['none'], // Phase 12
     'attack-machine': ['none']
   },
   switch: {
@@ -315,6 +347,9 @@ export const VALID_CONNECTIONS: Partial<
     'process-unit': ['none'], // Phase 11
     hmi: ['none'],
     historian: ['none'],
+    'application-server': ['none'],
+    'database-server': ['none'],
+    'engineering-workstation': ['none'],
     sensor: ['none'],
     actuator: ['none'],
     pump: ['none'],
@@ -325,6 +360,13 @@ export const VALID_CONNECTIONS: Partial<
     'ids-ips': ['none'],
     switch: ['none'],
     router: ['none'],
+    'domain-controller': ['none'],
+    'web-server': ['none'],
+    'business-server': ['none'],
+    'enterprise-desktop': ['none'],
+    'email-server': ['none'],
+    'internet-server': ['none'],
+    'dns-server': ['none'], // Phase 12
     'attack-machine': ['none']
   },
   router: {
@@ -336,6 +378,9 @@ export const VALID_CONNECTIONS: Partial<
     'process-unit': ['none'], // Phase 11
     hmi: ['none'],
     historian: ['none'],
+    'application-server': ['none'],
+    'database-server': ['none'],
+    'engineering-workstation': ['none'],
     sensor: ['none'],
     actuator: ['none'],
     pump: ['none'],
@@ -346,6 +391,13 @@ export const VALID_CONNECTIONS: Partial<
     'ids-ips': ['none'],
     switch: ['none'],
     router: ['none'],
+    'domain-controller': ['none'],
+    'web-server': ['none'],
+    'business-server': ['none'],
+    'enterprise-desktop': ['none'],
+    'email-server': ['none'],
+    'internet-server': ['none'],
+    'dns-server': ['none'], // Phase 12
     'attack-machine': ['none']
   },
 
@@ -500,6 +552,16 @@ export const VALID_CONNECTIONS: Partial<
       'iec61850',
       'none'
     ],
+    // Enterprise zone targets — lateral movement and credential attacks
+    'domain-controller': ['none'],
+    'web-server': ['none'],
+    'business-server': ['none'],
+    'enterprise-desktop': ['none'],
+    // Internet DMZ targets — OSINT, phishing recon, banner grabbing
+    'email-server': ['none'],
+    'internet-server': ['none'],
+    // Phase 12: DNS reconnaissance — dig/nslookup/fierce zone-transfer attempts
+    'dns-server': ['none'],
     firewall: ['none'],
     'ids-ips': ['none'],
     switch: ['none'],
@@ -580,6 +642,7 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
   'enterprise-desktop': 'Enterprise Desktop',
   'email-server': 'Email Server',
   'internet-server': 'Internet Server',
+  'dns-server': 'DNS Server', // Phase 12
   'attack-machine': 'Attack Machine'
 }
 
