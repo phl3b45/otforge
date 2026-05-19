@@ -412,11 +412,34 @@ function Toolbar({
         )}
 
         {/*
+         * Settings gear — file/config operations group ends here.
+         * Always visible so users can adjust subnet settings at any time.
+         * Disabled only during transitional states (starting / stopping) to
+         * prevent modifying settings while Docker is already reading them.
+         */}
+        <button
+          className="btn btn-sm btn-ghost btn-settings-gear"
+          onClick={onSettingsOpen}
+          disabled={!canOpenSettings}
+          title="Network settings — configure Docker subnet addresses"
+          aria-label="Open network settings"
+        >
+          ⚙
+        </button>
+
+        {/*
+         * ── Simulation actions group ────────────────────────────────────────────
+         * Everything after this divider is a live-simulation action: Open HMI,
+         * Monitor, Attack Machine, and Run/Stop are all grouped together so they
+         * read as one coherent "simulation control" row even when the toolbar wraps.
+         */}
+        <div className="toolbar-divider" />
+
+        {/*
          * Open HMI — only shown while simulation is running.
          * Opens the FUXA process HMI in a standalone window (localhost:1881).
-         * FUXA is always started as simulation infrastructure and is automatically
-         * provisioned with Modbus connections to PLCs in the scenario (via
-         * configureFuxa() in the main process).
+         * FUXA is automatically provisioned with Modbus connections to PLCs
+         * in the scenario (via configureFuxa() in the main process).
          */}
         {isRunning && (
           <button
@@ -444,22 +467,13 @@ function Toolbar({
         )}
 
         {/*
-         * Attack Machine section — two-state button:
-         *   idle + no attack machine  → "Add Attack Machine" adds a default kali device
-         *   idle + attack machine     → shows "⚔ Attack Machine" as an indicator (disabled)
-         *   running + attack machine  → "Launch Attack Machine" opens a separate OS window
-         *
-         * The attack machine is intentionally excluded from the Purdue layer canvas tabs.
-         * Instructors add it here; students launch it from this button when the sim runs.
-         */}
-        {/*
          * Attack Machine button — three visual states:
          *   idle (no machine)  → red outline "+ Attack Machine" (adds the device)
          *   idle (has machine) → red outline "⚔ Attack Ready" (indicator, not clickable)
          *   running            → solid green "⚔ Attack Machine" (launches noVNC window)
          *
-         * Red idle state matches Delete Scenario so both destructive/offensive tools
-         * share the same visual weight. Green running state signals "active and ready."
+         * Grouped after the divider alongside HMI and Monitor so all
+         * simulation-time actions share the same visual row as Run/Stop.
          */}
         {isRunning && hasAttackMachine && firstAttackNodeId ? (
           <button
@@ -486,23 +500,6 @@ function Toolbar({
           )
         )}
 
-        {/*
-         * Settings gear button — always visible (before the divider) so users can
-         * configure subnet preferences at any time. Disabled only during transitional
-         * states (starting / stopping) to avoid modifying settings while Docker is
-         * already reading them. Changes take effect on the next simulation start.
-         */}
-        <button
-          className="btn btn-sm btn-ghost btn-settings-gear"
-          onClick={onSettingsOpen}
-          disabled={!canOpenSettings}
-          title="Network settings — configure Docker subnet addresses"
-          aria-label="Open network settings"
-        >
-          ⚙
-        </button>
-
-        <div className="toolbar-divider" />
         {/* Stop button shown while running/starting; Run button shown while idle/stopping */}
         {showStop ? (
           <button className="btn btn-sm btn-danger" onClick={onStop} disabled={isStopping}>
