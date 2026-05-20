@@ -383,7 +383,27 @@ const api = {
      *   open, the clipboard is empty, or the noVNC element is not yet in the DOM.
      */
     pasteClipboard: (nodeId: string): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke('attack:pasteClipboard', { nodeId })
+      ipcRenderer.invoke('attack:pasteClipboard', { nodeId }),
+
+    /**
+     * Opens the noVNC BrowserWindow for the attack machine AND immediately injects
+     * the current host clipboard text into the Kali X11 CLIPBOARD selection.
+     *
+     * This is the one-click path used by the toolbar ⚔ Attack Machine button:
+     *   1. Opens (or focuses) the Kali desktop window.
+     *   2. Waits for noVNC's #noVNC_clipboard_text element to appear in the DOM.
+     *   3. Injects clipboard text via the same RFB ClientCutText mechanism as
+     *      pasteClipboard — after which the user can right-click → Paste (or
+     *      Ctrl+Shift+V) in any Kali terminal or application.
+     *
+     * If the clipboard is empty the window opens without paste (no error).
+     *
+     * @param nodeId - Canvas node ID of the attack-machine device.
+     * @returns { ok: true } on success; { ok: false, error } if the machine is not
+     *   ready, or if the noVNC clipboard element cannot be found within 5 seconds.
+     */
+    launchAndPaste: (nodeId: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('attack:launchAndPaste', { nodeId })
   },
 
   // ── One-way push events from main → renderer ──────────────────────────────────

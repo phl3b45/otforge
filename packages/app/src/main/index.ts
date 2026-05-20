@@ -1397,6 +1397,145 @@ function registerIPCHandlers(): void {
     }
   })
 
+  /**
+   * Combined "open window + paste clipboard" handler.
+   *
+   * Called by the ⚔ Attack Machine toolbar button so the user never has to
+   * navigate through the AttackTerminalModal tabs.  One click:
+   *   1. Opens the noVNC BrowserWindow (or re-focuses it if already open).
+   *   2. Waits for the page to finish loading.
+   *   3. Polls the DOM until noVNC's #noVNC_clipboard_text element appears
+   *      (noVNC initialises its UI asynchronously after DOMContentLoaded).
+   *   4. Injects the host clipboard text via the same DOM injection used by
+   *      attack:pasteClipboard — textarea value + 'change' event → RFB
+   *      ClientCutText → TigerVNC X11 CLIPBOARD selection.
+   *   5. The user can then right-click → Paste (or Ctrl+Shift+V) anywhere
+   *      inside the Kali session.
+   *
+   * If the clipboard is empty the window still opens; paste is skipped silently
+   * so the user can navigate to Kali first and copy something there.
+   */
+  ipcMain.handle(
+    'attack:launchAndPaste',
+    async (_e, { nodeId }: { nodeId: string }): Promise<{ ok: boolean; error?: string }> => {
+      // ── Step 1: Get or create the noVNC BrowserWindow ──────────────────────
+
+      let win = attackWindows.get(nodeId)
+
+      if (!win || win.isDestroyed()) {
+        // No open window — run the same setup as attack:launchWindow.
+        const port = activeAttackPorts.get(nodeId)
+        if (!port) {
+          return {
+            ok: false,
+            error: 'No noVNC port found for this attack machine — is the simulation running?'
+          }
+        }
+        const ready = await isPortOpen(port)
+        if (!ready) {
+          return {
+            ok: false,
+            error:
+              `Attack machine is not ready yet (port ${port} is not open). ` +
+              'Wait a few seconds and try again.'
+          }
+        }
+
+        const vncUrl = `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale`
+        const attackSession = session.fromPartition('attack-novnc')
+        attackSession.setPermissionRequestHandler((_wc, permission, callback) => {
+          callback(permission === 'clipboard-read' || permission === 'clipboard-sanitized-write')
+        })
+        attackSession.setPermissionCheckHandler((_wc, permission) => {
+          return permission === 'clipboard-read' || permission === 'clipboard-sanitized-write'
+        })
+
+        const attackWindow = new BrowserWindow({
+          width: 1280,
+          height: 900,
+          minWidth: 800,
+          minHeight: 600,
+          title: `Attack Machine — ${nodeId}`,
+          autoHideMenuBar: true,
+          backgroundColor: '#1a0000',
+          webPreferences: {
+            session: attackSession,
+            sandbox: true,
+            contextIsolation: true,
+            nodeIntegration: false,
+            webviewTag: false
+          }
+        })
+
+        attackWindow.loadURL(vncUrl)
+        attackWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+        attackWindows.set(nodeId, attackWindow)
+        attackWindow.on('closed', () => {
+          if (attackWindows.get(nodeId) === attackWindow) attackWindows.delete(nodeId)
+        })
+
+        // Wait for the page HTML to finish loading before attempting DOM access.
+        await new Promise<void>(resolve => {
+          if (attackWindow.webContents.isLoading()) {
+            attackWindow.webContents.once('did-finish-load', () => resolve())
+          } else {
+            resolve()
+          }
+        })
+
+        win = attackWindow
+      } else {
+        // Window already open — bring it to the front.
+        if (win.isMinimized()) win.restore()
+        win.focus()
+      }
+
+      // ── Step 2: Inject host clipboard into noVNC ────────────────────────────
+
+      const text = clipboard.readText()
+      if (!text) {
+        // No clipboard content; window is open, paste skipped silently.
+        return { ok: true }
+      }
+
+      const safeText = JSON.stringify(text)
+
+      // noVNC initialises its UI asynchronously after DOMContentLoaded, so
+      // #noVNC_clipboard_text may not yet exist when did-finish-load fires.
+      // Poll every 200 ms for up to 5 seconds to handle slow connections.
+      try {
+        const found = await win.webContents.executeJavaScript(`
+          new Promise(function(resolve) {
+            var deadline = Date.now() + 5000;
+            function check() {
+              var ta = document.getElementById('noVNC_clipboard_text');
+              if (ta) {
+                ta.value = ${safeText};
+                ta.dispatchEvent(new Event('change'));
+                resolve(true);
+              } else if (Date.now() < deadline) {
+                setTimeout(check, 200);
+              } else {
+                resolve(false);
+              }
+            }
+            check();
+          })
+        `)
+        if (!found) {
+          return {
+            ok: false,
+            error:
+              'noVNC clipboard element not found — wait for the desktop to fully load and try again.'
+          }
+        }
+        return { ok: true }
+      } catch {
+        return { ok: false, error: 'Could not inject clipboard into the Kali desktop window.' }
+      }
+    }
+  )
+
   // ── Community scenario packs (Phase 9) ────────────────────────────────────────
 
   /**

@@ -34,7 +34,6 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import type {
-  AppInfo,
   DockerStatus,
   OTForgeScenario,
   OTForgeMeta,
@@ -80,31 +79,86 @@ type SimStatus = 'idle' | 'starting' | 'running' | 'stopping'
  * a simulation cannot start without Docker Desktop.
  *
  * @param docker   - Docker status from the main process (null while checking).
- * @param appInfo  - Electron/Node version info for the status row.
  * @param onImport - Opens the native file picker to import a .otflab scenario.
  * @param onNew    - Creates a blank canvas and transitions to the canvas view.
  */
 function LaunchScreen({
   docker,
-  appInfo,
   onImport,
   onNew
 }: {
   docker: DockerStatus | null
-  appInfo: AppInfo | null
   onImport: () => void
   onNew: () => void
 }) {
   return (
     <div className="launch-screen">
       <div className="launch-content">
+        {/*
+         * Brand mark: hexagonal circuit icon + split wordmark.
+         * "OT" is bold teal (Operational Technology), "Forge" is gradient white —
+         * the two halves visually represent the digital-meets-industrial identity.
+         */}
         <div className="logo-mark">
-          <span className="logo-text">OTForge</span>
-        </div>
-        <h1>OTForge</h1>
-        <p className="tagline">ICS/SCADA Security Research &amp; Education Platform</p>
+          {/* Hexagonal circuit icon — two concentric hexagons with circuit-node connectors */}
+          <svg
+            className="logo-icon"
+            viewBox="0 0 60 66"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            {/* Outer hexagon */}
+            <path
+              d="M30 2 L56 17 L56 49 L30 64 L4 49 L4 17 Z"
+              fill="rgba(57,208,176,0.05)"
+              stroke="#39d0b0"
+              strokeWidth="2"
+              strokeLinejoin="round"
+            />
+            {/* Inner hexagon (dimmer) */}
+            <path
+              d="M30 14 L47 23.5 L47 42.5 L30 52 L13 42.5 L13 23.5 Z"
+              fill="none"
+              stroke="rgba(57,208,176,0.25)"
+              strokeWidth="1"
+              strokeLinejoin="round"
+            />
+            {/* Central node */}
+            <circle cx="30" cy="33" r="3.5" fill="#39d0b0" />
+            {/* Radial connectors from centre to inner-hex top and side vertices */}
+            <line x1="30" y1="29.5" x2="30" y2="14" stroke="#39d0b0" strokeWidth="1.5" />
+            <line
+              x1="27.2"
+              y1="31.2"
+              x2="13"
+              y2="23.5"
+              stroke="rgba(57,208,176,0.5)"
+              strokeWidth="1"
+            />
+            <line
+              x1="32.8"
+              y1="31.2"
+              x2="47"
+              y2="23.5"
+              stroke="rgba(57,208,176,0.5)"
+              strokeWidth="1"
+            />
+            <line x1="30" y1="36.5" x2="30" y2="52" stroke="rgba(57,208,176,0.3)" strokeWidth="1" />
+            {/* Accent dots at top and upper-side vertices */}
+            <circle cx="30" cy="14" r="2" fill="#39d0b0" />
+            <circle cx="47" cy="23.5" r="1.5" fill="rgba(57,208,176,0.7)" />
+            <circle cx="13" cy="23.5" r="1.5" fill="rgba(57,208,176,0.7)" />
+          </svg>
 
-        {/* Docker and app version status indicators */}
+          {/* Wordmark: OT in teal, Forge in gradient white */}
+          <div className="logo-wordmark">
+            <span className="logo-ot">OT</span>
+            <span className="logo-forge">Forge</span>
+          </div>
+        </div>
+        <p className="tagline">ICS / SCADA Security Research &amp; Education Platform</p>
+
+        {/* Docker status indicator */}
         <div className="launch-status">
           <div className="status-row">
             <span className={`status-dot ${docker?.available ? 'ok' : 'error'}`} />
@@ -117,14 +171,6 @@ function LaunchScreen({
                   : (docker.message ?? 'Not available')}
             </span>
           </div>
-          {appInfo && (
-            <div className="status-row">
-              <span className="status-dot ok" />
-              <span>
-                v{appInfo.version} · Electron {appInfo.electronVersion} · {appInfo.platform}
-              </span>
-            </div>
-          )}
         </div>
 
         <div className="launch-actions">
@@ -178,32 +224,44 @@ function SimStatusBadge({ status }: { status: SimStatus }) {
 
 /**
  * Left-panel placeholder shown when the canvas is in View Mode (author + builder
- * mode not yet activated). Prompts the instructor to click Scenario Builder.
+ * mode not yet activated).
  *
- * In View Mode, the DevicePalette is hidden and drag-and-drop is disabled so
- * students cannot accidentally modify a scenario opened for review.
+ * During simulation the instructional text and builder shortcut are hidden because
+ * the user cannot edit while a sim is running — only the lock reminder is shown.
+ * Outside simulation the full prompt is shown so instructors know how to enable editing.
  *
  * @param onOpenBuilder - Opens the MetadataModal to activate builder mode.
+ * @param simRunning    - When true, hide the Scenario Builder prompt and button.
  */
-function CanvasViewHint({ onOpenBuilder }: { onOpenBuilder: () => void }) {
+function CanvasViewHint({
+  onOpenBuilder,
+  simRunning
+}: {
+  onOpenBuilder: () => void
+  simRunning?: boolean
+}) {
   return (
     <div className="canvas-view-hint">
       <div className="canvas-view-hint-icon">🔒</div>
       <p>
         You are in <strong>View Mode</strong>.
       </p>
-      <p>
-        Click <strong>Scenario Builder</strong> in the toolbar to enable editing and build your
-        scenario.
-      </p>
-      <button
-        className="btn btn-sm btn-ghost"
-        onClick={onOpenBuilder}
-        style={{ marginTop: 8 }}
-        title="Open the Scenario Builder to activate edit mode"
-      >
-        Open Scenario Builder
-      </button>
+      {!simRunning && (
+        <>
+          <p>
+            Click <strong>Scenario Builder</strong> in the toolbar to enable editing and build your
+            scenario.
+          </p>
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={onOpenBuilder}
+            style={{ marginTop: 8 }}
+            title="Open the Scenario Builder to activate edit mode"
+          >
+            Open Scenario Builder
+          </button>
+        </>
+      )}
     </div>
   )
 }
@@ -384,7 +442,6 @@ type View = 'launch' | 'canvas'
  */
 export default function App() {
   const [view, setView] = useState<View>('launch')
-  const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [docker, setDocker] = useState<DockerStatus | null>(null)
   const [scenario, setScenario] = useState<OTForgeScenario | null>(null)
   const [selectedDevice, setSelectedDevice] = useState<DeviceConfig | null>(null)
@@ -444,6 +501,9 @@ export default function App() {
    */
   const [pullActive, setPullActive] = useState<boolean>(false)
 
+  // attackLaunched state removed — toolbar button now opens AttackTerminalModal directly
+  // so button color uses (attackTerminalDevice !== null) instead of a separate flag.
+
   /**
    * Absolute path of the .otflab file currently open in the canvas.
    * Set when a scenario is loaded via Open (scenario:import) or saved via
@@ -481,7 +541,12 @@ export default function App() {
    * Drives the button color: green (not yet launched) → red (launched and in use).
    * Automatically reset to false when the simulation stops so the next run starts green.
    */
-  const [attackLaunched, setAttackLaunched] = useState<boolean>(false)
+  /**
+   * True once the toolbar ⚔ Attack Machine button has successfully opened the Kali
+   * desktop window via attack:launchAndPaste.  Drives button color: teal → red.
+   * Reset to false when the simulation stops.
+   */
+  const [attackWindowLaunched, setAttackWindowLaunched] = useState<boolean>(false)
   /** Active Purdue layer tab — controls which canvas, palette section, and properties are shown. */
   const [activeLayer, setActiveLayer] = useState<NetworkZone>('ot')
   /**
@@ -493,15 +558,12 @@ export default function App() {
 
   useEffect(() => {
     // Fetch app metadata, Docker status, and installed packs concurrently on first render
-    Promise.all([
-      window.electronAPI.app.info(),
-      window.electronAPI.docker.check(),
-      window.electronAPI.packs.list()
-    ]).then(([info, dockerStatus, packList]) => {
-      setAppInfo(info)
-      setDocker(dockerStatus)
-      setInstalledPacks(packList.packs)
-    })
+    Promise.all([window.electronAPI.docker.check(), window.electronAPI.packs.list()]).then(
+      ([dockerStatus, packList]) => {
+        setDocker(dockerStatus)
+        setInstalledPacks(packList.packs)
+      }
+    )
 
     // Subscribe to live container status push events from the main process
     const unsubStatus = window.electronAPI.on.containerStatusUpdate(status => {
@@ -749,8 +811,10 @@ export default function App() {
   useEffect(() => {
     if (simStatus !== 'running') {
       setShowMonitor(false)
-      // Reset the launched indicator so the button returns to green on the next run
-      setAttackLaunched(false)
+      // Close the attack terminal modal when the simulation stops so xterm.js
+      // doesn't remain open against a dead docker exec session.
+      setAttackTerminalDevice(null)
+      setAttackWindowLaunched(false)
     }
   }, [simStatus])
 
@@ -972,27 +1036,10 @@ export default function App() {
     }
   }, [])
 
-  /**
-   * Opens the attack machine's Kali Linux desktop in a separate Electron OS window.
-   *
-   * Calls the `attack:launchWindow` IPC handler which creates a new BrowserWindow
-   * loading the noVNC URL for the attack container's Xfce4 desktop (port 6080 →
-   * host port 6900+). The window is a native OS window so it can be dragged to a
-   * second monitor independently of the main app.
-   *
-   * @param nodeId - Canvas node ID of the attack-machine device to open.
-   */
-  const handleAttackMachineLaunch = useCallback(async (nodeId: string) => {
-    const result = await window.electronAPI.attack.launchWindow(nodeId)
-    if (result.ok) {
-      // Button turns red to signal the machine is actively in use
-      setAttackLaunched(true)
-    } else {
-      // Surface the error in the same dismissible banner used for simulation start failures
-      // so the instructor sees a clear message rather than a blank window or VNC error page.
-      setSimError(result.error ?? 'Failed to open attack machine window.')
-    }
-  }, [])
+  // handleAttackMachineLaunch removed — the toolbar button now opens AttackTerminalModal
+  // which has both a Terminal tab (docker exec + xterm.js, paste works) and a Desktop
+  // tab (noVNC Xfce4, with Paste to Kali button). The modal's own handleLaunchDesktop
+  // callback handles calling attack:launchWindow when the user clicks the Desktop tab.
 
   /**
    * Applies a security-layer update from FirewallPanel or IDSPanel.
@@ -1086,6 +1133,29 @@ export default function App() {
     setAttackTerminalDevice(null)
   }, [])
 
+  /**
+   * Toolbar ⚔ Attack Machine button handler (sim running).
+   *
+   * Calls attack:launchAndPaste which:
+   *   1. Opens (or re-focuses) the Kali noVNC BrowserWindow.
+   *   2. Waits for noVNC to initialise its clipboard textarea.
+   *   3. Injects the current host clipboard text as the X11 CLIPBOARD selection
+   *      so the user can immediately right-click → Paste in Kali.
+   *
+   * If paste fails (machine not ready, clipboard empty) a console warning is
+   * shown but the window still opens — the user can paste manually later.
+   *
+   * @param nodeId - Canvas node ID of the attack-machine device.
+   */
+  const handleLaunchAndPaste = useCallback(async (nodeId: string) => {
+    const result = await window.electronAPI.attack.launchAndPaste(nodeId)
+    if (result.ok) {
+      setAttackWindowLaunched(true)
+    } else {
+      console.warn('[AttackMachine] launchAndPaste failed:', result.error)
+    }
+  }, [])
+
   // ── Simulation control state (used in sim-tabs-row Run/Stop button) ────────────
   // These mirror the lifecycle booleans inside Toolbar but live in App so the
   // Run/Stop button can be rendered alongside LayerTabBar in the sim-tabs-row,
@@ -1112,33 +1182,31 @@ export default function App() {
     ? Object.entries(scenario.devices.devices).filter(([, d]) => d.category === 'attack-machine')
     : []
   const hasAttackMachine = attackDevices.length > 0
-  // First attack machine nodeId — used by the Launch button when simulation is running
+  // First attack machine node ID — used by toolbar button to call attack:launchAndPaste
   const firstAttackNodeId = attackDevices[0]?.[0] ?? null
   const hasTutorial = !!scenario?.meta.tutorialSteps?.length
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (view === 'launch') {
-    return (
-      <LaunchScreen docker={docker} appInfo={appInfo} onImport={handleImport} onNew={handleNew} />
-    )
+    return <LaunchScreen docker={docker} onImport={handleImport} onNew={handleNew} />
   }
 
   return (
     <div className="app-shell">
       {/*
-       * ── Toolbar: two-row header ──────────────────────────────────────────────
+       * ── Toolbar: three-row header ────────────────────────────────────────────
        *
-       * Row 1 (toolbar-actions-row): all action buttons.
-       *   Left  — file and editor operations: New, Open, Scenario Builder, Export,
-       *            Packs, Grid, Settings.
-       *   Right — simulation tools: Tutorial, Attack Machine, Open HMI, Monitor.
+       * Row 1 (toolbar-actions-row): three-section layout.
+       *   Left   — file/editor operations: New, Open, Scenario Builder, Export,
+       *             Packs, Grid, Settings.
+       *   Center — OTForge Home button + scenario name + device count (always centred).
+       *   Right  — simulation tools: Tutorial, Attack Machine, Open HMI, Monitor.
        *
-       * Row 2 (toolbar-identity-row): OTForge logo + scenario name (left);
-       * simulation status badge with blinking dot (right).
+       * Row 2 (toolbar-status-row): simulation status badge (Idle / Running / …)
+       *   centred on its own line so it is always easy to spot at a glance.
        *
-       * The Author/Student mode badge is rendered in sim-mode-row directly below
-       * this header so it appears beneath the status badge as requested.
+       * Row 3 (sim-mode-row): Author / Student mode indicator directly below.
        */}
       <header className="toolbar">
         {/* Row 1 — action buttons */}
@@ -1217,6 +1285,26 @@ export default function App() {
             </button>
           </div>
 
+          {/* Center: OTForge Home + scenario name + device count */}
+          <div className="toolbar-actions-center">
+            <button className="toolbar-logo" onClick={handleHome} title="Home">
+              <span className="logo-ot-sm">OT</span>
+              <span className="logo-forge-sm">Forge</span>
+            </button>
+            {scenario && (
+              <div className="toolbar-scenario">
+                <span className="toolbar-scenario-name">
+                  {scenario.meta.name ?? 'Untitled Scenario'}
+                </span>
+                {simDeviceCount > 0 && (
+                  <span className="toolbar-scenario-meta">
+                    {simDeviceCount} device{simDeviceCount !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="toolbar-actions-right">
             {/*
              * Tutorial — shown whenever the active scenario has tutorial steps.
@@ -1240,12 +1328,12 @@ export default function App() {
              */}
             {simIsRunning && hasAttackMachine && firstAttackNodeId ? (
               <button
-                className={`btn btn-sm btn-attack-launch${attackLaunched ? ' btn-attack-launched' : ''}`}
-                onClick={() => handleAttackMachineLaunch(firstAttackNodeId)}
+                className={`btn btn-sm btn-attack-launch${attackWindowLaunched ? ' btn-attack-launched' : ''}`}
+                onClick={() => handleLaunchAndPaste(firstAttackNodeId)}
                 title={
-                  attackLaunched
-                    ? 'Attack machine is active — click to re-open the window'
-                    : 'Open Kali Linux attack machine in a separate window'
+                  attackWindowLaunched
+                    ? 'Kali desktop is open — click to paste clipboard and re-focus'
+                    : 'Open Kali Linux desktop and paste clipboard contents'
                 }
               >
                 ⚔ Attack Machine
@@ -1289,35 +1377,9 @@ export default function App() {
           </div>
         </div>
 
-        {/*
-         * Row 2 — identity row.
-         * Three-section flex layout keeps SimStatusBadge truly centred:
-         *   Left  (.toolbar-left)       — OTForge logo + scenario name, flex:1
-         *   Centre (.toolbar-center)    — Simulation status badge (blinking dot)
-         *   Right  (.toolbar-id-spacer) — empty flex:1 mirror of the left section
-         * The Author/Student mode badge lives in sim-mode-row directly below.
-         */}
-        <div className="toolbar-identity-row">
-          <div className="toolbar-left">
-            <button className="toolbar-logo" onClick={handleHome} title="Home">
-              <span className="logo-text-sm">OTForge</span>
-            </button>
-            <div className="toolbar-scenario">
-              <span className="toolbar-scenario-name">
-                {scenario?.meta.name ?? 'Untitled Scenario'}
-              </span>
-              {simDeviceCount > 0 && (
-                <span className="toolbar-scenario-meta">
-                  {simDeviceCount} device{simDeviceCount !== 1 ? 's' : ''}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="toolbar-center">
-            <SimStatusBadge status={simStatus} />
-          </div>
-          {/* Right spacer mirrors toolbar-left so the centre column stays centred */}
-          <div className="toolbar-id-spacer" />
+        {/* Row 2 — simulation status badge centred on its own line */}
+        <div className="toolbar-status-row">
+          <SimStatusBadge status={simStatus} />
         </div>
       </header>
 
@@ -1400,7 +1462,7 @@ export default function App() {
             packDeviceTypes={allPackDeviceTypes}
           />
         ) : (
-          <CanvasViewHint onOpenBuilder={handleMetadataOpen} />
+          <CanvasViewHint onOpenBuilder={handleMetadataOpen} simRunning={simIsRunning} />
         )}
         <ScadaCanvas
           scenario={scenario}
