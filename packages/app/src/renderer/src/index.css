@@ -2963,39 +2963,44 @@ code.prop-value {
 }
 
 /*
- * Attack Machine button — three visual states:
+ * Attack Machine button — four visual states:
  *
- *  .btn-attack-add    — sim idle, no machine yet. Red outline matching
- *                       Delete Scenario so offensive capability reads at the
- *                       same visual weight as other destructive actions.
+ *  .btn-attack-add      — sim idle, no machine yet. Teal outline — same primary
+ *                         visual weight as Run Simulation; click to add.
  *
- *  .btn-attack-active — sim idle, machine IS in the scenario. Same red outline;
- *                       pointer-events: none avoids disabled="" which would let
- *                       the browser auto-dim the color.
+ *  .btn-attack-active   — sim idle, machine IS in the scenario. Solid teal
+ *                         fill confirms it's configured; click to remove.
  *
- *  .btn-attack-launch — sim running. Solid green — signals the machine is live
- *                       and clickable. Distinct from the red idle state so the
- *                       color change communicates the mode shift clearly.
+ *  .btn-attack-launch   — sim running, not yet opened. Solid teal fill matches
+ *                         Run Simulation; click to open the Kali window.
+ *
+ *  .btn-attack-launched — sim running, window already opened. Solid red signals
+ *                         the machine is actively in use.
  */
 
-/* "+ Attack Machine" — idle, no machine yet. Red outline like Delete Scenario. */
+/* "+ Attack Machine" — idle, no machine yet. Teal outline — click to add. */
 .btn-attack-add {
   background: transparent;
-  border: 1px solid var(--accent-red);
-  color: var(--accent-red);
+  border: 1px solid var(--accent-teal);
+  color: var(--accent-teal);
 }
 
 .btn-attack-add:hover:not(:disabled) {
-  background: var(--accent-red);
-  color: #fff;
+  background: var(--accent-teal);
+  color: #0d1117;
 }
 
-/* "⚔ Attack Ready" — idle, machine is configured. Same red as btn-attack-add. */
+/* "⚔ Attack Ready" — idle, machine is configured. Solid teal — click to remove. */
 .btn-attack-active {
+  background: var(--accent-teal);
+  border: 1px solid var(--accent-teal);
+  color: #0d1117;
+  font-weight: 600;
+}
+
+.btn-attack-active:hover:not(:disabled) {
   background: transparent;
-  border: 1px solid var(--accent-red);
-  color: var(--accent-red);
-  pointer-events: none;
+  color: var(--accent-teal);
 }
 
 /*

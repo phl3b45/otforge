@@ -938,6 +938,23 @@ export default function App() {
   }, [])
 
   /**
+   * Removes all attack-machine devices from the scenario device list.
+   *
+   * Attack machines live only in scenario.devices.devices (they have no visual node
+   * on any canvas layer), so removal is a simple key filter on the devices map.
+   * Only callable when the simulation is idle — the button is not shown while running.
+   */
+  const handleAttackMachineRemove = useCallback(() => {
+    setScenario(prev => {
+      if (!prev) return prev
+      const filtered = Object.fromEntries(
+        Object.entries(prev.devices.devices).filter(([, d]) => d.category !== 'attack-machine')
+      )
+      return { ...prev, devices: { devices: filtered } }
+    })
+  }, [])
+
+  /**
    * Opens the FUXA process HMI in a separate Electron BrowserWindow.
    *
    * Calls the `hmi:open` IPC handler which creates a new BrowserWindow loading
@@ -1215,10 +1232,11 @@ export default function App() {
               </button>
             )}
             {/*
-             * Attack Machine — three visual states:
-             *   idle (no machine)  → "+ Attack Machine" (adds the device)
-             *   idle (has machine) → "⚔ Attack Ready" (indicator)
-             *   running            → "⚔ Attack Machine" (launches window)
+             * Attack Machine — four visual states:
+             *   idle (no machine)  → "+ Attack Machine" teal outline — click to add
+             *   idle (has machine) → "⚔ Attack Ready" solid teal — click to remove
+             *   running (ready)    → "⚔ Attack Machine" solid teal — click to open window
+             *   running (launched) → "⚔ Attack Machine" solid red — click to re-open
              */}
             {simIsRunning && hasAttackMachine && firstAttackNodeId ? (
               <button
@@ -1236,11 +1254,11 @@ export default function App() {
               !simIsRunning && (
                 <button
                   className={`btn btn-sm ${hasAttackMachine ? 'btn-attack-active' : 'btn-attack-add'}`}
-                  onClick={hasAttackMachine ? undefined : handleAttackMachineAdd}
-                  disabled={!hasAttackMachine && (simIsStarting || simIsStopping)}
+                  onClick={hasAttackMachine ? handleAttackMachineRemove : handleAttackMachineAdd}
+                  disabled={simIsStarting || simIsStopping}
                   title={
                     hasAttackMachine
-                      ? 'Attack machine included — launch when simulation is running'
+                      ? 'Remove the Kali Linux attack machine from this scenario'
                       : 'Add a Kali Linux attack machine to this scenario'
                   }
                 >
