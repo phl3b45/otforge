@@ -211,24 +211,33 @@ function CanvasViewHint({ onOpenBuilder }: { onOpenBuilder: () => void }) {
 // ── Status bar ─────────────────────────────────────────────────────────────────
 
 /**
- * Bottom status bar showing Docker status and container health pills.
+ * Bottom status bar showing Docker status, container health pills, and the
+ * Delete Scenario button (Author mode only, idle only — bottom-right corner).
  *
  * Container pills are shown for up to 6 containers with color-coded borders:
  *   green border = running, red border = error, gray border = other.
  * When more than 6 containers are running, a "+N more" chip is shown.
  *
- * @param docker           - Docker status for the left section.
- * @param simStatus        - Determines when container count is shown.
+ * @param docker            - Docker status for the left section.
+ * @param simStatus         - Determines when container count is shown.
  * @param containerStatuses - Live container health data.
+ * @param showDelete        - True when the Delete Scenario button should appear.
+ * @param onDelete          - Callback for the Delete Scenario button.
  */
 function StatusBar({
   docker,
   simStatus,
-  containerStatuses
+  containerStatuses,
+  showDelete,
+  onDelete
 }: {
   docker: DockerStatus | null
   simStatus: SimStatus
   containerStatuses: ContainerStatus[]
+  /** Show the Delete Scenario button in the bottom-right corner. */
+  showDelete?: boolean
+  /** Handler for the Delete Scenario button. */
+  onDelete?: () => void
 }) {
   const running = containerStatuses.filter(c => c.status === 'running').length
   const total = containerStatuses.length
@@ -269,6 +278,19 @@ function StatusBar({
         {/* Overflow count when more than 6 containers are present */}
         {containerStatuses.length > 6 && (
           <span className="container-pill-more">+{containerStatuses.length - 6}</span>
+        )}
+        {/*
+         * Delete Scenario — shown in the bottom-right corner in Author mode while idle.
+         * Separated from the container pills by the existing right-flex layout.
+         */}
+        {showDelete && onDelete && (
+          <button
+            className="btn btn-sm btn-delete-scenario btn-delete-status-bar"
+            onClick={onDelete}
+            title="Clear all devices from this scenario and optionally delete the file from disk"
+          >
+            Delete Scenario
+          </button>
         )}
       </div>
     </footer>
@@ -1235,9 +1257,12 @@ export default function App() {
         </div>
 
         {/*
-         * Row 2 — identity: OTForge logo + scenario name on the left; sim status badge
-         * (blinking dot) on the right. The Author/Student mode badge is NOT here —
-         * it lives in sim-mode-row directly below this row so it reads as "below status".
+         * Row 2 — identity row.
+         * Three-section flex layout keeps SimStatusBadge truly centred:
+         *   Left  (.toolbar-left)       — OTForge logo + scenario name, flex:1
+         *   Centre (.toolbar-center)    — Simulation status badge (blinking dot)
+         *   Right  (.toolbar-id-spacer) — empty flex:1 mirror of the left section
+         * The Author/Student mode badge lives in sim-mode-row directly below.
          */}
         <div className="toolbar-identity-row">
           <div className="toolbar-left">
@@ -1255,7 +1280,11 @@ export default function App() {
               )}
             </div>
           </div>
-          <SimStatusBadge status={simStatus} />
+          <div className="toolbar-center">
+            <SimStatusBadge status={simStatus} />
+          </div>
+          {/* Right spacer mirrors toolbar-left so the centre column stays centred */}
+          <div className="toolbar-id-spacer" />
         </div>
       </header>
 
@@ -1349,38 +1378,16 @@ export default function App() {
           onSelectDevice={handleSelectDevice}
           onScenarioChange={handleScenarioChange}
         />
-        {/*
-         * Right pane wrapper — gives the properties panel a flex column context so the
-         * Delete Scenario button can be pinned to the bottom without fixed positioning.
-         */}
-        <div className="properties-pane">
-          <PropertiesPanel
-            device={selectedDevice}
-            zone={selectedZone}
-            simRunning={simStatus === 'running'}
-            security={scenario?.security ?? null}
-            readOnly={appMode === 'student'}
-            onSecurityChange={handleSecurityChange}
-            onOpenPlcIde={handleOpenPlcIde}
-            onOpenAttackTerminal={handleOpenAttackTerminal}
-          />
-          {/*
-           * Delete Scenario — centered at the bottom of the right pane.
-           * Only shown in Author mode while idle so it is never accidentally
-           * clicked during a live session.
-           */}
-          {simIsIdle && scenario && appMode === 'author' && (
-            <div className="delete-scenario-slot">
-              <button
-                className="btn btn-sm btn-delete-scenario"
-                onClick={handleDelete}
-                title="Clear all devices from this scenario and optionally delete the file from disk"
-              >
-                Delete Scenario
-              </button>
-            </div>
-          )}
-        </div>
+        <PropertiesPanel
+          device={selectedDevice}
+          zone={selectedZone}
+          simRunning={simStatus === 'running'}
+          security={scenario?.security ?? null}
+          readOnly={appMode === 'student'}
+          onSecurityChange={handleSecurityChange}
+          onOpenPlcIde={handleOpenPlcIde}
+          onOpenAttackTerminal={handleOpenAttackTerminal}
+        />
       </div>
       {/*
        * Monitor panel drawer — rendered between workspace and status bar so it
@@ -1389,7 +1396,13 @@ export default function App() {
        * Grafana webview network requests when the panel is not in use.
        */}
       {showMonitor && <MonitorPanel onClose={handleCloseMonitor} />}
-      <StatusBar docker={docker} simStatus={simStatus} containerStatuses={containerStatuses} />
+      <StatusBar
+        docker={docker}
+        simStatus={simStatus}
+        containerStatuses={containerStatuses}
+        showDelete={simIsIdle && !!scenario && appMode === 'author'}
+        onDelete={handleDelete}
+      />
       {/* PLC IDE full-screen modal — fixed overlay rendered on top of the workspace */}
       {plcIdeDevice && (
         <PlcIdeModal

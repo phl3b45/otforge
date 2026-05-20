@@ -306,6 +306,23 @@ body {
   min-width: 160px;
 }
 
+/* Centre column of toolbar-identity-row — holds SimStatusBadge */
+.toolbar-center {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/*
+ * Right mirror of .toolbar-left in toolbar-identity-row.
+ * flex:1 + matching min-width keeps the centre column truly centred
+ * regardless of how wide the logo + scenario name grow on the left.
+ */
+.toolbar-id-spacer {
+  flex: 1;
+  min-width: 160px;
+}
+
 .toolbar-logo {
   display: flex;
   align-items: center;
@@ -2090,6 +2107,7 @@ code.prop-value {
 .sim-mode-row {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   padding: 0.2rem 0.75rem;
   background: var(--bg-secondary);
@@ -2920,6 +2938,14 @@ code.prop-value {
 .btn-delete-scenario:hover {
   background: var(--accent-red);
   color: #fff;
+}
+
+/*
+ * Status-bar variant — rendered inside the right section of the footer ribbon.
+ * A left margin pushes it away from the container health pills.
+ */
+.btn-delete-status-bar {
+  margin-left: 0.75rem;
 }
 
 /*
