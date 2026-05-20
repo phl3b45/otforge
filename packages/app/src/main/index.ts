@@ -468,7 +468,6 @@ function createWindow(): void {
   // In development: load Vite's dev server URL; in production: load the compiled HTML file
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-    mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }

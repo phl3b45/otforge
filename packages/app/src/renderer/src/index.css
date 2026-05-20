@@ -231,17 +231,17 @@ body {
 }
 
 /* ── Toolbar (small) brand mark ───────────────────────────────────────────── */
-/* Same OT/Forge split, scaled down for the top ribbon */
+/* OT/Forge color split kept for brand identity; font is identical across both spans */
 .logo-ot-sm {
   font-size: 0.875rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
   color: var(--accent-teal);
 }
 .logo-forge-sm {
   font-size: 0.875rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
   color: var(--text-primary);
 }
 
