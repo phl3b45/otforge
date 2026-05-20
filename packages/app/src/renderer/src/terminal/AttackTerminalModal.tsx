@@ -115,28 +115,29 @@ export function AttackTerminalModal({
     termRef.current = term
     fitAddonRef.current = fitAddon
 
-    // Clipboard paste handler for Ctrl+V / Cmd+V (and Ctrl+Shift+V).
+    // Clipboard paste handler for Ctrl+V / Cmd+V.
     //
     // Without this, Ctrl+V is processed by the Electron main window's OS clipboard
     // handler — the text lands in the host desktop rather than the docker exec stdin.
     // attachCustomKeyEventHandler intercepts the key event BEFORE xterm.js sees it;
     // returning false tells xterm to drop the event so we can handle it ourselves.
     //
-    // navigator.clipboard.readText() requires the Electron renderer to have been
-    // granted clipboard-read permission. The preload already whitelists this for
-    // localhost so it resolves immediately without a permission prompt.
+    // window.electronAPI.clipboard.readText() calls Electron's native clipboard module
+    // via IPC (clipboard:readText handler in main/index.ts). This bypasses the Web
+    // Clipboard API permission check that fails silently in Electron renderers.
     term.attachCustomKeyEventHandler((ev: KeyboardEvent) => {
-      const isPaste = ev.type === 'keydown' && ev.key === 'v' && (ev.ctrlKey || ev.metaKey) // Ctrl+V on Windows/Linux, Cmd+V on macOS
+      // Ctrl+V on Windows/Linux, Cmd+V on macOS
+      const isPaste = ev.type === 'keydown' && ev.key === 'v' && (ev.ctrlKey || ev.metaKey)
       if (isPaste) {
-        navigator.clipboard
+        window.electronAPI.clipboard
           .readText()
           .then(text => {
-            if (text) term.paste(text) // send clipboard text to docker exec stdin
+            if (text) term.paste(text) // forward clipboard text to docker exec stdin
           })
           .catch(() => {
-            // Clipboard read denied (e.g., focus lost) — silently ignore
+            // IPC failure — silently ignore (container may not be ready yet)
           })
-        return false // drop this event; we handled it above
+        return false // consume this event; xterm must not see it
       }
       return true // let xterm.js process all other keystrokes normally
     })

@@ -2042,19 +2042,63 @@ code.prop-value {
   font-weight: 400;
 }
 
-/* ── Simulation layer row ─────────────────────────────────────────────────────
+/* ── sim-header: two-row bar below the toolbar ribbon ────────────────────────
  *
- * Wraps the Purdue layer tab bar and the Run/Stop simulation control in a single
- * horizontal row so students can see the simulation button at the same visual
- * level as the layer navigation tabs.
+ * Row 1 — sim-actions-row:
+ *   [ mode badge | Monitor | Tutorial | Open HMI | Attack Machine ] [ spacer ]
+ *   The spacer is the same width as sim-control-slot so no action button extends
+ *   past the vertical divider line that separates Run/Stop from the layer tabs.
  *
- * The Run/Stop button was moved out of the toolbar ribbon so it is clearly
- * distinct from editing tools (New, Open, Export, etc.) and visually larger.
- *
- * Layout:
+ * Row 2 — sim-tabs-row:
  *   [ OT Process | Control Center | Plant DMZ | Enterprise | Internet DMZ ] [ Run Simulation ]
+ *
+ * --sim-slot-w is shared between .sim-control-slot and .sim-slot-spacer so both
+ * rows align on the same vertical boundary.
  */
-.sim-layer-row {
+
+/* Width shared by the Run/Stop slot and the spacer that aligns above it */
+:root {
+  --sim-slot-w: 192px;
+}
+
+/* Outer wrapper — stacks the two rows vertically */
+.sim-header {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+/* Row 1: action buttons + spacer */
+.sim-actions-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 0.5rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  gap: 0.5rem;
+}
+
+/* Inner button group — fills all available width left of the spacer */
+.sim-actions-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Spacer aligns with sim-control-slot so action buttons stop at the divider line */
+.sim-slot-spacer {
+  flex-shrink: 0;
+  min-width: var(--sim-slot-w);
+}
+
+/* Row 2: layer tabs + Run/Stop */
+.sim-tabs-row {
   display: flex;
   flex-direction: row;
   align-items: stretch;
@@ -2062,17 +2106,18 @@ code.prop-value {
 }
 
 /* Tab bar takes all remaining width; control slot is a fixed-width end cap */
-.sim-layer-row .layer-tab-bar {
+.sim-tabs-row .layer-tab-bar {
   flex: 1;
   min-width: 0;
 }
 
-/* Run/Stop slot — right end of the sim-layer-row */
+/* Run/Stop slot — right end of the sim-tabs-row */
 .sim-control-slot {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0 1.25rem;
+  min-width: var(--sim-slot-w);
   border-left: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   background: var(--bg-secondary);
@@ -3471,9 +3516,9 @@ code.prop-value {
   word-break: break-all;
 }
 
-/* ── Mode badge in toolbar ────────────────────────────────────────────────────── */
+/* ── Mode badge in sim-actions-row ───────────────────────────────────────────── */
 
-/* Sits in the toolbar-center next to the SimStatusBadge */
+/* Sits in .sim-actions-inner alongside Monitor, Tutorial, Open HMI, Attack Machine */
 .mode-badge {
   display: inline-flex;
   align-items: center;
@@ -3483,7 +3528,6 @@ code.prop-value {
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.02em;
-  margin-left: 10px;
 }
 .mode-badge-author {
   background: rgba(56, 139, 253, 0.15);

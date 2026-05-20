@@ -31,9 +31,40 @@ echo "[otforge-attack] Desktop:       Xfce4 via noVNC at container port 6080"
 echo "[otforge-attack]                (Wireshark GUI, Armitage, Firefox available)"
 echo ""
 
-# ── Network interface report ──────────────────────────────────────────────────
+# ── Network interface report + route repair ───────────────────────────────────
 echo "[otforge-attack] Network interfaces:"
 ip addr show
+echo ""
+
+# On Docker Desktop for Windows, subnet routes for secondary (non-default) network
+# interfaces are sometimes absent from the routing table, especially for bridge
+# networks created with 'internal: true'. Without these routes, traffic to the
+# internet-dmz or ot subnets is sent via the default route (attacker-net) and
+# returns EHOSTUNREACH because those hosts are not reachable from that bridge.
+#
+# Fix: iterate every eth* interface, derive its /24 subnet, and add an explicit
+# 'scope link' route for that subnet if one is not already present.
+echo "[otforge-attack] Verifying subnet routes for all interfaces..."
+for IFACE in $(ip -o link show | awk -F': ' '{print $2}' | grep '^eth'); do
+    ADDR=$(ip -4 addr show "$IFACE" 2>/dev/null | awk '/inet /{print $2}' | head -1)
+    [ -z "$ADDR" ] && continue
+    # Derive network/prefix from the assigned address (e.g., 10.200.50.250/24 → 10.200.50.0/24)
+    NETWORK=$(python3 -c "
+import ipaddress, sys
+try:
+    iface = ipaddress.ip_interface('$ADDR')
+    print(str(iface.network))
+except Exception:
+    sys.exit(1)
+" 2>/dev/null) || continue
+    if ip route show dev "$IFACE" 2>/dev/null | grep -qF "$NETWORK"; then
+        echo "[otforge-attack]   $IFACE  $NETWORK  (route OK)"
+    else
+        ip route add "$NETWORK" dev "$IFACE" 2>/dev/null && \
+            echo "[otforge-attack]   $IFACE  $NETWORK  (route ADDED)" || \
+            echo "[otforge-attack]   $IFACE  $NETWORK  (route add failed — may need NET_ADMIN)"
+    fi
+done
 echo ""
 
 # ── Start TigerVNC server ─────────────────────────────────────────────────────

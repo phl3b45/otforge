@@ -19,7 +19,7 @@
  *   app:info, docker:check, scenario:import, simulation:start, etc.
  */
 
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import type {
@@ -1079,6 +1079,21 @@ function registerIPCHandlers(): void {
       activeTerminalProcess.kill()
       activeTerminalProcess = null
     }
+  })
+
+  /**
+   * Reads the system clipboard and returns its plain-text content.
+   *
+   * The renderer cannot call navigator.clipboard.readText() reliably from inside
+   * xterm.js because Electron may not grant clipboard-read permission to the
+   * renderer context. This handler uses Electron's native clipboard module instead,
+   * which works unconditionally in the main process.
+   *
+   * Called by AttackTerminalModal.tsx → attachCustomKeyEventHandler on Ctrl+V so
+   * that clipboard text is pasted into the docker exec stdin via term.paste().
+   */
+  ipcMain.handle('clipboard:readText', () => {
+    return clipboard.readText()
   })
 
   /**

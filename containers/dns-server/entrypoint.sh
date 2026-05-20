@@ -19,7 +19,10 @@ set -e
 DNS_DOMAIN="${DNS_DOMAIN:-meridian-process.com}"
 WEB_SERVER_IP="${WEB_SERVER_IP:-203.0.113.10}"
 MAIL_SERVER_IP="${MAIL_SERVER_IP:-${WEB_SERVER_IP}}"
-DNS_UPSTREAM="${DNS_UPSTREAM:-8.8.8.8}"
+# Use ${VAR-default} (not ${VAR:-default}) so that DNS_UPSTREAM="" (empty string,
+# injected by the compose generator for air-gapped scenarios) is respected.
+# With :- the shell replaces even an empty value with the default.
+DNS_UPSTREAM="${DNS_UPSTREAM-8.8.8.8}"
 
 echo "[otforge-dns] ================================================"
 echo "[otforge-dns] Domain:      ${DNS_DOMAIN}"

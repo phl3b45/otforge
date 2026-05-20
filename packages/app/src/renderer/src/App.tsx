@@ -153,56 +153,46 @@ function LaunchScreen({
 
 /**
  * Top application toolbar with scenario identity, simulation status badge,
- * and simulation controls.
+ * and file/editor controls.
+ *
+ * Simulation-time action buttons (Monitor, Tutorial, Open HMI, Attack Machine)
+ * and the Author/Student mode badge live in the sim-actions-row below this toolbar,
+ * rendered directly in App. The Run/Stop button lives in sim-control-slot at the
+ * right end of the sim-tabs-row (the layer tab bar row).
  *
  * TypeScript note:
  *   Boolean flags (isIdle, isRunning, etc.) are pre-computed BEFORE the JSX so
  *   TypeScript does not narrow `simStatus` inside ternary branches. When TypeScript
- *   sees `canStop = simStatus === 'running' || simStatus === 'starting'`, it narrows
- *   `simStatus` inside the branches — making `simStatus === 'stopping'` always-false
- *   on the false branch. Pre-computed booleans avoid this narrowing entirely.
+ *   sees `isRunning || isStarting`, it narrows `simStatus` inside the branches —
+ *   making further comparisons always-false on the false branch. Pre-computed
+ *   booleans avoid this narrowing entirely.
  *
  * @param scenario           - Current scenario (null for blank canvas).
  * @param simStatus          - Current simulation lifecycle state.
- * @param docker             - Docker status (used to enable/disable the Run button).
  * @param appMode            - 'author' or 'student' — determines which toolbar actions are shown.
- * @param showMonitor        - Whether the monitor panel drawer is currently open.
  * @param onImport           - Opens the file picker.
  * @param onNew              - Clears the canvas for a new scenario.
  * @param onHome             - Returns to the launch screen (disabled while running).
- * @param onMonitorToggle    - Toggles the Grafana+Loki monitor panel open/closed.
  * @param onSettingsOpen     - Opens the Network Settings modal.
- * @param onAttackMachineAdd - Adds an attack machine device to the current scenario.
- * @param onAttackMachineLaunch - Opens the attack machine OS window.
- * @param onHmiOpen          - Opens the FUXA HMI in a separate OS window.
  * @param onMetadataOpen     - Opens the Scenario Metadata editor modal (Author mode only).
  * @param onExportOpen       - Opens the Export dialog (Author mode only).
  * @param onPacksOpen        - Opens the Pack Manager (Author mode only).
  * @param installedPackCount - Number of installed packs shown as a badge on the Packs button.
- * @param hasTutorial        - True when the active scenario has tutorialSteps; shows Tutorial button.
- * @param onTutorialOpen     - Reopens the TutorialPanel overlay (always available when hasTutorial).
  */
 function Toolbar({
   scenario,
   simStatus,
   showGrid,
-  showMonitor,
   appMode,
   installedPackCount,
-  hasTutorial,
   onImport,
   onNew,
   onHome,
   onGridToggle,
-  onMonitorToggle,
   onSettingsOpen,
-  onAttackMachineAdd,
-  onAttackMachineLaunch,
-  onHmiOpen,
   onMetadataOpen,
   onExportOpen,
-  onPacksOpen,
-  onTutorialOpen
+  onPacksOpen
 }: {
   scenario: OTForgeScenario | null
   simStatus: SimStatus
@@ -212,8 +202,6 @@ function Toolbar({
    * the underlying showGrid state in App is preserved for when idle resumes.
    */
   showGrid: boolean
-  /** Whether the Grafana+Loki monitor drawer is open. Used to style the toggle button. */
-  showMonitor: boolean
   /** Current app mode — 'author' for unlocked scenarios, 'student' for locked ones. */
   appMode: 'author' | 'student'
   /** Number of currently installed packs — shown as a small badge on the Packs button. */
@@ -223,35 +211,14 @@ function Toolbar({
   onHome: () => void
   /** Toggles the snap grid on/off. */
   onGridToggle: () => void
-  /** Toggles the monitor panel open or closed. Only callable when sim is running. */
-  onMonitorToggle: () => void
   /** Opens the Network Settings modal for subnet configuration. */
   onSettingsOpen: () => void
-  /** Adds a default attack machine device to the current scenario. */
-  onAttackMachineAdd: () => void
-  /**
-   * Opens the attack machine's Xfce4 desktop in a separate OS window via noVNC.
-   * Only callable when simulation is running and an attack machine is in the scenario.
-   *
-   * @param nodeId - Canvas node ID of the attack-machine device to launch.
-   */
-  onAttackMachineLaunch: (nodeId: string) => void
-  /**
-   * Opens the FUXA process HMI in a separate Electron BrowserWindow (localhost:1881).
-   * FUXA always runs as simulation infrastructure — this button is shown whenever
-   * the simulation is running so users can inspect live process data.
-   */
-  onHmiOpen: () => void
   /** Opens the Scenario Metadata editor. Only available in Author mode while idle. */
   onMetadataOpen: () => void
   /** Opens the Export dialog. Only available in Author mode while idle. */
   onExportOpen: () => void
   /** Opens the Pack Manager. Always available in Author mode. */
   onPacksOpen: () => void
-  /** True when the active scenario includes tutorialSteps — shows the Tutorial button. */
-  hasTutorial: boolean
-  /** Reopens the TutorialPanel floating overlay. Available whenever hasTutorial is true. */
-  onTutorialOpen: () => void
 }) {
   const scenarioName = scenario?.meta.name ?? 'Untitled Scenario'
   const deviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
@@ -261,18 +228,8 @@ function Toolbar({
   const isStarting = simStatus === 'starting'
   const isRunning = simStatus === 'running'
   const isStopping = simStatus === 'stopping'
-  // Monitor button is only meaningful when the simulation is running
-  const canMonitor = isRunning
   // Settings button is always available (network config applies to the next simulation start)
   const canOpenSettings = !isStarting && !isStopping
-
-  // Find any attack-machine devices in the current scenario
-  const attackDevices = scenario
-    ? Object.entries(scenario.devices.devices).filter(([, d]) => d.category === 'attack-machine')
-    : []
-  const hasAttackMachine = attackDevices.length > 0
-  // First attack machine nodeId — used by the Launch button when simulation is running
-  const firstAttackNodeId = attackDevices[0]?.[0] ?? null
 
   return (
     <header className="toolbar">
@@ -291,14 +248,9 @@ function Toolbar({
         </div>
       </div>
 
-      {/* Centered simulation status badge + mode badge */}
+      {/* Centered simulation status badge */}
       <div className="toolbar-center">
         <SimStatusBadge status={simStatus} />
-        {scenario && (
-          <div className={`mode-badge mode-badge-${appMode}`}>
-            {appMode === 'student' ? '🔒 Student Mode' : '✎ Author Mode'}
-          </div>
-        )}
       </div>
 
       <div className="toolbar-right">
@@ -362,22 +314,6 @@ function Toolbar({
         )}
 
         {/*
-         * Tutorial button — shown whenever the active scenario has tutorial steps,
-         * in both Author and Student modes. Reopens the TutorialPanel overlay after
-         * the student has minimised or closed it. The 🎓 icon makes it recognisable
-         * without reading the label.
-         */}
-        {hasTutorial && (
-          <button
-            className="btn btn-sm btn-tutorial"
-            onClick={onTutorialOpen}
-            title="Open the step-by-step tutorial guide"
-          >
-            🎓 Tutorial
-          </button>
-        )}
-
-        {/*
          * Grid toggle — only shown in Author mode while idle (students cannot edit,
          * so a snap grid has no utility for them). The grid is always 25 × 25 cells.
          */}
@@ -406,79 +342,6 @@ function Toolbar({
         >
           ⚙
         </button>
-
-        {/*
-         * ── Simulation actions group ────────────────────────────────────────────
-         * Everything after this divider is a live-simulation action: Open HMI,
-         * Monitor, Attack Machine, and Run/Stop are all grouped together so they
-         * read as one coherent "simulation control" row even when the toolbar wraps.
-         */}
-        <div className="toolbar-divider" />
-
-        {/*
-         * Open HMI — only shown while simulation is running.
-         * Opens the FUXA process HMI in a standalone window (localhost:1881).
-         * FUXA is automatically provisioned with Modbus connections to PLCs
-         * in the scenario (via configureFuxa() in the main process).
-         */}
-        {isRunning && (
-          <button
-            className="btn btn-sm btn-hmi"
-            onClick={onHmiOpen}
-            title="Open FUXA process HMI — live Modbus data from PLCs"
-          >
-            Open HMI
-          </button>
-        )}
-
-        {/*
-         * Monitor toggle — only shown while simulation is running.
-         * Opens/closes the Grafana + Live Logs drawer below the canvas.
-         * .active class adds a teal ring so operators know the panel is open.
-         */}
-        {canMonitor && (
-          <button
-            className={`btn btn-sm btn-monitor ${showMonitor ? 'active' : ''}`}
-            onClick={onMonitorToggle}
-            title={showMonitor ? 'Hide monitor panel' : 'Open Grafana + Live Logs monitor'}
-          >
-            Monitor
-          </button>
-        )}
-
-        {/*
-         * Attack Machine button — three visual states:
-         *   idle (no machine)  → red outline "+ Attack Machine" (adds the device)
-         *   idle (has machine) → red outline "⚔ Attack Ready" (indicator, not clickable)
-         *   running            → solid green "⚔ Attack Machine" (launches noVNC window)
-         *
-         * Grouped after the divider alongside HMI and Monitor so all
-         * simulation-time actions share the same visual row as Run/Stop.
-         */}
-        {isRunning && hasAttackMachine && firstAttackNodeId ? (
-          <button
-            className="btn btn-sm btn-attack-launch"
-            onClick={() => onAttackMachineLaunch(firstAttackNodeId)}
-            title="Open Kali Linux attack machine in a separate window (can be moved to a second monitor)"
-          >
-            ⚔ Attack Machine
-          </button>
-        ) : (
-          !isRunning && (
-            <button
-              className={`btn btn-sm ${hasAttackMachine ? 'btn-attack-active' : 'btn-attack-add'}`}
-              onClick={hasAttackMachine ? undefined : onAttackMachineAdd}
-              disabled={!hasAttackMachine && (isStarting || isStopping)}
-              title={
-                hasAttackMachine
-                  ? 'Attack machine is included in this scenario — launch it when the simulation is running'
-                  : 'Add a Kali Linux attack machine to this scenario'
-              }
-            >
-              {hasAttackMachine ? '⚔ Attack Ready' : '+ Attack Machine'}
-            </button>
-          )
-        )}
       </div>
     </header>
   )
@@ -1371,10 +1234,10 @@ export default function App() {
     setAttackTerminalDevice(null)
   }, [])
 
-  // ── Simulation control state (used in sim-layer-row Run/Stop button) ──────────
+  // ── Simulation control state (used in sim-tabs-row Run/Stop button) ────────────
   // These mirror the lifecycle booleans inside Toolbar but live in App so the
-  // Run/Stop button can be rendered in the sim-layer-row (alongside LayerTabBar)
-  // rather than inside the toolbar ribbon.
+  // Run/Stop button can be rendered alongside LayerTabBar in the sim-tabs-row,
+  // and the sim-actions-row can reference them for conditional button rendering.
   const simIsIdle = simStatus === 'idle'
   const simIsStarting = simStatus === 'starting'
   const simIsRunning = simStatus === 'running'
@@ -1387,6 +1250,17 @@ export default function App() {
     : simDeviceCount === 0
       ? 'Add at least one device'
       : ''
+
+  // ── sim-actions-row state (moved from Toolbar so they render below the ribbon) ─
+  // Attack machine helpers and tutorial flag — used in the sim-actions-row that
+  // sits between the toolbar and the layer-tab bar row.
+  const attackDevices = scenario
+    ? Object.entries(scenario.devices.devices).filter(([, d]) => d.category === 'attack-machine')
+    : []
+  const hasAttackMachine = attackDevices.length > 0
+  // First attack machine nodeId — used by the Launch button when simulation is running
+  const firstAttackNodeId = attackDevices[0]?.[0] ?? null
+  const hasTutorial = !!scenario?.meta.tutorialSteps?.length
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -1402,23 +1276,16 @@ export default function App() {
         scenario={scenario}
         simStatus={simStatus}
         showGrid={effectiveShowGrid}
-        showMonitor={showMonitor}
         appMode={appMode}
         installedPackCount={installedPacks.length}
         onImport={handleImport}
         onNew={handleNew}
         onHome={handleHome}
         onGridToggle={handleGridToggle}
-        onMonitorToggle={handleMonitorToggle}
         onSettingsOpen={handleSettingsOpen}
-        onAttackMachineAdd={handleAttackMachineAdd}
-        onAttackMachineLaunch={handleAttackMachineLaunch}
-        onHmiOpen={handleHmiOpen}
         onMetadataOpen={handleMetadataOpen}
         onExportOpen={handleExportOpen}
         onPacksOpen={handlePacksOpen}
-        hasTutorial={!!scenario?.meta.tutorialSteps?.length}
-        onTutorialOpen={() => setShowTutorial(true)}
       />
       {/*
        * Simulation error banner — shown when the most recent start attempt failed.
@@ -1436,33 +1303,134 @@ export default function App() {
         </div>
       )}
       {/*
-       * Simulation layer row — Purdue model tabs + Run/Stop control on the same bar.
+       * sim-header — two-row bar between the toolbar ribbon and the workspace.
        *
-       * The Run/Stop button lives here (not in the toolbar ribbon) so it is visually
-       * separated from editing tools and clearly associated with the layer navigation.
-       * It is intentionally larger than toolbar buttons to make it easy to find.
+       * Row 1 (sim-actions-row): Author/Student mode badge + simulation action buttons
+       * (Monitor, Tutorial, Open HMI, Attack Machine). A sim-slot-spacer on the right
+       * matches the width of sim-control-slot so no button extends past the vertical
+       * divider line that separates Run/Stop from the five network tabs.
+       *
+       * Row 2 (sim-tabs-row): Purdue model layer tabs + Run/Stop control at the right
+       * end in sim-control-slot (separated by a vertical border line).
        */}
-      <div className="sim-layer-row">
-        <LayerTabBar activeLayer={activeLayer} scenario={scenario} onLayerChange={setActiveLayer} />
-        <div className="sim-control-slot">
-          {simShowStop ? (
-            <button
-              className="btn btn-sim btn-danger"
-              onClick={handleStop}
-              disabled={simIsStopping}
-            >
-              {simIsStopping ? 'Stopping…' : 'Stop Simulation'}
-            </button>
-          ) : (
-            <button
-              className="btn btn-sim btn-run"
-              onClick={handleStart}
-              disabled={!simCanStart}
-              title={simStartTitle}
-            >
-              {simIsStarting ? 'Starting…' : 'Run Simulation'}
-            </button>
-          )}
+      <div className="sim-header">
+        <div className="sim-actions-row">
+          <div className="sim-actions-inner">
+            {/*
+             * Mode badge — placed here (below toolbar) so it sits on the same level as
+             * Monitor, Tutorial, Open HMI, and Attack Machine per the user's layout spec.
+             */}
+            {scenario && (
+              <div className={`mode-badge mode-badge-${appMode}`}>
+                {appMode === 'student' ? '🔒 Student Mode' : '✎ Author Mode'}
+              </div>
+            )}
+            {/*
+             * Monitor toggle — only shown while simulation is running.
+             * Opens/closes the Grafana + Live Logs drawer below the canvas.
+             * .active class adds a teal ring so operators know the panel is open.
+             */}
+            {simIsRunning && (
+              <button
+                className={`btn btn-sm btn-monitor ${showMonitor ? 'active' : ''}`}
+                onClick={handleMonitorToggle}
+                title={showMonitor ? 'Hide monitor panel' : 'Open Grafana + Live Logs monitor'}
+              >
+                Monitor
+              </button>
+            )}
+            {/*
+             * Tutorial — shown whenever the active scenario has tutorial steps, in both
+             * Author and Student modes. Reopens the TutorialPanel overlay after dismiss.
+             */}
+            {hasTutorial && (
+              <button
+                className="btn btn-sm btn-tutorial"
+                onClick={() => setShowTutorial(true)}
+                title="Open the step-by-step tutorial guide"
+              >
+                🎓 Tutorial
+              </button>
+            )}
+            {/*
+             * Open HMI — only shown while simulation is running.
+             * Opens FUXA process HMI in a standalone window (localhost:1881).
+             */}
+            {simIsRunning && (
+              <button
+                className="btn btn-sm btn-hmi"
+                onClick={handleHmiOpen}
+                title="Open FUXA process HMI — live Modbus data from PLCs"
+              >
+                Open HMI
+              </button>
+            )}
+            {/*
+             * Attack Machine — three visual states:
+             *   idle (no machine)  → red outline "+ Attack Machine" (adds the device)
+             *   idle (has machine) → red outline "⚔ Attack Ready" (indicator)
+             *   running            → solid green "⚔ Attack Machine" (launches window)
+             */}
+            {simIsRunning && hasAttackMachine && firstAttackNodeId ? (
+              <button
+                className="btn btn-sm btn-attack-launch"
+                onClick={() => handleAttackMachineLaunch(firstAttackNodeId)}
+                title="Open Kali Linux attack machine in a separate window (can be moved to a second monitor)"
+              >
+                ⚔ Attack Machine
+              </button>
+            ) : (
+              !simIsRunning && (
+                <button
+                  className={`btn btn-sm ${hasAttackMachine ? 'btn-attack-active' : 'btn-attack-add'}`}
+                  onClick={hasAttackMachine ? undefined : handleAttackMachineAdd}
+                  disabled={!hasAttackMachine && (simIsStarting || simIsStopping)}
+                  title={
+                    hasAttackMachine
+                      ? 'Attack machine is included in this scenario — launch it when the simulation is running'
+                      : 'Add a Kali Linux attack machine to this scenario'
+                  }
+                >
+                  {hasAttackMachine ? '⚔ Attack Ready' : '+ Attack Machine'}
+                </button>
+              )
+            )}
+          </div>
+          {/* Spacer matches sim-control-slot width so buttons never extend past the divider */}
+          <div className="sim-slot-spacer" />
+        </div>
+
+        {/*
+         * sim-tabs-row — Purdue model layer tabs + Run/Stop button at the right end.
+         * The Run/Stop button is intentionally larger than toolbar buttons to be easy
+         * to find during a live session.
+         */}
+        <div className="sim-tabs-row">
+          <LayerTabBar
+            activeLayer={activeLayer}
+            scenario={scenario}
+            onLayerChange={setActiveLayer}
+          />
+          <div className="sim-control-slot">
+            {simShowStop ? (
+              <button
+                className="btn btn-sim btn-danger"
+                onClick={handleStop}
+                disabled={simIsStopping}
+              >
+                {simIsStopping ? 'Stopping…' : 'Stop Simulation'}
+              </button>
+            ) : (
+              <button
+                className="btn btn-sim btn-run"
+                onClick={handleStart}
+                disabled={!simCanStart}
+                title={simStartTitle}
+              >
+                {simIsStarting ? 'Starting…' : 'Run Simulation'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
       {/* 3-column workspace: (palette | mission) | canvas | properties */}

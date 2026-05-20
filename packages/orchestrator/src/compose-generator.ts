@@ -944,7 +944,10 @@ function buildDeviceEnv(
   if (device.dns) {
     if (device.dns.domain) env.push(`DNS_DOMAIN=${device.dns.domain}`)
     if (device.dns.webServerIp) env.push(`WEB_SERVER_IP=${device.dns.webServerIp}`)
-    if (device.dns.upstream) env.push(`DNS_UPSTREAM=${device.dns.upstream}`)
+    // Use !== undefined (not truthiness check) so that upstream: "" correctly
+    // injects DNS_UPSTREAM= (empty), overriding the container default of 8.8.8.8.
+    // An empty value triggers air-gapped mode in the dns entrypoint.sh.
+    if (device.dns.upstream !== undefined) env.push(`DNS_UPSTREAM=${device.dns.upstream}`)
   }
 
   // PLC program pre-load (Phase 4):

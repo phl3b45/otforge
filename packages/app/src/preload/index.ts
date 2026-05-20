@@ -325,6 +325,19 @@ const api = {
       ipcRenderer.invoke('pack:openScenario', { packId, relativePath })
   },
 
+  // ── Clipboard (used by the attack terminal paste handler) ───────────────────
+  clipboard: {
+    /**
+     * Reads the system clipboard as plain text via Electron's native clipboard
+     * module. More reliable than navigator.clipboard.readText() in Electron
+     * renderers because it bypasses browser clipboard-read permission checks.
+     *
+     * Used by AttackTerminalModal to paste host clipboard content into the
+     * docker exec stdin (xterm.js terminal) on Ctrl+V.
+     */
+    readText: (): Promise<string> => ipcRenderer.invoke('clipboard:readText')
+  },
+
   // ── Attack Machine window ────────────────────────────────────────────────────
   attack: {
     /**
