@@ -476,6 +476,12 @@ export default function App() {
   const [plcIdeDevice, setPlcIdeDevice] = useState<DeviceConfig | null>(null)
   /** Attack-machine device currently open in the terminal modal. Null when closed. */
   const [attackTerminalDevice, setAttackTerminalDevice] = useState<DeviceConfig | null>(null)
+  /**
+   * Whether the attack machine window has been launched during the current simulation run.
+   * Drives the button color: green (not yet launched) → red (launched and in use).
+   * Automatically reset to false when the simulation stops so the next run starts green.
+   */
+  const [attackLaunched, setAttackLaunched] = useState<boolean>(false)
   /** Active Purdue layer tab — controls which canvas, palette section, and properties are shown. */
   const [activeLayer, setActiveLayer] = useState<NetworkZone>('ot')
   /**
@@ -743,6 +749,8 @@ export default function App() {
   useEffect(() => {
     if (simStatus !== 'running') {
       setShowMonitor(false)
+      // Reset the launched indicator so the button returns to green on the next run
+      setAttackLaunched(false)
     }
   }, [simStatus])
 
@@ -959,7 +967,10 @@ export default function App() {
    */
   const handleAttackMachineLaunch = useCallback(async (nodeId: string) => {
     const result = await window.electronAPI.attack.launchWindow(nodeId)
-    if (!result.ok) {
+    if (result.ok) {
+      // Button turns red to signal the machine is actively in use
+      setAttackLaunched(true)
+    } else {
       // Surface the error in the same dismissible banner used for simulation start failures
       // so the instructor sees a clear message rather than a blank window or VNC error page.
       setSimError(result.error ?? 'Failed to open attack machine window.')
@@ -1211,9 +1222,13 @@ export default function App() {
              */}
             {simIsRunning && hasAttackMachine && firstAttackNodeId ? (
               <button
-                className="btn btn-sm btn-attack-launch"
+                className={`btn btn-sm btn-attack-launch${attackLaunched ? ' btn-attack-launched' : ''}`}
                 onClick={() => handleAttackMachineLaunch(firstAttackNodeId)}
-                title="Open Kali Linux attack machine in a separate window"
+                title={
+                  attackLaunched
+                    ? 'Attack machine is active — click to re-open the window'
+                    : 'Open Kali Linux attack machine in a separate window'
+                }
               >
                 ⚔ Attack Machine
               </button>

@@ -2998,16 +2998,38 @@ code.prop-value {
   pointer-events: none;
 }
 
-/* "⚔ Attack Machine" — simulation running; green signals active + launchable. */
+/*
+ * "⚔ Attack Machine" — simulation running; solid teal fill mirrors the Run
+ * Simulation button so the attack action reads as a primary affirmative action.
+ */
 .btn-attack-launch {
-  background: transparent;
-  border: 1px solid #3fb950;
-  color: #3fb950;
+  background: var(--accent-teal);
+  border: 1px solid var(--accent-teal);
+  color: #0d1117;
+  font-weight: 600;
 }
 
 .btn-attack-launch:hover:not(:disabled) {
-  background: #3fb950;
-  color: #0d1117;
+  background: #52e0c4;
+  border-color: #52e0c4;
+}
+
+/*
+ * Launched state — applied after the attack window is opened.
+ * Solid red communicates that the machine is actively in use.
+ * Reverts to green when the simulation ends (state reset in App.tsx).
+ */
+.btn-attack-launch.btn-attack-launched {
+  background: var(--accent-red);
+  border-color: var(--accent-red);
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn-attack-launch.btn-attack-launched:hover:not(:disabled) {
+  background: #ff6b6b;
+  border-color: #ff6b6b;
+  color: #fff;
 }
 
 /* ── Network Settings modal ───────────────────────────────────────────────────
