@@ -325,17 +325,30 @@ const api = {
       ipcRenderer.invoke('pack:openScenario', { packId, relativePath })
   },
 
-  // ── Clipboard (used by the attack terminal paste handler) ───────────────────
+  // ── Clipboard ─────────────────────────────────────────────────────────────────
+  // Both methods use Electron's native clipboard module (not the Web Clipboard API)
+  // so they work reliably in the non-HTTPS Electron renderer context.
   clipboard: {
     /**
      * Reads the system clipboard as plain text via Electron's native clipboard
-     * module. More reliable than navigator.clipboard.readText() in Electron
-     * renderers because it bypasses browser clipboard-read permission checks.
+     * module. Bypasses navigator.clipboard.readText() permission requirements.
      *
-     * Used by AttackTerminalModal to paste host clipboard content into the
-     * docker exec stdin (xterm.js terminal) on Ctrl+V.
+     * Used by AttackTerminalModal on Ctrl+V to paste host clipboard content into
+     * the docker exec stdin (xterm.js terminal).
      */
-    readText: (): Promise<string> => ipcRenderer.invoke('clipboard:readText')
+    readText: (): Promise<string> => ipcRenderer.invoke('clipboard:readText'),
+
+    /**
+     * Writes plain text to the system clipboard via Electron's native clipboard
+     * module. Bypasses navigator.clipboard.writeText() permission requirements so
+     * copied text is always available to clipboard:readText in the terminal.
+     *
+     * Used by TutorialPanel's Copy button so commands paste correctly into the
+     * attack terminal without the student needing to type them manually.
+     *
+     * @param text - The string to place on the system clipboard.
+     */
+    writeText: (text: string): Promise<void> => ipcRenderer.invoke('clipboard:writeText', { text })
   },
 
   // ── Attack Machine window ────────────────────────────────────────────────────

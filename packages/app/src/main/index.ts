@@ -1097,6 +1097,22 @@ function registerIPCHandlers(): void {
   })
 
   /**
+   * Writes a plain-text string to the system clipboard via Electron's native
+   * clipboard module.
+   *
+   * navigator.clipboard.writeText() requires the 'clipboard-write' permission and
+   * may fail silently in Electron renderer contexts (non-HTTPS origin). Using the
+   * native module guarantees the OS clipboard receives the text so that Ctrl+V in
+   * the attack terminal (clipboard:readText path) always finds the expected content.
+   *
+   * Called by TutorialPanel.tsx → handleCopy so copied commands paste correctly
+   * into the docker exec stdin.
+   */
+  ipcMain.handle('clipboard:writeText', (_event, { text }: { text: string }) => {
+    clipboard.writeText(text)
+  })
+
+  /**
    * Returns the localhost URL for the noVNC web interface of the given attack
    * machine device. The URL points to the websockify bridge running inside the
    * container at the host-published port tracked in activeAttackPorts.

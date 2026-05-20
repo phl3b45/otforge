@@ -266,13 +266,13 @@ export function TutorialPanel({ steps, devices, onClose }: TutorialPanelProps): 
 
   const handleCopy = useCallback(async () => {
     if (!resolvedCommand) return
-    try {
-      await navigator.clipboard.writeText(resolvedCommand)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      // Clipboard access denied (e.g. non-https Electron context) — silently ignore
-    }
+    // Use the Electron native clipboard IPC rather than navigator.clipboard.writeText().
+    // navigator.clipboard requires 'clipboard-write' permission which fails silently in
+    // Electron renderers (non-HTTPS origin). The native path guarantees the OS clipboard
+    // receives the text so Ctrl+V in the attack terminal always finds the copied command.
+    await window.electronAPI.clipboard.writeText(resolvedCommand)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }, [resolvedCommand])
 
   // Navigation helpers
