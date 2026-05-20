@@ -149,204 +149,6 @@ function LaunchScreen({
   )
 }
 
-// ── Toolbar ────────────────────────────────────────────────────────────────────
-
-/**
- * Top application toolbar with scenario identity, simulation status badge,
- * and file/editor controls.
- *
- * Simulation-time action buttons (Monitor, Tutorial, Open HMI, Attack Machine)
- * and the Author/Student mode badge live in the sim-actions-row below this toolbar,
- * rendered directly in App. The Run/Stop button lives in sim-control-slot at the
- * right end of the sim-tabs-row (the layer tab bar row).
- *
- * TypeScript note:
- *   Boolean flags (isIdle, isRunning, etc.) are pre-computed BEFORE the JSX so
- *   TypeScript does not narrow `simStatus` inside ternary branches. When TypeScript
- *   sees `isRunning || isStarting`, it narrows `simStatus` inside the branches —
- *   making further comparisons always-false on the false branch. Pre-computed
- *   booleans avoid this narrowing entirely.
- *
- * @param scenario           - Current scenario (null for blank canvas).
- * @param simStatus          - Current simulation lifecycle state.
- * @param appMode            - 'author' or 'student' — determines which toolbar actions are shown.
- * @param onImport           - Opens the file picker.
- * @param onNew              - Clears the canvas for a new scenario.
- * @param onHome             - Returns to the launch screen (disabled while running).
- * @param onSettingsOpen     - Opens the Network Settings modal.
- * @param onMetadataOpen     - Opens the Scenario Metadata editor modal (Author mode only).
- * @param onExportOpen       - Opens the Export dialog (Author mode only).
- * @param onPacksOpen        - Opens the Pack Manager (Author mode only).
- * @param installedPackCount - Number of installed packs shown as a badge on the Packs button.
- */
-function Toolbar({
-  scenario,
-  simStatus,
-  showGrid,
-  appMode,
-  installedPackCount,
-  onImport,
-  onNew,
-  onHome,
-  onGridToggle,
-  onSettingsOpen,
-  onMetadataOpen,
-  onExportOpen,
-  onPacksOpen
-}: {
-  scenario: OTForgeScenario | null
-  simStatus: SimStatus
-  /**
-   * Whether the 25 × 25 snap grid is currently visible.
-   * False is passed during simulation so the grid toggle disappears entirely;
-   * the underlying showGrid state in App is preserved for when idle resumes.
-   */
-  showGrid: boolean
-  /** Current app mode — 'author' for unlocked scenarios, 'student' for locked ones. */
-  appMode: 'author' | 'student'
-  /** Number of currently installed packs — shown as a small badge on the Packs button. */
-  installedPackCount: number
-  onImport: () => void
-  onNew: () => void
-  onHome: () => void
-  /** Toggles the snap grid on/off. */
-  onGridToggle: () => void
-  /** Opens the Network Settings modal for subnet configuration. */
-  onSettingsOpen: () => void
-  /** Opens the Scenario Metadata editor. Only available in Author mode while idle. */
-  onMetadataOpen: () => void
-  /** Opens the Export dialog. Only available in Author mode while idle. */
-  onExportOpen: () => void
-  /** Opens the Pack Manager. Always available in Author mode. */
-  onPacksOpen: () => void
-}) {
-  const scenarioName = scenario?.meta.name ?? 'Untitled Scenario'
-  const deviceCount = scenario ? Object.keys(scenario.devices.devices).length : 0
-
-  // Pre-compute booleans to prevent TypeScript narrowing inside JSX ternaries
-  const isIdle = simStatus === 'idle'
-  const isStarting = simStatus === 'starting'
-  const isRunning = simStatus === 'running'
-  const isStopping = simStatus === 'stopping'
-  // Settings button is always available (network config applies to the next simulation start)
-  const canOpenSettings = !isStarting && !isStopping
-
-  return (
-    <header className="toolbar">
-      <div className="toolbar-left">
-        {/* Logo acts as a home button */}
-        <button className="toolbar-logo" onClick={onHome} title="Home">
-          <span className="logo-text-sm">OTForge</span>
-        </button>
-        <div className="toolbar-scenario">
-          <span className="toolbar-scenario-name">{scenarioName}</span>
-          {deviceCount > 0 && (
-            <span className="toolbar-scenario-meta">
-              {deviceCount} device{deviceCount !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Centered simulation status badge */}
-      <div className="toolbar-center">
-        <SimStatusBadge status={simStatus} />
-      </div>
-
-      <div className="toolbar-right">
-        <button className="btn btn-sm btn-ghost" onClick={onNew} title="New scenario">
-          New
-        </button>
-        <button className="btn btn-sm btn-ghost" onClick={onImport} title="Open .otflab file">
-          Open
-        </button>
-
-        {/*
-         * Scenario Builder — always visible to the instructor (Author mode) so they
-         * know the button is available. Disabled during simulation transitions because
-         * metadata changes only take effect on the next simulation start. Clicking this
-         * opens MetadataModal; saving activates builder mode and enables drag-and-drop.
-         */}
-        {scenario && appMode === 'author' && (
-          <button
-            className="btn btn-sm btn-ghost"
-            onClick={onMetadataOpen}
-            disabled={isRunning || isStarting || isStopping}
-            title={
-              isRunning || isStarting || isStopping
-                ? 'Cannot edit scenario while simulation is running'
-                : 'Edit scenario name, description, and mission brief — activates builder mode'
-            }
-          >
-            Scenario Builder
-          </button>
-        )}
-
-        {/*
-         * Export — choose Author Copy (full) or Student Copy (locked, stripped).
-         * Only visible to the instructor (Author mode) while idle with a scenario loaded.
-         */}
-        {isIdle && scenario && appMode === 'author' && (
-          <button
-            className="btn btn-sm btn-ghost"
-            onClick={onExportOpen}
-            title="Export scenario as Author Copy or Student Copy"
-          >
-            Export
-          </button>
-        )}
-
-        {/*
-         * Pack Manager — install and manage community scenario packs (.otfpack files).
-         * Available in Author mode only (students see a read-only canvas with no palette).
-         * A small numeric badge shows how many packs are installed so instructors know
-         * at a glance whether they have any packs loaded.
-         */}
-        {appMode === 'author' && (
-          <button
-            className="btn btn-sm btn-ghost btn-packs"
-            onClick={onPacksOpen}
-            title="Manage community scenario packs (.otfpack files)"
-          >
-            Packs
-            {installedPackCount > 0 && <span className="packs-badge">{installedPackCount}</span>}
-          </button>
-        )}
-
-        {/*
-         * Grid toggle — only shown in Author mode while idle (students cannot edit,
-         * so a snap grid has no utility for them). The grid is always 25 × 25 cells.
-         */}
-        {isIdle && appMode === 'author' && (
-          <button
-            className={`btn btn-sm ${showGrid ? 'btn-secondary' : 'btn-ghost'}`}
-            onClick={onGridToggle}
-            title={showGrid ? 'Hide 25 × 25 snap grid' : 'Show 25 × 25 snap grid'}
-          >
-            Grid
-          </button>
-        )}
-
-        {/*
-         * Settings gear — file/config operations group ends here.
-         * Always visible so users can adjust subnet settings at any time.
-         * Disabled only during transitional states (starting / stopping) to
-         * prevent modifying settings while Docker is already reading them.
-         */}
-        <button
-          className="btn btn-sm btn-ghost btn-settings-gear"
-          onClick={onSettingsOpen}
-          disabled={!canOpenSettings}
-          title="Network settings — configure Docker subnet addresses"
-          aria-label="Open network settings"
-        >
-          ⚙
-        </button>
-      </div>
-    </header>
-  )
-}
-
 /**
  * Small status indicator badge in the toolbar center.
  *
@@ -1250,6 +1052,8 @@ export default function App() {
     : simDeviceCount === 0
       ? 'Add at least one device'
       : ''
+  // Settings disabled only during sim transitions (network config reads happen at start)
+  const canOpenSettings = !simIsStarting && !simIsStopping
 
   // ── sim-actions-row state (moved from Toolbar so they render below the ribbon) ─
   // Attack machine helpers and tutorial flag — used in the sim-actions-row that
@@ -1272,76 +1076,101 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Toolbar
-        scenario={scenario}
-        simStatus={simStatus}
-        showGrid={effectiveShowGrid}
-        appMode={appMode}
-        installedPackCount={installedPacks.length}
-        onImport={handleImport}
-        onNew={handleNew}
-        onHome={handleHome}
-        onGridToggle={handleGridToggle}
-        onSettingsOpen={handleSettingsOpen}
-        onMetadataOpen={handleMetadataOpen}
-        onExportOpen={handleExportOpen}
-        onPacksOpen={handlePacksOpen}
-      />
       {/*
-       * Simulation error banner — shown when the most recent start attempt failed.
-       * Includes the error message from the main process (compose error, Docker pull
-       * failure, path error, etc.) so the student/instructor can diagnose the issue.
-       * Dismissed by clicking × or by starting a new simulation.
-       */}
-      {simError && (
-        <div className="sim-error-banner">
-          <span className="sim-error-icon">⚠</span>
-          <span className="sim-error-message">{simError}</span>
-          <button className="sim-error-dismiss" onClick={() => setSimError(null)} title="Dismiss">
-            ×
-          </button>
-        </div>
-      )}
-      {/*
-       * sim-header — two-row bar between the toolbar ribbon and the workspace.
+       * ── Toolbar: two-row header ──────────────────────────────────────────────
        *
-       * Row 1 (sim-actions-row): Author/Student mode badge + simulation action buttons
-       * (Monitor, Tutorial, Open HMI, Attack Machine). A sim-slot-spacer on the right
-       * matches the width of sim-control-slot so no button extends past the vertical
-       * divider line that separates Run/Stop from the five network tabs.
+       * Row 1 (toolbar-actions-row): all action buttons.
+       *   Left  — file and editor operations: New, Open, Scenario Builder, Export,
+       *            Packs, Grid, Settings.
+       *   Right — simulation tools: Tutorial, Attack Machine, Open HMI, Monitor.
        *
-       * Row 2 (sim-tabs-row): Purdue model layer tabs + Run/Stop control at the right
-       * end in sim-control-slot (separated by a vertical border line).
+       * Row 2 (toolbar-identity-row): OTForge logo + scenario name (left);
+       * simulation status badge with blinking dot (right).
+       *
+       * The Author/Student mode badge is rendered in sim-mode-row directly below
+       * this header so it appears beneath the status badge as requested.
        */}
-      <div className="sim-header">
-        <div className="sim-actions-row">
-          <div className="sim-actions-inner">
+      <header className="toolbar">
+        {/* Row 1 — action buttons */}
+        <div className="toolbar-actions-row">
+          <div className="toolbar-actions-left">
+            <button className="btn btn-sm btn-ghost" onClick={handleNew} title="New scenario">
+              New
+            </button>
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={handleImport}
+              title="Open .otflab file"
+            >
+              Open
+            </button>
             {/*
-             * Mode badge — placed here (below toolbar) so it sits on the same level as
-             * Monitor, Tutorial, Open HMI, and Attack Machine per the user's layout spec.
+             * Scenario Builder — Author mode only. Disabled during simulation so metadata
+             * changes take effect only on the next start.
              */}
-            {scenario && (
-              <div className={`mode-badge mode-badge-${appMode}`}>
-                {appMode === 'student' ? '🔒 Student Mode' : '✎ Author Mode'}
-              </div>
-            )}
-            {/*
-             * Monitor toggle — only shown while simulation is running.
-             * Opens/closes the Grafana + Live Logs drawer below the canvas.
-             * .active class adds a teal ring so operators know the panel is open.
-             */}
-            {simIsRunning && (
+            {scenario && appMode === 'author' && (
               <button
-                className={`btn btn-sm btn-monitor ${showMonitor ? 'active' : ''}`}
-                onClick={handleMonitorToggle}
-                title={showMonitor ? 'Hide monitor panel' : 'Open Grafana + Live Logs monitor'}
+                className="btn btn-sm btn-ghost"
+                onClick={handleMetadataOpen}
+                disabled={simIsRunning || simIsStarting || simIsStopping}
+                title={
+                  simIsRunning || simIsStarting || simIsStopping
+                    ? 'Cannot edit scenario while simulation is running'
+                    : 'Edit scenario name, description, and mission brief — activates builder mode'
+                }
               >
-                Monitor
+                Scenario Builder
               </button>
             )}
+            {/* Export — Author mode, idle only */}
+            {simIsIdle && scenario && appMode === 'author' && (
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={handleExportOpen}
+                title="Export scenario as Author Copy or Student Copy"
+              >
+                Export
+              </button>
+            )}
+            {/* Pack Manager — Author mode only */}
+            {appMode === 'author' && (
+              <button
+                className="btn btn-sm btn-ghost btn-packs"
+                onClick={handlePacksOpen}
+                title="Manage community scenario packs (.otfpack files)"
+              >
+                Packs
+                {installedPacks.length > 0 && (
+                  <span className="packs-badge">{installedPacks.length}</span>
+                )}
+              </button>
+            )}
+            {/* Grid toggle — Author mode, idle only */}
+            {simIsIdle && appMode === 'author' && (
+              <button
+                className={`btn btn-sm ${effectiveShowGrid ? 'btn-secondary' : 'btn-ghost'}`}
+                onClick={handleGridToggle}
+                title={effectiveShowGrid ? 'Hide 25 × 25 snap grid' : 'Show 25 × 25 snap grid'}
+              >
+                Grid
+              </button>
+            )}
+            {/* Settings gear — always available except during sim transitions */}
+            <button
+              className="btn btn-sm btn-ghost btn-settings-gear"
+              onClick={handleSettingsOpen}
+              disabled={!canOpenSettings}
+              title="Network settings — configure Docker subnet addresses"
+              aria-label="Open network settings"
+            >
+              ⚙
+            </button>
+          </div>
+
+          <div className="toolbar-actions-right">
             {/*
-             * Tutorial — shown whenever the active scenario has tutorial steps, in both
-             * Author and Student modes. Reopens the TutorialPanel overlay after dismiss.
+             * Tutorial — shown whenever the active scenario has tutorial steps.
+             * Available in both Author and Student modes.
              */}
             {hasTutorial && (
               <button
@@ -1353,29 +1182,16 @@ export default function App() {
               </button>
             )}
             {/*
-             * Open HMI — only shown while simulation is running.
-             * Opens FUXA process HMI in a standalone window (localhost:1881).
-             */}
-            {simIsRunning && (
-              <button
-                className="btn btn-sm btn-hmi"
-                onClick={handleHmiOpen}
-                title="Open FUXA process HMI — live Modbus data from PLCs"
-              >
-                Open HMI
-              </button>
-            )}
-            {/*
              * Attack Machine — three visual states:
-             *   idle (no machine)  → red outline "+ Attack Machine" (adds the device)
-             *   idle (has machine) → red outline "⚔ Attack Ready" (indicator)
-             *   running            → solid green "⚔ Attack Machine" (launches window)
+             *   idle (no machine)  → "+ Attack Machine" (adds the device)
+             *   idle (has machine) → "⚔ Attack Ready" (indicator)
+             *   running            → "⚔ Attack Machine" (launches window)
              */}
             {simIsRunning && hasAttackMachine && firstAttackNodeId ? (
               <button
                 className="btn btn-sm btn-attack-launch"
                 onClick={() => handleAttackMachineLaunch(firstAttackNodeId)}
-                title="Open Kali Linux attack machine in a separate window (can be moved to a second monitor)"
+                title="Open Kali Linux attack machine in a separate window"
               >
                 ⚔ Attack Machine
               </button>
@@ -1387,7 +1203,7 @@ export default function App() {
                   disabled={!hasAttackMachine && (simIsStarting || simIsStopping)}
                   title={
                     hasAttackMachine
-                      ? 'Attack machine is included in this scenario — launch it when the simulation is running'
+                      ? 'Attack machine included — launch when simulation is running'
                       : 'Add a Kali Linux attack machine to this scenario'
                   }
                 >
@@ -1395,42 +1211,101 @@ export default function App() {
                 </button>
               )
             )}
-          </div>
-          {/* Spacer matches sim-control-slot width so buttons never extend past the divider */}
-          <div className="sim-slot-spacer" />
-        </div>
-
-        {/*
-         * sim-tabs-row — Purdue model layer tabs + Run/Stop button at the right end.
-         * The Run/Stop button is intentionally larger than toolbar buttons to be easy
-         * to find during a live session.
-         */}
-        <div className="sim-tabs-row">
-          <LayerTabBar
-            activeLayer={activeLayer}
-            scenario={scenario}
-            onLayerChange={setActiveLayer}
-          />
-          <div className="sim-control-slot">
-            {simShowStop ? (
+            {/* Open HMI — only while simulation is running */}
+            {simIsRunning && (
               <button
-                className="btn btn-sim btn-danger"
-                onClick={handleStop}
-                disabled={simIsStopping}
+                className="btn btn-sm btn-hmi"
+                onClick={handleHmiOpen}
+                title="Open FUXA process HMI — live Modbus data from PLCs"
               >
-                {simIsStopping ? 'Stopping…' : 'Stop Simulation'}
+                Open HMI
               </button>
-            ) : (
+            )}
+            {/* Monitor toggle — only while simulation is running */}
+            {simIsRunning && (
               <button
-                className="btn btn-sim btn-run"
-                onClick={handleStart}
-                disabled={!simCanStart}
-                title={simStartTitle}
+                className={`btn btn-sm btn-monitor ${showMonitor ? 'active' : ''}`}
+                onClick={handleMonitorToggle}
+                title={showMonitor ? 'Hide monitor panel' : 'Open Grafana + Live Logs monitor'}
               >
-                {simIsStarting ? 'Starting…' : 'Run Simulation'}
+                Monitor
               </button>
             )}
           </div>
+        </div>
+
+        {/*
+         * Row 2 — identity: OTForge logo + scenario name on the left; sim status badge
+         * (blinking dot) on the right. The Author/Student mode badge is NOT here —
+         * it lives in sim-mode-row directly below this row so it reads as "below status".
+         */}
+        <div className="toolbar-identity-row">
+          <div className="toolbar-left">
+            <button className="toolbar-logo" onClick={handleHome} title="Home">
+              <span className="logo-text-sm">OTForge</span>
+            </button>
+            <div className="toolbar-scenario">
+              <span className="toolbar-scenario-name">
+                {scenario?.meta.name ?? 'Untitled Scenario'}
+              </span>
+              {simDeviceCount > 0 && (
+                <span className="toolbar-scenario-meta">
+                  {simDeviceCount} device{simDeviceCount !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          </div>
+          <SimStatusBadge status={simStatus} />
+        </div>
+      </header>
+
+      {/*
+       * Simulation error banner — shown when the most recent start attempt failed.
+       */}
+      {simError && (
+        <div className="sim-error-banner">
+          <span className="sim-error-icon">⚠</span>
+          <span className="sim-error-message">{simError}</span>
+          <button className="sim-error-dismiss" onClick={() => setSimError(null)} title="Dismiss">
+            ×
+          </button>
+        </div>
+      )}
+
+      {/*
+       * Mode badge row — directly below the toolbar identity row (below the sim status
+       * badge with the blinking dot). Only shown when a scenario is open.
+       */}
+      {scenario && (
+        <div className="sim-mode-row">
+          <div className={`mode-badge mode-badge-${appMode}`}>
+            {appMode === 'student' ? '🔒 Student Mode' : '✎ Author Mode'}
+          </div>
+        </div>
+      )}
+
+      {/* Layer tab bar + Run/Stop control */}
+      <div className="sim-tabs-row">
+        <LayerTabBar activeLayer={activeLayer} scenario={scenario} onLayerChange={setActiveLayer} />
+        <div className="sim-control-slot">
+          {simShowStop ? (
+            <button
+              className="btn btn-sim btn-danger"
+              onClick={handleStop}
+              disabled={simIsStopping}
+            >
+              {simIsStopping ? 'Stopping…' : 'Stop Simulation'}
+            </button>
+          ) : (
+            <button
+              className="btn btn-sim btn-run"
+              onClick={handleStart}
+              disabled={!simCanStart}
+              title={simStartTitle}
+            >
+              {simIsStarting ? 'Starting…' : 'Run Simulation'}
+            </button>
+          )}
         </div>
       </div>
       {/* 3-column workspace: (palette | mission) | canvas | properties */}
@@ -1474,16 +1349,38 @@ export default function App() {
           onSelectDevice={handleSelectDevice}
           onScenarioChange={handleScenarioChange}
         />
-        <PropertiesPanel
-          device={selectedDevice}
-          zone={selectedZone}
-          simRunning={simStatus === 'running'}
-          security={scenario?.security ?? null}
-          readOnly={appMode === 'student'}
-          onSecurityChange={handleSecurityChange}
-          onOpenPlcIde={handleOpenPlcIde}
-          onOpenAttackTerminal={handleOpenAttackTerminal}
-        />
+        {/*
+         * Right pane wrapper — gives the properties panel a flex column context so the
+         * Delete Scenario button can be pinned to the bottom without fixed positioning.
+         */}
+        <div className="properties-pane">
+          <PropertiesPanel
+            device={selectedDevice}
+            zone={selectedZone}
+            simRunning={simStatus === 'running'}
+            security={scenario?.security ?? null}
+            readOnly={appMode === 'student'}
+            onSecurityChange={handleSecurityChange}
+            onOpenPlcIde={handleOpenPlcIde}
+            onOpenAttackTerminal={handleOpenAttackTerminal}
+          />
+          {/*
+           * Delete Scenario — centered at the bottom of the right pane.
+           * Only shown in Author mode while idle so it is never accidentally
+           * clicked during a live session.
+           */}
+          {simIsIdle && scenario && appMode === 'author' && (
+            <div className="delete-scenario-slot">
+              <button
+                className="btn btn-sm btn-delete-scenario"
+                onClick={handleDelete}
+                title="Clear all devices from this scenario and optionally delete the file from disk"
+              >
+                Delete Scenario
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       {/*
        * Monitor panel drawer — rendered between workspace and status bar so it
@@ -1596,23 +1493,6 @@ export default function App() {
             </div>
           </div>
         </div>
-      )}
-
-      {/*
-       * Delete Scenario — fixed at the bottom-right corner of the viewport.
-       * Only shown in Author mode while the simulation is idle so it is never
-       * accidentally clicked during a live session. Using fixed positioning keeps
-       * it out of the toolbar flow and visually separates it from operational
-       * controls (Run / Stop) while keeping it discoverable.
-       */}
-      {simStatus === 'idle' && scenario && appMode === 'author' && (
-        <button
-          className="btn btn-sm btn-delete-scenario btn-delete-scenario-fixed"
-          onClick={handleDelete}
-          title="Clear all devices from this scenario and optionally delete the file from disk"
-        >
-          Delete Scenario
-        </button>
       )}
     </div>
   )

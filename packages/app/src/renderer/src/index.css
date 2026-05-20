@@ -252,18 +252,50 @@ body {
 
 /* ── Toolbar ──────────────────────────────────────────────────────────────────── */
 
-/* Toolbar wraps to a second row when buttons overflow the first line.
- * min-height replaces the old fixed height so the bar grows naturally. */
+/*
+ * Two-row header:
+ *   Row 1 (.toolbar-actions-row) — all action buttons (editing left, sim right)
+ *   Row 2 (.toolbar-identity-row) — OTForge logo + scenario name (left), status badge (right)
+ */
 .toolbar {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  min-height: 44px;
-  padding: 4px 0.75rem;
+  flex-direction: column;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  gap: 0.25rem 0.5rem;
+}
+
+/* Row 1: action buttons */
+.toolbar-actions-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 4px 0.75rem;
+  gap: 0.3rem;
+  border-bottom: 1px solid var(--border-muted);
+}
+.toolbar-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 1;
+  min-width: 0;
+}
+.toolbar-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+/* Row 2: brand identity + sim status */
+.toolbar-identity-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 4px 0.75rem;
+  gap: 0.5rem;
+  min-height: 36px;
 }
 
 .toolbar-left {
@@ -271,26 +303,7 @@ body {
   align-items: center;
   gap: 0.75rem;
   flex: 1;
-  min-width: 0;
-  /* Never smaller than logo + scenario name — stops center/right crushing into it */
   min-width: 160px;
-}
-.toolbar-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* Fixed-size island for status badges; shrinks only under extreme pressure */
-  flex: 0 1 auto;
-  gap: 0.4rem;
-}
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  flex: 1;
-  justify-content: flex-end;
-  min-width: 0;
 }
 
 .toolbar-logo {
@@ -663,6 +676,31 @@ body {
   pointer-events: none;
   white-space: nowrap;
   font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+
+/* ── Properties pane (right-column wrapper) ───────────────────────────────────
+ *
+ * Wraps .properties-panel and the Delete Scenario slot in a flex column so the
+ * delete button can be pinned to the bottom of the pane without fixed positioning.
+ * The wrapper inherits the workspace's flex context (third column of the 3-col layout).
+ */
+.properties-pane {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* Delete Scenario button — centered at the bottom of the properties pane */
+.delete-scenario-slot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0.75rem;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border-muted);
+  flex-shrink: 0;
 }
 
 /* ── Properties panel ─────────────────────────────────────────────────────────── */
@@ -2040,6 +2078,23 @@ code.prop-value {
   font-size: 0.75rem;
   color: var(--text-muted);
   font-weight: 400;
+}
+
+/* ── Mode badge row — below toolbar identity row ──────────────────────────────
+ *
+ * Thin bar that sits between the toolbar and the layer-tab bar row.
+ * Only shown when a scenario is loaded (collapsed when the canvas is blank).
+ * Position: directly below the sim status badge in the identity row, so the
+ * Author/Student badge reads as "below the Idle/Simulation Running indicator".
+ */
+.sim-mode-row {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0.2rem 0.75rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  min-height: 30px;
 }
 
 /* ── sim-header: two-row bar below the toolbar ribbon ────────────────────────
