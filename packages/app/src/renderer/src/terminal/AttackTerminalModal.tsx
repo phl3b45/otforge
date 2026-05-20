@@ -1,31 +1,35 @@
 /**
- * AttackTerminalModal.tsx — Full-screen modal for the Kali attack machine.
+ * AttackTerminalModal.tsx — Kali Linux terminal modal for the attack machine.
  *
- * Layout:
- *   Fixed backdrop dims the canvas beneath (same pattern as PlcIdeModal).
- *   Centered panel:
- *     Header  — device node ID · "Kali Linux Attack Machine" label · × close
- *     Tab bar — "Terminal" | "Desktop"
- *     Body    — Terminal tab: xterm.js connected to docker exec via IPC
- *               Desktop tab: launcher button that opens the noVNC desktop in a
- *                            separate OS-level BrowserWindow via attack:launchWindow IPC
+ * Purpose:
+ *   Provides a docker exec bash session (via xterm.js) inside the Kali attack
+ *   container. Opened by the toolbar ⚔ Attack Machine button, which also:
+ *     1. Auto-pastes the host clipboard into the terminal (pasteSignal)
+ *     2. Silently launches the noVNC desktop window in the background
+ *   so a single toolbar click gives the user a fully-ready attack environment.
  *
- * Why the Desktop tab uses a separate window instead of an embedded webview:
- *   Electron's <webview> tag has WebSocket security restrictions that intermittently
- *   block the noVNC WebSocket connection to localhost, causing "cannot connect to server"
- *   errors even when websockify is running. The attack:launchWindow IPC handler opens a
- *   full BrowserWindow (sandbox: true, nodeIntegration: false) which handles localhost
- *   WebSocket connections correctly. An external window also lets students/instructors
- *   place the Kali desktop on a second monitor independently of the main simulator.
+ * No tab bar — this modal shows only the terminal. The noVNC desktop window
+ * (Xfce4 + Wireshark + Armitage + Firefox) is accessible via the "Open Desktop"
+ * button in the header, but is already launched automatically on first open.
  *
  * Terminal data flow:
  *   Keystrokes → xterm onData → window.electronAPI.terminal.write(data)
  *                             → main process stdin of docker exec -i
  *   docker exec stdout/stderr → main process → 'terminal:data' IPC event
- *                             → on.terminalData listener → terminal.write(data)
+ *                             → on.terminalData listener → term.write(data)
  *
- * Dismiss with:
- *   × button, backdrop click, or Escape key.
+ * Clipboard paste (Ctrl+V, pasteSignal):
+ *   Uses window.electronAPI.terminal.write(text) NOT term.paste(text).
+ *   term.paste() wraps text in \x1b[200~...\x1b[201~ (xterm bracketed-paste mode)
+ *   which bash in the container echoes as literal "^[[200~" unless readline is
+ *   configured. terminal.write() sends raw bytes to PTY stdin with no markers.
+ *
+ * pasteSignal auto-paste:
+ *   App.tsx increments pasteSignal on each toolbar button click. This effect
+ *   writes the clipboard to the PTY immediately if connected, or queues it
+ *   via pendingPasteRef if terminal.open() has not yet resolved.
+ *
+ * Dismiss: × button, backdrop click, or Escape key.
  *   Closing calls terminal:close to kill the docker exec process.
  */
 
@@ -34,9 +38,6 @@ import type { DeviceConfig } from '@otforge/schema'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-
-/** Which panel is currently active in the tab bar. */
-type ActiveTab = 'terminal' | 'desktop'
 
 // ── xterm.js theme — matches the app's dark palette ──────────────────────────
 const XTERM_THEME = {
@@ -65,29 +66,23 @@ const XTERM_THEME = {
 /**
  * AttackTerminalModal
  *
- * @param device    - The attack-machine DeviceConfig (used for node ID and display name).
- * @param onClose   - Callback to close this modal and return to the canvas.
+ * @param device       - The attack-machine DeviceConfig (node ID + display name).
+ * @param pasteSignal  - Incrementing counter from App.tsx. Each increment pastes the
+ *                       host clipboard into the xterm PTY. 0/undefined = no paste.
+ * @param onClose      - Callback to unmount this modal and return to the canvas.
  */
 export function AttackTerminalModal({
   device,
+  pasteSignal,
   onClose
 }: {
   device: DeviceConfig
+  pasteSignal?: number
   onClose: () => void
 }) {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('terminal')
   const [termError, setTermError] = useState<string | null>(null)
-  /** Whether the desktop was successfully opened in an external BrowserWindow. */
-  const [desktopLaunched, setDesktopLaunched] = useState<boolean>(false)
-  /** Error message from the last attempt to open the desktop window. */
-  const [desktopError, setDesktopError] = useState<string | null>(null)
-  /** Whether a desktop launch is in progress (prevents double-clicks). */
+  /** True while the noVNC desktop window is being opened (prevents double-click). */
   const [desktopLaunching, setDesktopLaunching] = useState<boolean>(false)
-  /**
-   * Result of the most recent "Paste to Kali" clipboard sync attempt.
-   * Shown briefly as feedback, then cleared. Null = no attempt yet.
-   */
-  const [pasteResult, setPasteResult] = useState<{ ok: boolean; error?: string } | null>(null)
 
   /** Ref to the div that xterm.js mounts into. */
   const termDivRef = useRef<HTMLDivElement>(null)
@@ -95,12 +90,18 @@ export function AttackTerminalModal({
   const termRef = useRef<Terminal | null>(null)
   /** FitAddon resizes the terminal to fill its container div. */
   const fitAddonRef = useRef<FitAddon | null>(null)
+  /** True once docker exec has successfully attached — gates pending-paste delivery. */
+  const termConnectedRef = useRef<boolean>(false)
+  /**
+   * True if a pasteSignal fired before the terminal finished connecting.
+   * Cleared and delivered once terminal.open() resolves successfully.
+   */
+  const pendingPasteRef = useRef<boolean>(false)
 
   // ── Terminal initialization ──────────────────────────────────────────────────
   useEffect(() => {
     if (!termDivRef.current) return
 
-    // Create terminal with the app's dark theme
     const term = new Terminal({
       theme: XTERM_THEME,
       fontFamily: '"Cascadia Code", "Fira Code", "Consolas", monospace',
@@ -120,54 +121,58 @@ export function AttackTerminalModal({
     termRef.current = term
     fitAddonRef.current = fitAddon
 
-    // Clipboard paste handler.
+    // Clipboard paste handler — Ctrl+V / Ctrl+Shift+V / Cmd+V.
     //
-    // Intercepts Ctrl+V (Windows/macOS standard) and Ctrl+Shift+V (Linux terminal
-    // convention — ev.key is uppercase 'V' when Shift is held). Without this handler:
-    //   - Ctrl+V: xterm.js does not paste; the browser handles the key and may beep.
-    //   - Ctrl+Shift+V: xterm.js calls navigator.clipboard.readText() which Electron
-    //     blocks in non-HTTPS renderers, so nothing is pasted.
+    // Writes text directly to the docker exec PTY stdin via terminal.write() rather
+    // than term.paste(), which would prepend \x1b[200~ (bracketed paste mode start)
+    // and cause bash to echo "^[[200~" as literal characters.
     //
-    // ev.preventDefault() is called explicitly before returning false. xterm.js's
-    // attachCustomKeyEventHandler does NOT call preventDefault when the handler
-    // returns false — without it the browser still receives the event and generates
-    // a system beep even though xterm has dropped the key.
-    //
-    // window.electronAPI.clipboard.readText() calls Electron's native clipboard module
-    // via IPC, bypassing the Web Clipboard API permission requirement entirely.
+    // ev.preventDefault() must be called explicitly — xterm's
+    // attachCustomKeyEventHandler does NOT call it when returning false, so without
+    // it the browser still receives the event and may generate a system beep.
     term.attachCustomKeyEventHandler((ev: KeyboardEvent) => {
-      // ev.key is 'v' for Ctrl+V and 'V' for Ctrl+Shift+V (shift changes case)
       const isPaste =
         ev.type === 'keydown' && ev.key.toLowerCase() === 'v' && (ev.ctrlKey || ev.metaKey)
       if (isPaste) {
-        ev.preventDefault() // stop browser/Electron from also handling this key and beeping
+        ev.preventDefault()
         window.electronAPI.clipboard
           .readText()
           .then(text => {
-            if (text) term.paste(text) // forward clipboard text to docker exec stdin
+            if (text) window.electronAPI.terminal.write(text)
           })
           .catch(() => {
-            // IPC failure — silently ignore (container may not be ready yet)
+            // IPC failure — container may not be ready; ignore silently
           })
-        return false // tell xterm not to process this keystroke either
+        return false
       }
-      return true // let xterm.js process all other keystrokes normally
+      return true
     })
 
-    // Welcome banner printed locally — the actual bash prompt follows from the container
+    // Welcome banner — the actual bash prompt follows from the container
     term.writeln('\x1b[32m[OTForge]\x1b[0m Connecting to attack machine...')
     term.writeln('\x1b[90mKali Linux · External network segment\x1b[0m')
     term.writeln('')
 
-    // Open the docker exec session in the main process
+    // Open the docker exec session in the main process.
+    // On success, mark connected and deliver any clipboard paste queued before ready.
     window.electronAPI.terminal.open(device.nodeId).then(result => {
       if (!result.ok) {
         term.writeln(`\x1b[31mError: ${result.error ?? 'Failed to open terminal'}\x1b[0m`)
         setTermError(result.error ?? 'Failed to open terminal')
+      } else {
+        termConnectedRef.current = true
+        if (pendingPasteRef.current) {
+          pendingPasteRef.current = false
+          // Brief delay so the bash prompt renders before writing to stdin
+          setTimeout(async () => {
+            const text = await window.electronAPI.clipboard.readText()
+            if (text) window.electronAPI.terminal.write(text)
+          }, 400)
+        }
       }
     })
 
-    // Pipe all keystrokes and paste events to the container's stdin
+    // Pipe all keystrokes to the container's stdin
     const dataDispose = term.onData(data => {
       window.electronAPI.terminal.write(data)
     })
@@ -177,7 +182,6 @@ export function AttackTerminalModal({
       term.write(data)
     })
 
-    // Resize handler — refit when the window is resized
     const handleResize = () => fitAddonRef.current?.fit()
     window.addEventListener('resize', handleResize)
 
@@ -189,61 +193,41 @@ export function AttackTerminalModal({
       term.dispose()
       termRef.current = null
       fitAddonRef.current = null
+      termConnectedRef.current = false
+      pendingPasteRef.current = false
     }
   }, [device.nodeId])
 
-  // ── Desktop tab switch ───────────────────────────────────────────────────
-  const handleDesktopTab = useCallback(() => {
-    setActiveTab('desktop')
-  }, [])
+  // ── pasteSignal — auto-paste clipboard into the xterm PTY ───────────────
+  //
+  // Fired by App.tsx each time the toolbar ⚔ Attack Machine button is clicked.
+  // Writes raw clipboard text to PTY stdin (no bracketed-paste markers).
+  // If terminal.open() hasn't resolved yet, queues the paste via pendingPasteRef
+  // and delivers it once the exec session is ready.
+  useEffect(() => {
+    if (!pasteSignal) return
+    if (termConnectedRef.current) {
+      window.electronAPI.clipboard.readText().then(text => {
+        if (text) window.electronAPI.terminal.write(text)
+      })
+    } else {
+      pendingPasteRef.current = true
+    }
+  }, [pasteSignal])
 
-  /**
-   * Opens the Kali Linux Xfce4 desktop in a separate native OS window via the
-   * attack:launchWindow IPC handler. That handler opens a sandboxed BrowserWindow
-   * loading the noVNC page over localhost; the window is fully independent of the
-   * main simulator so it can be moved to a second monitor.
-   *
-   * Using a separate BrowserWindow instead of an embedded <webview> avoids Electron
-   * WebSocket restrictions that cause "cannot connect to server" errors in webviews.
-   * The main process also runs isPortOpen() before creating the window — if the
-   * container's websockify is not ready yet, the user sees a clear retry message.
-   */
-  const handleLaunchDesktop = useCallback(async () => {
+  // ── Open Kali Xfce4 desktop in a separate OS window ──────────────────────
+  //
+  // The noVNC BrowserWindow is also launched automatically by App.tsx when the
+  // toolbar button is first clicked (attack:launchWindow IPC). This button is a
+  // fallback for reopening it if it was closed, or for launching it manually.
+  const handleOpenDesktop = useCallback(async () => {
     setDesktopLaunching(true)
-    setDesktopError(null)
     try {
-      const result = await window.electronAPI.attack.launchWindow(device.nodeId)
-      if (result.ok) {
-        setDesktopLaunched(true)
-      } else {
-        setDesktopError(result.error ?? 'Failed to open desktop window')
-      }
+      await window.electronAPI.attack.launchWindow(device.nodeId)
     } finally {
       setDesktopLaunching(false)
     }
   }, [device.nodeId])
-
-  // ── Clipboard sync: host → Kali noVNC ────────────────────────────────────
-  //
-  // noVNC does not share the host clipboard automatically (the browser blocks
-  // clipboard-read on non-HTTPS origins). This handler reads from the Electron
-  // native clipboard and injects the text into noVNC's built-in clipboard
-  // textarea via IPC + executeJavaScript, which triggers rfb.clipboardPasteFrom()
-  // and sends a ClientCutText message to TigerVNC via the RFB protocol.
-  // After clicking this button, paste in the Kali terminal with Ctrl+Shift+V.
-  const handlePasteClipboard = useCallback(async () => {
-    const result = await window.electronAPI.attack.pasteClipboard(device.nodeId)
-    setPasteResult(result)
-    // Clear the result message after 3 seconds
-    setTimeout(() => setPasteResult(null), 3000)
-  }, [device.nodeId])
-
-  // ── Refit terminal when switching back to Terminal tab ───────────────────
-  const handleTerminalTab = useCallback(() => {
-    setActiveTab('terminal')
-    // Defer one frame so the div is visible before fitting
-    requestAnimationFrame(() => fitAddonRef.current?.fit())
-  }, [])
 
   // ── Escape key dismiss ────────────────────────────────────────────────────
   useEffect(() => {
@@ -259,7 +243,6 @@ export function AttackTerminalModal({
     <div
       className="attack-modal-overlay"
       onMouseDown={e => {
-        // Close only when clicking the dim backdrop, not the panel itself
         if (e.target === e.currentTarget) onClose()
       }}
     >
@@ -270,162 +253,31 @@ export function AttackTerminalModal({
             <span className="attack-modal-device-name">{device.nodeId}</span>
             <span className="attack-modal-subtitle">Kali Linux · Attack Machine</span>
           </div>
+          {/* Open Desktop button — launches the noVNC Xfce4 window (fallback/reopen) */}
+          <button
+            className="btn btn-sm btn-ghost attack-modal-desktop-btn"
+            onClick={handleOpenDesktop}
+            disabled={desktopLaunching}
+            title="Open the Kali Linux Xfce4 desktop in a separate window (Wireshark · Armitage · Firefox)"
+          >
+            {desktopLaunching ? 'Opening…' : '🖥 Desktop'}
+          </button>
           <button className="attack-modal-close" onClick={onClose} aria-label="Close terminal">
             ×
           </button>
         </div>
 
-        {/* ── Tab bar ─────────────────────────────────────────────────────── */}
-        <div className="attack-modal-tabs">
-          <button
-            className={`attack-tab-btn ${activeTab === 'terminal' ? 'active' : ''}`}
-            onClick={handleTerminalTab}
-          >
-            Terminal
-          </button>
-          <button
-            className={`attack-tab-btn ${activeTab === 'desktop' ? 'active' : ''}`}
-            onClick={handleDesktopTab}
-          >
-            Desktop
-            <span className="attack-tab-hint">Wireshark · Armitage · Firefox</span>
-          </button>
-        </div>
-
-        {/* ── Body ────────────────────────────────────────────────────────── */}
+        {/* ── Terminal body ────────────────────────────────────────────────── */}
         <div className="attack-modal-body">
-          {/* Terminal panel — always mounted so xterm.js state is preserved */}
-          <div
-            className="attack-terminal-container"
-            style={{ display: activeTab === 'terminal' ? 'flex' : 'none' }}
-          >
+          <div className="attack-terminal-container">
             {termError && (
               <div className="attack-terminal-error">
                 {termError}
                 <p>Ensure the simulation is running and the attack machine container is healthy.</p>
               </div>
             )}
-            {/* xterm.js mounts here */}
             <div ref={termDivRef} className="attack-terminal-xterm" />
           </div>
-
-          {/*
-           * Desktop panel — launches the Kali Linux Xfce4 desktop in a separate OS window.
-           *
-           * Three states:
-           *   Idle       — shows a "Launch Desktop" button with usage instructions
-           *   Launched   — confirms the window is open; offers "Open Again" in case it was closed
-           *   Error      — shows the error message from the main process + a Retry button
-           *
-           * The desktop opens via attack:launchWindow which creates a sandboxed BrowserWindow
-           * pointing at the container's noVNC page (localhost:<hostPort>/vnc.html).
-           * This is more reliable than embedding a <webview> because BrowserWindow handles
-           * localhost WebSocket connections without the security restrictions of webviews.
-           */}
-          {activeTab === 'desktop' && (
-            <div className="attack-desktop-container">
-              {desktopError ? (
-                /* Error state — show the message from the main process */
-                <div className="attack-terminal-error">
-                  <strong>Could not open desktop</strong>
-                  <p style={{ marginTop: 6 }}>{desktopError}</p>
-                  <p style={{ marginTop: 4 }}>
-                    The Xfce4 desktop starts ~10 seconds after the container boots. Wait a moment
-                    and try again.
-                  </p>
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    style={{ marginTop: 12 }}
-                    onClick={handleLaunchDesktop}
-                    disabled={desktopLaunching}
-                  >
-                    {desktopLaunching ? 'Opening…' : 'Retry'}
-                  </button>
-                </div>
-              ) : desktopLaunched ? (
-                /* Success state — desktop window is open */
-                <div className="attack-desktop-launched">
-                  <span className="attack-desktop-launched-icon" aria-hidden="true">
-                    🖥
-                  </span>
-                  <p>
-                    <strong>Kali Linux desktop is open in a separate window.</strong>
-                  </p>
-                  <p>Move the window to a second monitor for the best experience.</p>
-
-                  {/*
-                   * Clipboard sync — noVNC does not share the host clipboard automatically.
-                   * This button reads the host clipboard via Electron IPC and injects the
-                   * text into noVNC's RFB clipboard (ClientCutText). After clicking, use
-                   * Ctrl+Shift+V in the Kali terminal to paste the synced text.
-                   */}
-                  <div className="attack-clipboard-sync" style={{ marginTop: 16 }}>
-                    <p style={{ marginBottom: 6, fontSize: '0.8rem', opacity: 0.75 }}>
-                      Clipboard is not shared automatically via noVNC.
-                    </p>
-                    <button
-                      className="btn btn-sm btn-secondary"
-                      onClick={handlePasteClipboard}
-                      title="Push the host clipboard text into the Kali session — then paste with Ctrl+Shift+V in the terminal"
-                    >
-                      📋 Paste Clipboard to Kali
-                    </button>
-                    {pasteResult && (
-                      <p
-                        style={{
-                          marginTop: 6,
-                          fontSize: '0.8rem',
-                          color: pasteResult.ok ? '#3fb950' : '#f85149'
-                        }}
-                      >
-                        {pasteResult.ok
-                          ? '✓ Clipboard synced — press Ctrl+Shift+V in the Kali terminal'
-                          : `✗ ${pasteResult.error}`}
-                      </p>
-                    )}
-                  </div>
-
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    style={{ marginTop: 12 }}
-                    onClick={handleLaunchDesktop}
-                    disabled={desktopLaunching}
-                    title="Open another desktop window (or reopen if closed)"
-                  >
-                    {desktopLaunching ? 'Opening…' : 'Open Again'}
-                  </button>
-                </div>
-              ) : (
-                /* Idle state — show launcher with instructions */
-                <div className="attack-desktop-launcher">
-                  <span className="attack-desktop-launcher-icon" aria-hidden="true">
-                    🖥
-                  </span>
-                  <p className="attack-desktop-launcher-title">
-                    <strong>Kali Linux Xfce4 Desktop</strong>
-                  </p>
-                  <p className="attack-desktop-launcher-desc">
-                    Opens in a separate OS window via noVNC WebSocket bridge.
-                    <br />
-                    Move it to a second monitor for the best experience.
-                  </p>
-                  <button
-                    className="btn btn-sm btn-attack-launch"
-                    style={{ marginTop: 12 }}
-                    onClick={handleLaunchDesktop}
-                    disabled={desktopLaunching}
-                    title="Open the Kali Linux Xfce4 desktop in a separate window"
-                  >
-                    {desktopLaunching ? 'Opening…' : '⚔ Launch Desktop'}
-                  </button>
-                  <p className="attack-desktop-launcher-note">
-                    The desktop starts ~10 s after the container boots. If launch fails, wait a
-                    moment and retry.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>

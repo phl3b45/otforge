@@ -23,12 +23,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Layer 2: Network reconnaissance ───────────────────────────────────────────
+# ── Layer 2: Network reconnaissance + X11 automation ─────────────────────────
+# xdotool: sends keystrokes/mouse events to X11 windows (used for auto-paste via
+#          Ctrl+Shift+V into the focused xfce4-terminal from the OTForge host)
+# xclip:   sets/reads the X11 CLIPBOARD selection from stdin/stdout — the host
+#          encodes clipboard text as base64 and pipes it to xclip, then xdotool
+#          fires the paste shortcut into the focused Kali terminal
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nmap masscan \
     net-tools iproute2 iputils-ping \
     dnsutils traceroute arp-scan \
     netdiscover \
+    xdotool xclip \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Layer 3: Packet analysis (full GUI + CLI) ──────────────────────────────────

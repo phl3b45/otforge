@@ -44,7 +44,15 @@ export default defineConfig({
       externalizeDeps: true,
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'src/preload/index.ts')
+          /** Main app preload — exposes full electronAPI to the React renderer. */
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          /**
+           * Standalone terminal window preload — exposes a minimal subset of
+           * electronAPI (terminal, clipboard, on.terminalData) to the xterm.js
+           * terminal page. Kept separate to enforce least-privilege: the terminal
+           * window cannot call simulation, scenario, or attack IPC channels.
+           */
+          terminalWindow: resolve(__dirname, 'src/preload/terminal-window.ts')
         }
       }
     }
@@ -55,7 +63,13 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'src/renderer/index.html')
+          /** Main React app entry point. */
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          /**
+           * Standalone xterm.js terminal page loaded by the attack:openTerminalWindow
+           * BrowserWindow. Plain TypeScript — no React framework overhead.
+           */
+          terminal: resolve(__dirname, 'src/renderer/terminal.html')
         }
       }
     },

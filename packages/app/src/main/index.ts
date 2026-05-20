@@ -393,6 +393,24 @@ const attackWindows = new Map<string, BrowserWindow>()
  */
 let activeTerminalProcess: ChildProcess | null = null
 
+/**
+ * The standalone xterm.js terminal BrowserWindow opened by attack:openTerminalWindow.
+ * Null when the window is closed. The terminal:open handler routes terminal:data
+ * events back to this window (or the main window's modal) via e.sender routing
+ * so only one of the two callers ever receives PTY output.
+ */
+let terminalWindow: BrowserWindow | null = null
+
+/**
+ * Clipboard text to be auto-pasted into the terminal PTY stdin after the bash
+ * session finishes initializing. Set by attack:openTerminalWindow when the
+ * caller passes a pasteText argument, consumed and cleared by terminal:open.
+ *
+ * The delay between PTY open and paste delivery gives bash time to print its
+ * PS1 prompt so the command lands at a clean prompt rather than mid-init output.
+ */
+let pendingTerminalPaste: string | null = null
+
 // ── App lifecycle ──────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -1006,22 +1024,34 @@ function registerIPCHandlers(): void {
   // ── Attack terminal ───────────────────────────────────────────────────────────
 
   /**
-   * Opens an interactive bash session in the attack machine container by
-   * spawning `docker exec -i` and piping its stdout/stderr back to the renderer
-   * as 'terminal:data' push events. The renderer's xterm.js instance writes
-   * incoming data directly.
+   * Opens an interactive bash session in the attack machine container.
+   *
+   * Why Python pty.spawn instead of docker exec -it:
+   *   docker exec requires a pseudo-TTY on BOTH ends of the connection. Electron's
+   *   child_process.spawn() uses pipes (not a PTY) on the host side, so docker
+   *   exec -t fails or produces no echo. Without a PTY:
+   *     - bash does not echo typed characters back to stdout — the terminal looks blank
+   *     - bash's readline does not activate — line editing and arrow keys are broken
+   *     - pasted text writes to stdin silently without appearing on screen
+   *
+   *   The fix: run python3 inside the Kali container. Python's `pty.spawn()` creates
+   *   a PTY pair entirely INSIDE the container — bash runs as the PTY slave (getting
+   *   full interactive behavior, echo, colors, readline). Python proxies between the
+   *   PTY master and its own stdin/stdout, which ARE the docker exec pipes.
+   *
+   *   Data flow:
+   *     Host stdin pipe → docker exec → python3 → PTY master write → bash PTY slave
+   *     bash output → PTY slave → PTY master read → python3 → docker exec → host stdout
+   *
+   *   Python3 is installed in the attack-base container (Layer 6 of the Dockerfile).
+   *   COLUMNS/LINES are passed so bash knows the terminal dimensions from the start.
    *
    * Only one terminal session is active at a time. Opening a second session
    * automatically closes the previous one.
    *
-   * docker exec flags:
-   *   -i  — keep stdin open so we can write keystrokes to it
-   *   -e  — pass TERM and COLORTERM so bash and tools render colors correctly
-   *
    * @param nodeId - Canvas node ID of the attack-machine device to exec into.
    */
-  ipcMain.handle('terminal:open', async (_e, { nodeId }: { nodeId: string }) => {
-    // Derive the container name the same way compose-generator.ts does
+  ipcMain.handle('terminal:open', async (e, { nodeId }: { nodeId: string }) => {
     const sanitized = nodeId.toLowerCase().replace(/[^a-z0-9-]/g, '-')
     const containerName = `${activeProjectName}-${sanitized}`
 
@@ -1030,6 +1060,15 @@ function registerIPCHandlers(): void {
       activeTerminalProcess.kill()
       activeTerminalProcess = null
     }
+
+    // python3 -c 'import pty; pty.spawn(...)' allocates a PTY inside the container
+    // so bash runs interactively with full echo, readline, and color support.
+    // stty sane resets any leftover terminal state before handing off to bash.
+    const ptyBridge = [
+      'python3',
+      '-c',
+      'import pty,os; os.environ["COLUMNS"]="220"; os.environ["LINES"]="50"; pty.spawn(["/bin/bash", "-l"])'
+    ]
 
     const proc = spawn(
       'docker',
@@ -1041,26 +1080,44 @@ function registerIPCHandlers(): void {
         '-e',
         'COLORTERM=truecolor',
         containerName,
-        '/bin/bash',
-        '-l'
+        ...ptyBridge
       ],
       { env: buildDockerEnv(), stdio: 'pipe' }
     )
 
     activeTerminalProcess = proc
 
-    // Stream stdout + stderr to the renderer as raw terminal data
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      mainWindow?.webContents.send('terminal:data', chunk.toString())
-    })
-    proc.stderr?.on('data', (chunk: Buffer) => {
-      mainWindow?.webContents.send('terminal:data', chunk.toString())
-    })
+    // Route terminal:data events back to the window that called terminal:open.
+    // This can be either the standalone terminal BrowserWindow (attack:openTerminalWindow)
+    // or the main window's AttackTerminalModal — both call terminal:open via their own
+    // preload, and e.sender identifies the correct recipient.
+    const callerWindow = BrowserWindow.fromWebContents(e.sender)
+    const sendData = (data: string): void => {
+      if (callerWindow && !callerWindow.isDestroyed()) {
+        callerWindow.webContents.send('terminal:data', data)
+      }
+    }
+
+    proc.stdout?.on('data', (chunk: Buffer) => sendData(chunk.toString()))
+    proc.stderr?.on('data', (chunk: Buffer) => sendData(chunk.toString()))
 
     proc.on('close', code => {
-      mainWindow?.webContents.send('terminal:data', `\r\n[session closed — exit code ${code}]\r\n`)
+      sendData(`\r\n[session closed — exit code ${code}]\r\n`)
       if (activeTerminalProcess === proc) activeTerminalProcess = null
     })
+
+    // Deliver any auto-paste that attack:openTerminalWindow queued.
+    // 800 ms delay lets bash finish printing its startup output and PS1 prompt
+    // so the pasted command lands at a clean prompt rather than mid-init text.
+    if (pendingTerminalPaste) {
+      const text = pendingTerminalPaste
+      pendingTerminalPaste = null
+      setTimeout(() => {
+        if (activeTerminalProcess?.stdin) {
+          activeTerminalProcess.stdin.write(text)
+        }
+      }, 800)
+    }
 
     return { ok: true, containerName }
   })
@@ -1397,6 +1454,75 @@ function registerIPCHandlers(): void {
   })
 
   /**
+   * Pastes host clipboard text directly into the focused X11 window inside the
+   * Kali container using xclip (sets CLIPBOARD selection) + xdotool (fires
+   * Ctrl+Shift+V into the focused window — standard paste in xfce4-terminal).
+   *
+   * Why this approach instead of noVNC RFB clipboard injection:
+   *   The RFB ClientCutText path (attack:pasteClipboard) sets the X11 clipboard but
+   *   still requires the user to manually press Ctrl+Shift+V. This handler does both
+   *   steps — set and paste — in a single docker exec call, giving the user a true
+   *   one-click copy-from-tutorial → appears-in-Kali-terminal experience.
+   *
+   * How it works:
+   *   1. The host base64-encodes the clipboard text (safe for any character set).
+   *   2. docker exec runs: printf BASE64 | base64 -d | xclip -sel clip
+   *      This sets the X11 CLIPBOARD selection inside the container.
+   *   3. 50ms later (clipboard write is async): xdotool key ctrl+shift+v
+   *      This fires the paste shortcut into whatever X11 window currently has focus
+   *      — the user should have an xfce4-terminal focused in the noVNC session.
+   *
+   * Requires: xdotool and xclip installed in the attack-base container (Layer 2).
+   * DISPLAY=:1 is set in the container ENV so docker exec inherits it automatically.
+   *
+   * @param nodeId - Canvas node ID of the attack-machine device.
+   * @param text   - Plaintext to paste (the caller reads the host clipboard).
+   */
+  ipcMain.handle(
+    'attack:pasteToDisplay',
+    async (
+      _e,
+      { nodeId, text }: { nodeId: string; text: string }
+    ): Promise<{ ok: boolean; error?: string }> => {
+      if (!text) return { ok: true }
+
+      const sanitized = nodeId.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+      const containerName = `${activeProjectName}-${sanitized}`
+
+      // base64-encode so any chars (quotes, newlines, unicode) pass safely through
+      // the shell argument. Base64 output is [A-Za-z0-9+/=] — safe inside single quotes.
+      const encoded = Buffer.from(text).toString('base64')
+
+      return new Promise(resolve => {
+        const proc = spawn(
+          'docker',
+          [
+            'exec',
+            '-e',
+            'DISPLAY=:1',
+            containerName,
+            'bash',
+            '-c',
+            // Decode base64 → pipe to xclip (sets X11 CLIPBOARD) → xdotool pastes
+            `printf '%s' '${encoded}' | base64 -d | xclip -selection clipboard -i && sleep 0.05 && xdotool key --clearmodifiers ctrl+shift+v`
+          ],
+          { env: buildDockerEnv() }
+        )
+
+        let stderr = ''
+        proc.stderr?.on('data', d => {
+          stderr += d.toString()
+        })
+        proc.on('close', code => {
+          if (code === 0) resolve({ ok: true })
+          else resolve({ ok: false, error: stderr.trim() || `xdotool exit code ${code}` })
+        })
+        proc.on('error', err => resolve({ ok: false, error: err.message }))
+      })
+    }
+  )
+
+  /**
    * Combined "open window + paste clipboard" handler.
    *
    * Called by the ⚔ Attack Machine toolbar button so the user never has to
@@ -1532,6 +1658,107 @@ function registerIPCHandlers(): void {
       } catch {
         return { ok: false, error: 'Could not inject clipboard into the Kali desktop window.' }
       }
+    }
+  )
+
+  // ── Standalone xterm.js terminal window ─────────────────────────────────────
+
+  /**
+   * Opens (or focuses) a dedicated Electron BrowserWindow containing a full
+   * xterm.js terminal wired to the attack machine's docker exec PTY session.
+   *
+   * This is the primary interface for the ⚔ Attack Machine toolbar button:
+   *   1. Creates a native OS window loading terminal.html with the nodeId as a
+   *      URL query parameter (?nodeId=attack-1).
+   *   2. The terminal page calls terminal:open to start the docker exec session.
+   *   3. If pasteText is provided, it is stored in pendingTerminalPaste and
+   *      delivered to the PTY stdin ~800 ms after bash finishes initializing
+   *      (timed by the terminal:open handler after the process starts).
+   *
+   * Window re-use: if the window is already open for this session, it is brought
+   * to the front. If a pasteText is provided and a PTY is already active, the
+   * text is written directly without waiting for a new open sequence.
+   *
+   * Security:
+   *   sandbox: false is required for the preload script to call contextBridge
+   *   and ipcRenderer. nodeIntegration: false + contextIsolation: true ensure the
+   *   renderer page (terminal.html) cannot access Node.js or Electron directly.
+   *
+   * @param nodeId    - Canvas node ID of the attack-machine device.
+   * @param pasteText - Optional clipboard text to auto-paste after bash is ready.
+   * @returns { ok: true } on success; { ok: false, error } if no simulation is running.
+   */
+  ipcMain.handle(
+    'attack:openTerminalWindow',
+    async (
+      _e,
+      { nodeId, pasteText }: { nodeId: string; pasteText?: string }
+    ): Promise<{ ok: boolean; error?: string }> => {
+      if (!activeProjectName) {
+        return { ok: false, error: 'No simulation is running — start a scenario first.' }
+      }
+
+      // If the window already exists, bring it to the front and paste immediately
+      // (the PTY is already open so there is no startup delay to wait for).
+      if (terminalWindow && !terminalWindow.isDestroyed()) {
+        if (terminalWindow.isMinimized()) terminalWindow.restore()
+        terminalWindow.focus()
+        if (pasteText && activeTerminalProcess?.stdin) {
+          activeTerminalProcess.stdin.write(pasteText)
+        }
+        return { ok: true }
+      }
+
+      // Store clipboard text for delivery after the PTY session opens.
+      // The terminal:open handler reads and clears this after spawning the process.
+      if (pasteText) {
+        pendingTerminalPaste = pasteText
+      }
+
+      // terminal.html is served by the Vite dev server in development, or loaded
+      // from the compiled renderer directory in production.
+      terminalWindow = new BrowserWindow({
+        width: 900,
+        height: 620,
+        minWidth: 600,
+        minHeight: 400,
+        title: `Kali Terminal — ${nodeId}`,
+        autoHideMenuBar: true,
+        // Match xterm.js background to prevent a white flash on load
+        backgroundColor: '#0d1117',
+        webPreferences: {
+          /**
+           * terminal-window.ts preload: exposes only terminal/clipboard/on IPC.
+           * In production the compiled output is terminal-window.js (same stem).
+           */
+          preload: join(__dirname, '../preload/terminalWindow.js'),
+          contextIsolation: true,
+          nodeIntegration: false,
+          // sandbox: false is required so the preload can use contextBridge +
+          // ipcRenderer. The terminal page itself has no Node.js access.
+          sandbox: false,
+          webviewTag: false
+        }
+      })
+
+      if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+        // Dev: Vite serves terminal.html alongside index.html on the same dev server
+        terminalWindow.loadURL(
+          `${process.env['ELECTRON_RENDERER_URL']}/terminal.html?nodeId=${encodeURIComponent(nodeId)}`
+        )
+      } else {
+        // Production: load the compiled HTML file with nodeId as a query parameter
+        terminalWindow.loadFile(join(__dirname, '../renderer/terminal.html'), {
+          query: { nodeId }
+        })
+      }
+
+      terminalWindow.on('closed', () => {
+        terminalWindow = null
+        pendingTerminalPaste = null
+      })
+
+      return { ok: true }
     }
   )
 

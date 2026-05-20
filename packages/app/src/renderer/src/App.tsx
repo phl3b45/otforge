@@ -32,7 +32,7 @@
  *   which proxies to ipcMain handlers in main/index.ts via ipcRenderer.invoke().
  */
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import type {
   DockerStatus,
   OTForgeScenario,
@@ -534,19 +534,31 @@ export default function App() {
   const [simError, setSimError] = useState<string | null>(null)
   /** PLC device currently open in the full-screen IDE modal. Null when modal is closed. */
   const [plcIdeDevice, setPlcIdeDevice] = useState<DeviceConfig | null>(null)
-  /** Attack-machine device currently open in the terminal modal. Null when closed. */
+  /** Attack-machine device currently open in the terminal modal (canvas right-click path). Null when closed. */
   const [attackTerminalDevice, setAttackTerminalDevice] = useState<DeviceConfig | null>(null)
   /**
-   * Whether the attack machine window has been launched during the current simulation run.
-   * Drives the button color: green (not yet launched) → red (launched and in use).
-   * Automatically reset to false when the simulation stops so the next run starts green.
+   * Increments each time the toolbar ⚔ Attack Machine button is clicked while the
+   * simulation is running.  AttackTerminalModal watches this value and pastes the host
+   * clipboard into the xterm.js terminal whenever it changes.
+   *
+   * Reset to 0 when the modal closes or the simulation stops so the next open does not
+   * auto-paste unless the button was actually clicked.
    */
+  const [pasteSignal, setPasteSignal] = useState<number>(0)
   /**
-   * True once the toolbar ⚔ Attack Machine button has successfully opened the Kali
-   * desktop window via attack:launchAndPaste.  Drives button color: teal → red.
-   * Reset to false when the simulation stops.
+   * True after the ⚔ Attack Machine toolbar button opens the standalone terminal
+   * BrowserWindow via attack:openTerminalWindow. Used to switch the button to its
+   * "launched" (red) style so the user can see the window is active.
+   * Reset when the simulation stops.
    */
-  const [attackWindowLaunched, setAttackWindowLaunched] = useState<boolean>(false)
+  const [terminalWindowOpen, setTerminalWindowOpen] = useState<boolean>(false)
+  /**
+   * Controls the "GUI tools only / paste unavailable" hint toast that appears
+   * when the 🖥 Kali Desktop button is clicked. Auto-dismissed after 6 seconds.
+   */
+  const [desktopHintVisible, setDesktopHintVisible] = useState<boolean>(false)
+  /** Holds the auto-dismiss timer so it can be cleared on manual close. */
+  const desktopHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Active Purdue layer tab — controls which canvas, palette section, and properties are shown. */
   const [activeLayer, setActiveLayer] = useState<NetworkZone>('ot')
   /**
@@ -814,7 +826,10 @@ export default function App() {
       // Close the attack terminal modal when the simulation stops so xterm.js
       // doesn't remain open against a dead docker exec session.
       setAttackTerminalDevice(null)
-      setAttackWindowLaunched(false)
+      setPasteSignal(0)
+      // Reset the standalone terminal window open indicator — the BrowserWindow
+      // is destroyed by main when simulation stops and the PTY process is killed.
+      setTerminalWindowOpen(false)
     }
   }, [simStatus])
 
@@ -1128,32 +1143,62 @@ export default function App() {
     setAttackTerminalDevice(device)
   }, [])
 
-  /** Closes the attack terminal modal. The modal itself calls terminal:close on unmount. */
+  /** Closes the attack terminal modal and resets paste signal. */
   const handleCloseAttackTerminal = useCallback(() => {
     setAttackTerminalDevice(null)
+    setPasteSignal(0)
   }, [])
 
   /**
    * Toolbar ⚔ Attack Machine button handler (sim running).
    *
-   * Calls attack:launchAndPaste which:
-   *   1. Opens (or re-focuses) the Kali noVNC BrowserWindow.
-   *   2. Waits for noVNC to initialise its clipboard textarea.
-   *   3. Injects the current host clipboard text as the X11 CLIPBOARD selection
-   *      so the user can immediately right-click → Paste in Kali.
+   * Opens (or focuses) the standalone xterm.js terminal BrowserWindow for the
+   * attack machine and auto-pastes the current host clipboard into bash.
    *
-   * If paste fails (machine not ready, clipboard empty) a console warning is
-   * shown but the window still opens — the user can paste manually later.
+   * Flow:
+   *   1. Reads the host clipboard via Electron's native module (no HTTPS required).
+   *   2. Calls attack:openTerminalWindow, which:
+   *        a. Opens a new OS window loading terminal.html with the nodeId.
+   *        b. The terminal page calls terminal:open to start a docker exec PTY session.
+   *        c. After ~800 ms (bash ready), writes the clipboard text to PTY stdin.
+   *   3. If the window is already open, the text is written to the active PTY immediately.
    *
-   * @param nodeId - Canvas node ID of the attack-machine device.
+   * This is a direct one-hop PTY write — zero intermediate protocol layers.
+   * The noVNC/xdotool path was abandoned because its 4-layer async chain was unreliable.
+   *
+   * @param device - DeviceConfig for the attack-machine canvas node.
    */
-  const handleLaunchAndPaste = useCallback(async (nodeId: string) => {
-    const result = await window.electronAPI.attack.launchAndPaste(nodeId)
-    if (result.ok) {
-      setAttackWindowLaunched(true)
-    } else {
-      console.warn('[AttackMachine] launchAndPaste failed:', result.error)
-    }
+  const handleOpenAttackTerminalAndPaste = useCallback((device: DeviceConfig) => {
+    setTerminalWindowOpen(true)
+    window.electronAPI.clipboard
+      .readText()
+      .then(text => {
+        window.electronAPI.attack
+          .openTerminalWindow(device.nodeId, text || undefined)
+          .catch(() => {})
+      })
+      .catch(() => {
+        // Clipboard read failed — open the window without paste
+        window.electronAPI.attack.openTerminalWindow(device.nodeId).catch(() => {})
+      })
+  }, [])
+
+  /**
+   * Opens the Kali Xfce4 desktop in a noVNC BrowserWindow and shows a one-time
+   * hint toast reminding students that clipboard paste is unavailable there.
+   *
+   * The desktop is intended for GUI-based tools that cannot run in the xterm
+   * terminal: Armitage (Metasploit GUI), Wireshark, and Firefox. For command-line
+   * work and clipboard paste, students should use the ⚔ Attack Machine terminal.
+   *
+   * @param device - DeviceConfig for the attack-machine canvas node.
+   */
+  const handleOpenDesktop = useCallback((device: DeviceConfig) => {
+    window.electronAPI.attack.launchWindow(device.nodeId).catch(() => {})
+    // Show the hint toast and auto-dismiss it after 6 seconds
+    if (desktopHintTimerRef.current) clearTimeout(desktopHintTimerRef.current)
+    setDesktopHintVisible(true)
+    desktopHintTimerRef.current = setTimeout(() => setDesktopHintVisible(false), 6000)
   }, [])
 
   // ── Simulation control state (used in sim-tabs-row Run/Stop button) ────────────
@@ -1182,8 +1227,8 @@ export default function App() {
     ? Object.entries(scenario.devices.devices).filter(([, d]) => d.category === 'attack-machine')
     : []
   const hasAttackMachine = attackDevices.length > 0
-  // First attack machine node ID — used by toolbar button to call attack:launchAndPaste
-  const firstAttackNodeId = attackDevices[0]?.[0] ?? null
+  // First attack machine — device object passed to handlers and the terminal modal
+  const firstAttackDevice = (attackDevices[0]?.[1] as DeviceConfig) ?? null
   const hasTutorial = !!scenario?.meta.tutorialSteps?.length
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -1285,12 +1330,8 @@ export default function App() {
             </button>
           </div>
 
-          {/* Center: OTForge Home + scenario name + device count */}
+          {/* Center: scenario name + device count (Home button moved to status row) */}
           <div className="toolbar-actions-center">
-            <button className="toolbar-logo" onClick={handleHome} title="Home">
-              <span className="logo-ot-sm">OT</span>
-              <span className="logo-forge-sm">Forge</span>
-            </button>
             {scenario && (
               <div className="toolbar-scenario">
                 <span className="toolbar-scenario-name">
@@ -1323,21 +1364,30 @@ export default function App() {
              * Attack Machine — four visual states:
              *   idle (no machine)  → "+ Attack Machine" teal outline — click to add
              *   idle (has machine) → "⚔ Attack Ready" solid teal — click to remove
-             *   running (ready)    → "⚔ Attack Machine" solid teal — click to open window
-             *   running (launched) → "⚔ Attack Machine" solid red — click to re-open
+             *   running (ready)    → "⚔ Kali Terminal" solid teal — click to open terminal
+             *   running (launched) → "⚔ Kali Terminal" solid red — click to re-open / paste
              */}
-            {simIsRunning && hasAttackMachine && firstAttackNodeId ? (
-              <button
-                className={`btn btn-sm btn-attack-launch${attackWindowLaunched ? ' btn-attack-launched' : ''}`}
-                onClick={() => handleLaunchAndPaste(firstAttackNodeId)}
-                title={
-                  attackWindowLaunched
-                    ? 'Kali desktop is open — click to paste clipboard and re-focus'
-                    : 'Open Kali Linux desktop and paste clipboard contents'
-                }
-              >
-                ⚔ Attack Machine
-              </button>
+            {simIsRunning && hasAttackMachine && firstAttackDevice ? (
+              <>
+                <button
+                  className={`btn btn-sm btn-attack-launch${terminalWindowOpen ? ' btn-attack-launched' : ''}`}
+                  onClick={() => handleOpenAttackTerminalAndPaste(firstAttackDevice)}
+                  title={
+                    terminalWindowOpen
+                      ? 'Terminal open — click to paste clipboard into Kali'
+                      : 'Open Kali terminal and paste clipboard contents'
+                  }
+                >
+                  ⚔ Kali Terminal
+                </button>
+                <button
+                  className="btn btn-sm btn-desktop"
+                  onClick={() => handleOpenDesktop(firstAttackDevice)}
+                  title="Open Kali desktop (GUI tools: Armitage, Wireshark, Firefox) — clipboard paste not available"
+                >
+                  🖥 Kali Desktop
+                </button>
+              </>
             ) : (
               !simIsRunning && (
                 <button
@@ -1377,8 +1427,12 @@ export default function App() {
           </div>
         </div>
 
-        {/* Row 2 — simulation status badge centred on its own line */}
+        {/* Row 2 — OTForge Home (left) + simulation status badge (centred) */}
         <div className="toolbar-status-row">
+          <button className="toolbar-logo toolbar-status-home" onClick={handleHome} title="Home">
+            <span className="logo-ot-sm">OT</span>
+            <span className="logo-forge-sm">Forge</span>
+          </button>
           <SimStatusBadge status={simStatus} />
         </div>
       </header>
@@ -1509,7 +1563,40 @@ export default function App() {
       )}
       {/* Attack terminal + Desktop modal — opens when user clicks "Open Attack Terminal" */}
       {attackTerminalDevice && (
-        <AttackTerminalModal device={attackTerminalDevice} onClose={handleCloseAttackTerminal} />
+        <AttackTerminalModal
+          device={attackTerminalDevice}
+          pasteSignal={pasteSignal}
+          onClose={handleCloseAttackTerminal}
+        />
+      )}
+      {/*
+       * Kali Desktop hint toast — appears for 6 seconds after the 🖥 Kali Desktop
+       * button is clicked. Reminds students that the noVNC desktop is for GUI tools
+       * only (Armitage, Wireshark, Firefox) and that clipboard paste is not available.
+       * For paste + CLI work, the ⚔ Attack Machine terminal is the correct tool.
+       */}
+      {desktopHintVisible && (
+        <div className="desktop-hint-toast" role="status" aria-live="polite">
+          <div className="desktop-hint-toast-header">
+            <span className="desktop-hint-toast-title">🖥 Kali Desktop — GUI Tools Only</span>
+            <button
+              className="desktop-hint-toast-close"
+              onClick={() => {
+                if (desktopHintTimerRef.current) clearTimeout(desktopHintTimerRef.current)
+                setDesktopHintVisible(false)
+              }}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+          <div className="desktop-hint-toast-body">
+            Use this window for <strong>Armitage</strong>, <strong>Wireshark</strong>, and{' '}
+            <strong>Firefox</strong>.<br />
+            <strong>Clipboard paste does not work here.</strong> For command-line work and pasting
+            tutorial commands, use the <strong>⚔ Attack Machine</strong> terminal instead.
+          </div>
+        </div>
       )}
       {/*
        * Network Settings modal — fixed overlay rendered on top of everything.

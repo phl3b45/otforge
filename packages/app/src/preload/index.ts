@@ -403,7 +403,49 @@ const api = {
      *   ready, or if the noVNC clipboard element cannot be found within 5 seconds.
      */
     launchAndPaste: (nodeId: string): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke('attack:launchAndPaste', { nodeId })
+      ipcRenderer.invoke('attack:launchAndPaste', { nodeId }),
+
+    /**
+     * Pastes the given text directly into the focused X11 window inside the Kali
+     * container via docker exec — no user interaction required.
+     *
+     * Steps (all inside the container):
+     *   1. base64-decodes the text → pipes to xclip, which sets the X11 CLIPBOARD.
+     *   2. 50 ms later: xdotool fires Ctrl+Shift+V into the focused window.
+     *
+     * The user must have an xfce4-terminal (or other terminal) focused in the
+     * noVNC Kali session for the paste to land in the right place.
+     *
+     * @param nodeId - Canvas node ID of the attack-machine device.
+     * @param text   - Plaintext to paste (caller reads the host clipboard beforehand).
+     * @returns { ok: true } on success; { ok: false, error } if docker exec fails.
+     */
+    pasteToDisplay: (nodeId: string, text: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('attack:pasteToDisplay', { nodeId, text }),
+
+    /**
+     * Opens (or focuses) the standalone xterm.js terminal BrowserWindow for the
+     * given attack machine and optionally auto-pastes clipboard text into bash.
+     *
+     * This is the one-click path used by the toolbar ⚔ Attack Machine button:
+     *   1. A dedicated OS window (moveable, resizable) opens with terminal.html.
+     *   2. The terminal page calls terminal:open to start a docker exec PTY session.
+     *   3. If pasteText is provided, it is written to the PTY stdin ~800 ms after
+     *      bash finishes initializing (startup prompt is ready), so the command
+     *      appears at a clean bash prompt.
+     *
+     * If the window is already open and a PTY is active, pasteText is written
+     * immediately without opening a new session.
+     *
+     * @param nodeId    - Canvas node ID of the attack-machine device.
+     * @param pasteText - Optional clipboard text to auto-paste after bash is ready.
+     * @returns { ok: true } on success; { ok: false, error } if simulation is not running.
+     */
+    openTerminalWindow: (
+      nodeId: string,
+      pasteText?: string
+    ): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('attack:openTerminalWindow', { nodeId, pasteText })
   },
 
   // ── One-way push events from main → renderer ──────────────────────────────────

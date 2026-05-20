@@ -387,6 +387,20 @@ body {
   justify-content: center;
   padding: 3px 0.75rem;
   min-height: 28px;
+  /* Needed so .toolbar-status-home can be positioned absolutely on the left */
+  position: relative;
+}
+
+/*
+ * OTForge Home button in the status row — sits on the far left directly below
+ * the New button. Using absolute positioning keeps the status badge perfectly
+ * centred regardless of the button width.
+ */
+.toolbar-status-home {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 /* Legacy identity-row kept for reference — now unused */
@@ -1604,10 +1618,22 @@ code.prop-value {
 .attack-modal-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+/* Push the desktop + close buttons to the right edge */
+.attack-modal-desktop-btn {
+  margin-left: auto;
+  font-size: 0.75rem;
+  opacity: 0.75;
+  transition: opacity 0.15s;
+}
+
+.attack-modal-desktop-btn:hover {
+  opacity: 1;
 }
 
 .attack-modal-title {
@@ -3132,6 +3158,95 @@ code.prop-value {
   background: #ff6b6b;
   border-color: #ff6b6b;
   color: #fff;
+}
+
+/*
+ * "🖥 Kali Desktop" toolbar button — opens the noVNC Xfce4 desktop window.
+ * Blue outline to visually distinguish it from the teal ⚔ terminal button.
+ * Secondary visual weight: it's a supplemental action, not the primary path.
+ */
+.btn-desktop {
+  background: transparent;
+  border: 1px solid var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.btn-desktop:hover:not(:disabled) {
+  background: var(--accent-blue);
+  color: #fff;
+}
+
+/*
+ * Desktop hint toast — fixed bottom-right notice shown when the noVNC window
+ * opens. Explains that clipboard paste is unavailable there and that the
+ * desktop is for GUI tools only (Armitage, Wireshark, Firefox).
+ * Auto-dismissed after 6 seconds; also has an × close button.
+ */
+.desktop-hint-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2000;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent-blue);
+  border-left: 4px solid var(--accent-blue);
+  border-radius: 6px;
+  padding: 12px 14px;
+  max-width: 320px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: toast-slide-in 0.2s ease-out;
+}
+
+@keyframes toast-slide-in {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.desktop-hint-toast-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.desktop-hint-toast-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  letter-spacing: 0.02em;
+}
+
+.desktop-hint-toast-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.desktop-hint-toast-close:hover {
+  color: var(--text-primary);
+}
+
+.desktop-hint-toast-body {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.desktop-hint-toast-body strong {
+  color: var(--text-primary);
 }
 
 /* ── Network Settings modal ───────────────────────────────────────────────────
