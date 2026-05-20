@@ -83,6 +83,11 @@ export function AttackTerminalModal({
   const [desktopError, setDesktopError] = useState<string | null>(null)
   /** Whether a desktop launch is in progress (prevents double-clicks). */
   const [desktopLaunching, setDesktopLaunching] = useState<boolean>(false)
+  /**
+   * Result of the most recent "Paste to Kali" clipboard sync attempt.
+   * Shown briefly as feedback, then cleared. Null = no attempt yet.
+   */
+  const [pasteResult, setPasteResult] = useState<{ ok: boolean; error?: string } | null>(null)
 
   /** Ref to the div that xterm.js mounts into. */
   const termDivRef = useRef<HTMLDivElement>(null)
@@ -218,6 +223,21 @@ export function AttackTerminalModal({
     }
   }, [device.nodeId])
 
+  // ── Clipboard sync: host → Kali noVNC ────────────────────────────────────
+  //
+  // noVNC does not share the host clipboard automatically (the browser blocks
+  // clipboard-read on non-HTTPS origins). This handler reads from the Electron
+  // native clipboard and injects the text into noVNC's built-in clipboard
+  // textarea via IPC + executeJavaScript, which triggers rfb.clipboardPasteFrom()
+  // and sends a ClientCutText message to TigerVNC via the RFB protocol.
+  // After clicking this button, paste in the Kali terminal with Ctrl+Shift+V.
+  const handlePasteClipboard = useCallback(async () => {
+    const result = await window.electronAPI.attack.pasteClipboard(device.nodeId)
+    setPasteResult(result)
+    // Clear the result message after 3 seconds
+    setTimeout(() => setPasteResult(null), 3000)
+  }, [device.nodeId])
+
   // ── Refit terminal when switching back to Terminal tab ───────────────────
   const handleTerminalTab = useCallback(() => {
     setActiveTab('terminal')
@@ -332,6 +352,39 @@ export function AttackTerminalModal({
                     <strong>Kali Linux desktop is open in a separate window.</strong>
                   </p>
                   <p>Move the window to a second monitor for the best experience.</p>
+
+                  {/*
+                   * Clipboard sync — noVNC does not share the host clipboard automatically.
+                   * This button reads the host clipboard via Electron IPC and injects the
+                   * text into noVNC's RFB clipboard (ClientCutText). After clicking, use
+                   * Ctrl+Shift+V in the Kali terminal to paste the synced text.
+                   */}
+                  <div className="attack-clipboard-sync" style={{ marginTop: 16 }}>
+                    <p style={{ marginBottom: 6, fontSize: '0.8rem', opacity: 0.75 }}>
+                      Clipboard is not shared automatically via noVNC.
+                    </p>
+                    <button
+                      className="btn btn-sm btn-secondary"
+                      onClick={handlePasteClipboard}
+                      title="Push the host clipboard text into the Kali session — then paste with Ctrl+Shift+V in the terminal"
+                    >
+                      📋 Paste Clipboard to Kali
+                    </button>
+                    {pasteResult && (
+                      <p
+                        style={{
+                          marginTop: 6,
+                          fontSize: '0.8rem',
+                          color: pasteResult.ok ? '#3fb950' : '#f85149'
+                        }}
+                      >
+                        {pasteResult.ok
+                          ? '✓ Clipboard synced — press Ctrl+Shift+V in the Kali terminal'
+                          : `✗ ${pasteResult.error}`}
+                      </p>
+                    )}
+                  </div>
+
                   <button
                     className="btn btn-sm btn-ghost"
                     style={{ marginTop: 12 }}

@@ -379,6 +379,14 @@ const activePlcPorts = new Map<string, number>()
 const activeAttackPorts = new Map<string, number>()
 
 /**
+ * Tracks open noVNC BrowserWindows keyed by attack-machine device nodeId.
+ * Populated by attack:launchWindow, cleaned up on window 'closed' event.
+ * Used by attack:pasteClipboard to inject host clipboard text into the
+ * running noVNC page via executeJavaScript.
+ */
+const attackWindows = new Map<string, BrowserWindow>()
+
+/**
  * The currently active terminal process (docker exec session).
  * Only one terminal session is supported at a time — opening a second one
  * kills the previous. Null when no terminal is open.
@@ -1323,9 +1331,71 @@ function registerIPCHandlers(): void {
       // Prevent the noVNC page from opening any additional windows
       attackWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
+      // Track this window so attack:pasteClipboard can reach it later.
+      // Replace any stale reference for the same nodeId (user re-opened).
+      attackWindows.set(nodeId, attackWindow)
+      attackWindow.on('closed', () => {
+        // Only delete if this specific instance is still the tracked one,
+        // preventing a race where a newer window was opened before this closed.
+        if (attackWindows.get(nodeId) === attackWindow) {
+          attackWindows.delete(nodeId)
+        }
+      })
+
       return { ok: true }
     }
   )
+
+  /**
+   * Pushes the host clipboard text into the open noVNC desktop session.
+   *
+   * How it works:
+   *   1. Reads the host clipboard via Electron's native clipboard module.
+   *   2. Finds the open noVNC BrowserWindow for the given attack machine.
+   *   3. Injects JavaScript that sets the value of noVNC's built-in
+   *      #noVNC_clipboard_text textarea and dispatches a 'change' event.
+   *   4. noVNC v1.5.0 handles 'change' by calling rfb.clipboardPasteFrom(text),
+   *      which sends a ClientCutText message via the RFB protocol.
+   *   5. TigerVNC makes the text available as the guest X11 CLIPBOARD selection.
+   *   6. The user pastes in the Kali terminal with Ctrl+Shift+V (or Ctrl+V in
+   *      GUI apps like a text editor).
+   *
+   * Returns { ok: false, error } if the window is not open, the clipboard is
+   * empty, or the noVNC clipboard element is not yet present in the DOM.
+   */
+  ipcMain.handle('attack:pasteClipboard', async (_event, { nodeId }: { nodeId: string }) => {
+    const win = attackWindows.get(nodeId)
+    if (!win || win.isDestroyed()) {
+      return { ok: false, error: 'Kali desktop window is not open — launch it first.' }
+    }
+    const text = clipboard.readText()
+    if (!text) {
+      return { ok: false, error: 'Clipboard is empty — copy something first.' }
+    }
+    // JSON.stringify produces a properly escaped JS string literal so special
+    // characters (quotes, newlines, unicode) in the clipboard text are safe.
+    const safeText = JSON.stringify(text)
+    try {
+      const found = await win.webContents.executeJavaScript(
+        `(function(){
+          const ta = document.getElementById('noVNC_clipboard_text');
+          if (!ta) return false;
+          ta.value = ${safeText};
+          ta.dispatchEvent(new Event('change'));
+          return true;
+        })()`
+      )
+      if (!found) {
+        return {
+          ok: false,
+          error: 'noVNC clipboard element not found — wait for the desktop to fully load.'
+        }
+      }
+      return { ok: true }
+    } catch {
+      return { ok: false, error: 'Could not reach the Kali desktop window.' }
+    }
+  })
 
   // ── Community scenario packs (Phase 9) ────────────────────────────────────────
 

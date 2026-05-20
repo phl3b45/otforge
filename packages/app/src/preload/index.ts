@@ -367,7 +367,23 @@ const api = {
      * @returns { ok: true } on success, { ok: false, error } on failure.
      */
     launchWindow: (nodeId: string): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke('attack:launchWindow', { nodeId })
+      ipcRenderer.invoke('attack:launchWindow', { nodeId }),
+
+    /**
+     * Pushes the current host clipboard text into the open noVNC desktop session
+     * for the given attack machine.
+     *
+     * Injects the text into noVNC's built-in clipboard textarea (#noVNC_clipboard_text)
+     * and dispatches a 'change' event, which triggers rfb.clipboardPasteFrom() via
+     * the RFB ClientCutText message. The text then becomes available as the guest X11
+     * CLIPBOARD selection — paste in the Kali terminal with Ctrl+Shift+V.
+     *
+     * @param nodeId - Canvas node ID of the attack-machine device.
+     * @returns { ok: true } on success; { ok: false, error } if the window is not
+     *   open, the clipboard is empty, or the noVNC element is not yet in the DOM.
+     */
+    pasteClipboard: (nodeId: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('attack:pasteClipboard', { nodeId })
   },
 
   // ── One-way push events from main → renderer ──────────────────────────────────
