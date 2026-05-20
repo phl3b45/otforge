@@ -19,7 +19,7 @@
  *   app:info, docker:check, scenario:import, simulation:start, etc.
  */
 
-import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, clipboard, session } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import type {
@@ -1277,6 +1277,27 @@ function registerIPCHandlers(): void {
       // ?resize=scale scales the 1920×1080 Kali desktop to fill the BrowserWindow.
       const vncUrl = `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale`
 
+      // Dedicated non-persistent session for attack windows.
+      //
+      // Using fromPartition keeps this session isolated from the main renderer so
+      // the clipboard-read permission grant below does not affect the main window's
+      // security policy. The 'attack-novnc' partition is shared across all attack
+      // windows (all connect to localhost and need identical permissions).
+      const attackSession = session.fromPartition('attack-novnc')
+
+      // Grant clipboard-read so noVNC can bridge the host clipboard into the VNC session.
+      //
+      // noVNC calls navigator.clipboard.readText() when the user presses Ctrl+V inside
+      // the Kali Xfce4 desktop. Electron blocks this by default for non-HTTPS origins;
+      // granting it here allows the paste to reach the VNC server via the RFB protocol.
+      // clipboard-sanitized-write covers the reverse direction (VNC → host clipboard).
+      attackSession.setPermissionRequestHandler((_wc, permission, callback) => {
+        callback(permission === 'clipboard-read' || permission === 'clipboard-sanitized-write')
+      })
+      attackSession.setPermissionCheckHandler((_wc, permission) => {
+        return permission === 'clipboard-read' || permission === 'clipboard-sanitized-write'
+      })
+
       const attackWindow = new BrowserWindow({
         width: 1280,
         height: 900,
@@ -1287,6 +1308,7 @@ function registerIPCHandlers(): void {
         // Dark red background flash-prevention (Kali's default terminal colors)
         backgroundColor: '#1a0000',
         webPreferences: {
+          session: attackSession,
           // Full sandbox — the noVNC page needs no Electron APIs
           sandbox: true,
           contextIsolation: true,

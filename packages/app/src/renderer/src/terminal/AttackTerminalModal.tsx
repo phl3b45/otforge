@@ -115,20 +115,27 @@ export function AttackTerminalModal({
     termRef.current = term
     fitAddonRef.current = fitAddon
 
-    // Clipboard paste handler for Ctrl+V / Cmd+V.
+    // Clipboard paste handler.
     //
-    // Without this, Ctrl+V is processed by the Electron main window's OS clipboard
-    // handler — the text lands in the host desktop rather than the docker exec stdin.
-    // attachCustomKeyEventHandler intercepts the key event BEFORE xterm.js sees it;
-    // returning false tells xterm to drop the event so we can handle it ourselves.
+    // Intercepts Ctrl+V (Windows/macOS standard) and Ctrl+Shift+V (Linux terminal
+    // convention — ev.key is uppercase 'V' when Shift is held). Without this handler:
+    //   - Ctrl+V: xterm.js does not paste; the browser handles the key and may beep.
+    //   - Ctrl+Shift+V: xterm.js calls navigator.clipboard.readText() which Electron
+    //     blocks in non-HTTPS renderers, so nothing is pasted.
+    //
+    // ev.preventDefault() is called explicitly before returning false. xterm.js's
+    // attachCustomKeyEventHandler does NOT call preventDefault when the handler
+    // returns false — without it the browser still receives the event and generates
+    // a system beep even though xterm has dropped the key.
     //
     // window.electronAPI.clipboard.readText() calls Electron's native clipboard module
-    // via IPC (clipboard:readText handler in main/index.ts). This bypasses the Web
-    // Clipboard API permission check that fails silently in Electron renderers.
+    // via IPC, bypassing the Web Clipboard API permission requirement entirely.
     term.attachCustomKeyEventHandler((ev: KeyboardEvent) => {
-      // Ctrl+V on Windows/Linux, Cmd+V on macOS
-      const isPaste = ev.type === 'keydown' && ev.key === 'v' && (ev.ctrlKey || ev.metaKey)
+      // ev.key is 'v' for Ctrl+V and 'V' for Ctrl+Shift+V (shift changes case)
+      const isPaste =
+        ev.type === 'keydown' && ev.key.toLowerCase() === 'v' && (ev.ctrlKey || ev.metaKey)
       if (isPaste) {
+        ev.preventDefault() // stop browser/Electron from also handling this key and beeping
         window.electronAPI.clipboard
           .readText()
           .then(text => {
@@ -137,7 +144,7 @@ export function AttackTerminalModal({
           .catch(() => {
             // IPC failure — silently ignore (container may not be ready yet)
           })
-        return false // consume this event; xterm must not see it
+        return false // tell xterm not to process this keystroke either
       }
       return true // let xterm.js process all other keystrokes normally
     })
