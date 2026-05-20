@@ -175,6 +175,30 @@ interface ComposeService {
    * dns-server device so exercise hostnames resolve inside the simulation.
    */
   dns?: string[]
+  /**
+   * Container healthcheck configuration. Docker runs `test` at `interval` after
+   * `start_period` grace; after `retries` consecutive failures the container is
+   * marked unhealthy. Dependent services use `depends_on.condition: service_healthy`
+   * to wait until this service passes its healthcheck before starting.
+   */
+  healthcheck?: {
+    /** Shell command array. Use ['CMD', 'curl', '-f', 'url'] or ['CMD-SHELL', 'cmd || exit 1']. */
+    test: string[]
+    /** How often to run the check (e.g., '5s', '10s'). */
+    interval: string
+    /** Max time to wait for a single check (e.g., '3s'). */
+    timeout: string
+    /** Consecutive failures before the container is marked unhealthy. */
+    retries: number
+    /** Grace period after container start before health checks begin (e.g., '10s'). */
+    start_period: string
+  }
+  /**
+   * Startup ordering constraints. 'service_healthy' requires the named dependency's
+   * healthcheck to pass before Docker starts this service. 'service_started' only
+   * requires the dependency container to be running (no healthcheck required).
+   */
+  depends_on?: Record<string, { condition: 'service_healthy' | 'service_started' }>
   deploy: { resources: { limits: { memory: string; cpus: string } } }
 }
 
@@ -506,6 +530,26 @@ export function generateCompose(
   const otBase = effectiveZones.ot.subnet.replace('.0/24', '')
   const controlBase = effectiveZones.control.subnet.replace('.0/24', '')
 
+  // ── Monitoring bridge (non-internal) ─────────────────────────────────────────
+  // All Purdue Model zones above are created with internal: true, which prevents
+  // OT/IT containers from accessing the internet. However, Docker Desktop for
+  // Windows silently drops host port bindings (localhost:3000, 3100, 1881) when
+  // a container's ONLY networks are internal: true — Docker cannot create the
+  // required NAT rules through an internal-only bridge.
+  //
+  // This dedicated non-internal bridge gives Grafana, Loki, and FUXA a second
+  // interface through which Docker can publish ports to the host. It carries no
+  // OT traffic and is not reachable from any device container. Third octet 70
+  // continues the zone numbering scheme (OT=10, Control=20, …, Attacker=60).
+  const monitorBase = `${controlBase.split('.').slice(0, 2).join('.')}.70`
+  networks['monitoring-net'] = {
+    driver: 'bridge',
+    ipam: {
+      driver: 'default',
+      config: [{ subnet: `${monitorBase}.0/24`, gateway: `${monitorBase}.1` }]
+    }
+  }
+
   // ── Suricata — inline IPS/IDS on OT and IT networks ──────────────────────
   // Placed on both OT and IT nets so it can analyze cross-zone traffic.
   // Eve JSON logs go to a named volume, then Loki reads them (Phase 6).
@@ -576,6 +620,15 @@ export function generateCompose(
     ],
     cap_add: undefined,
     volumes: [`${projectName}-influxdb-data:/var/lib/influxdb`],
+    // Healthcheck: InfluxDB exposes a /ping HTTP endpoint once its HTTP listener is ready.
+    // curl exits 0 on HTTP 2xx/3xx; -f makes it exit non-zero on 4xx/5xx.
+    healthcheck: {
+      test: ['CMD', 'curl', '-f', 'http://localhost:8086/ping'],
+      interval: '5s',
+      timeout: '3s',
+      retries: 10,
+      start_period: '10s'
+    },
     deploy: { resources: { limits: { memory: '256m', cpus: '0.5' } } }
   }
 
@@ -588,12 +641,25 @@ export function generateCompose(
     image: 'grafana/loki:latest',
     container_name: `${projectName}-loki`,
     restart: 'unless-stopped',
-    networks: { 'control-net': { ipv4_address: `${controlBase}.241` } },
+    networks: {
+      'control-net': { ipv4_address: `${controlBase}.241` },
+      // monitoring-net: non-internal bridge required for Docker Desktop to publish port 3100
+      'monitoring-net': { ipv4_address: `${monitorBase}.3` }
+    },
     environment: undefined,
     cap_add: undefined,
     volumes: [`${projectName}-loki-data:/loki`],
     // Publish so the Electron main process can proxy Loki API queries
     ports: ['3100:3100'],
+    // Healthcheck: Loki exposes /ready once its ingestion and query engines are up.
+    // Uses wget (available in the grafana/loki image) since curl is not bundled.
+    healthcheck: {
+      test: ['CMD-SHELL', 'wget --quiet --tries=1 --spider http://localhost:3100/ready || exit 1'],
+      interval: '5s',
+      timeout: '3s',
+      retries: 12,
+      start_period: '15s'
+    },
     deploy: { resources: { limits: { memory: '80m', cpus: '0.25' } } }
   }
 
@@ -631,12 +697,30 @@ export function generateCompose(
     image: 'grafana/grafana:latest',
     container_name: `${projectName}-grafana`,
     restart: 'unless-stopped',
-    networks: { 'control-net': { ipv4_address: `${controlBase}.242` } },
+    networks: {
+      'control-net': { ipv4_address: `${controlBase}.242` },
+      // monitoring-net: non-internal bridge required for Docker Desktop to publish port 3000
+      'monitoring-net': { ipv4_address: `${monitorBase}.2` }
+    },
     environment: grafanaEnv,
     cap_add: undefined,
     volumes: grafanaVolumes,
     // Publish on the standard Grafana port so the Electron webview embeds it
     ports: ['3000:3000'],
+    // Healthcheck: /api/health returns 200 once Grafana's backend and datasources are ready.
+    healthcheck: {
+      test: ['CMD-SHELL', 'curl -f http://localhost:3000/api/health || exit 1'],
+      interval: '5s',
+      timeout: '3s',
+      retries: 15,
+      start_period: '20s'
+    },
+    // Grafana must not start before InfluxDB and Loki are healthy — otherwise its
+    // provisioned datasources fail to connect and dashboards show "No data" on first open.
+    depends_on: {
+      influxdb: { condition: 'service_healthy' },
+      loki: { condition: 'service_healthy' }
+    },
     deploy: { resources: { limits: { memory: '150m', cpus: '0.5' } } }
   }
 
@@ -664,6 +748,12 @@ export function generateCompose(
         `${projectName}-suricata-logs:/var/log/suricata:ro`, // shared read-only
         `${projectName}-zeek-logs:/var/log/zeek:ro` // shared read-only
       ],
+      // Promtail pushes log lines to Loki's HTTP ingestion endpoint. Starting Promtail
+      // before Loki is healthy causes it to buffer and retry on startup, which can
+      // cause gaps in early log data. Waiting for Loki's healthcheck avoids this.
+      depends_on: {
+        loki: { condition: 'service_healthy' }
+      },
       deploy: { resources: { limits: { memory: '64m', cpus: '0.1' } } }
     }
   }
@@ -688,13 +778,24 @@ export function generateCompose(
     networks: {
       'control-net': { ipv4_address: `${controlBase}.243` },
       // Second leg on ot-net lets FUXA reach PLC Modbus servers (port 502) directly
-      'ot-net': { ipv4_address: `${otBase}.243` }
+      'ot-net': { ipv4_address: `${otBase}.243` },
+      // monitoring-net: non-internal bridge required for Docker Desktop to publish port 1881
+      'monitoring-net': { ipv4_address: `${monitorBase}.4` }
     },
     // Publish port 1881 so Electron can open FUXA in a separate BrowserWindow
     ports: ['1881:1881'],
     environment: undefined,
     cap_add: undefined,
     volumes: [`${projectName}-fuxa-data:/usr/src/app/FUXA/server/_appdata`],
+    // Healthcheck: FUXA's Node.js HTTP server responds once the process graphics engine
+    // is ready. wget is used since curl is not in the frangoteam/fuxa image.
+    healthcheck: {
+      test: ['CMD-SHELL', 'wget --quiet --tries=1 --spider http://localhost:1881 || exit 1'],
+      interval: '5s',
+      timeout: '3s',
+      retries: 15,
+      start_period: '30s'
+    },
     // Increased from 100m — FUXA's Node.js runtime needs ~180m when polling multiple PLCs
     deploy: { resources: { limits: { memory: '256m', cpus: '0.5' } } }
   }

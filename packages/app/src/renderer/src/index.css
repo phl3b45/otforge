@@ -2737,6 +2737,20 @@ code.prop-value {
   background: #161b22;
 }
 
+/*
+ * Loading state shown in the Grafana tab while the container is still starting.
+ * Mirrors the .monitor-logs-waiting style so the two tabs look consistent.
+ */
+.monitor-grafana-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
 /* ── Live logs tab ────────────────────────────────────────────────────────── */
 
 /*

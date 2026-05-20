@@ -193,7 +193,19 @@ const api = {
       toNs: string,
       limit?: number
     ): Promise<{ ok: boolean; data?: unknown; error?: string }> =>
-      ipcRenderer.invoke('monitor:getLogs', { query, fromNs, toNs, limit })
+      ipcRenderer.invoke('monitor:getLogs', { query, fromNs, toNs, limit }),
+
+    /**
+     * Probes localhost:3000/api/health to determine whether the Grafana container
+     * is fully started and accepting HTTP requests.
+     *
+     * MonitorPanel polls this before mounting the <webview> so the user sees a
+     * loading spinner instead of an ERR_CONNECTION_REFUSED error page during the
+     * 15–30 s Grafana startup window.
+     *
+     * @returns true once Grafana responds with HTTP 2xx; false while still starting.
+     */
+    grafanaReady: (): Promise<boolean> => ipcRenderer.invoke('monitor:grafanaReady')
   },
 
   // ── License (Phase 12 stubs) ──────────────────────────────────────────────────

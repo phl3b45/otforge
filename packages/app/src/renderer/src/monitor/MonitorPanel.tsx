@@ -145,6 +145,14 @@ export function MonitorPanel({ onClose }: MonitorPanelProps) {
   const [lokiReady, setLokiReady] = useState(false)
 
   /**
+   * Whether Grafana's /api/health endpoint has returned HTTP 200.
+   * Polled every 2 s when the Grafana tab is active so the <webview> is not
+   * mounted until the container is actually serving requests (avoids the
+   * ERR_CONNECTION_REFUSED that appears during the 15–30 s startup window).
+   */
+  const [grafanaReady, setGrafanaReady] = useState(false)
+
+  /**
    * Set of nanosecond timestamp keys already in the log buffer.
    * Checked on each poll to avoid inserting duplicate entries when the
    * Loki look-back window overlaps with previously fetched entries.
@@ -208,6 +216,20 @@ export function MonitorPanel({ onClose }: MonitorPanelProps) {
     return () => clearInterval(timer)
   }, [tab, logFilter])
 
+  // ── Grafana readiness poll ──────────────────────────────────────────────────
+  // Polls monitor:grafanaReady every 2 s until Grafana's /api/health returns 200.
+  // Stops polling once grafanaReady is true (clears interval on next re-render).
+  useEffect(() => {
+    if (tab !== 'grafana' || grafanaReady) return
+    const check = async (): Promise<void> => {
+      const ready = await window.electronAPI.monitor.grafanaReady()
+      if (ready) setGrafanaReady(true)
+    }
+    check() // immediate check on tab switch
+    const timer = setInterval(check, 2000)
+    return () => clearInterval(timer)
+  }, [tab, grafanaReady])
+
   // ── Auto-scroll to bottom when new log entries arrive ──────────────────────
   useEffect(() => {
     if (tab === 'logs') {
@@ -252,12 +274,21 @@ export function MonitorPanel({ onClose }: MonitorPanelProps) {
       {/* Grafana webview — uses Electron webview tag to bypass X-Frame-Options */}
       {tab === 'grafana' && (
         <div className="monitor-grafana">
-          {/* webview bypasses X-Frame-Options/CSP headers, unlike a standard iframe */}
-          <webview src={GRAFANA_URL} className="monitor-grafana-webview" />
-          <p className="monitor-grafana-hint">
-            Grafana may take ~15 s to start on first launch. Use <strong>Explore</strong> in Grafana
-            to write custom LogQL queries.
-          </p>
+          {grafanaReady ? (
+            <>
+              {/* webview bypasses X-Frame-Options/CSP headers, unlike a standard iframe */}
+              <webview src={GRAFANA_URL} className="monitor-grafana-webview" />
+              <p className="monitor-grafana-hint">
+                Use <strong>Explore</strong> in Grafana to write custom LogQL or InfluxQL queries.
+              </p>
+            </>
+          ) : (
+            /* Loading spinner shown while Grafana container is still starting up */
+            <div className="monitor-grafana-loading">
+              <span className="status-dot checking" />
+              <span>Waiting for Grafana to start… (15–30 s on first launch)</span>
+            </div>
+          )}
         </div>
       )}
 

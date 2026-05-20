@@ -58,11 +58,14 @@ fi
 # is written below for the next startup. On first run all sources update and the
 # user-selected rulesets take effect on subsequent container restarts.
 echo "[ics-suricata] Running suricata-update (may fail in offline environments)..."
-suricata-update \
+# timeout 30s prevents suricata-update from blocking container startup indefinitely
+# when the internet is slow or rate-limiting the Emerging Threats download. On timeout
+# or failure, Suricata falls back to the bundled otforge.rules from the image layer.
+timeout 30s suricata-update \
     --no-reload \
     --no-test \
     --suricata-conf /etc/suricata/otforge.yaml \
-    2>/dev/null || echo "[ics-suricata] Rule update failed — continuing with bundled rules"
+    2>/dev/null || echo "[ics-suricata] Rule update failed or timed out — continuing with bundled rules"
 
 # Write enable.conf so future suricata-update runs only download selected rulesets.
 # Format: one "source-name" entry per line that suricata-update should keep enabled.

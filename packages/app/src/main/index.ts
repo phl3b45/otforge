@@ -938,6 +938,31 @@ function registerIPCHandlers(): void {
     }
   )
 
+  // ── Monitoring — Grafana readiness probe ──────────────────────────────────────
+
+  /**
+   * Checks whether the Grafana HTTP server is fully started and accepting requests
+   * by probing localhost:3000/api/health. The MonitorPanel polls this before
+   * rendering the <webview> to avoid the "ERR_CONNECTION_REFUSED" error that
+   * occurs when the Grafana container hasn't finished its startup sequence.
+   *
+   * @returns true if Grafana responds with HTTP 2xx; false on any error or timeout.
+   */
+  ipcMain.handle('monitor:grafanaReady', (): Promise<boolean> => {
+    return new Promise(resolve => {
+      const req = http.get('http://localhost:3000/api/health', { timeout: 2000 }, res => {
+        // Any 2xx status means Grafana is up and serving requests
+        resolve(res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300)
+        res.resume() // drain the response body so the socket can be reused
+      })
+      req.on('error', () => resolve(false))
+      req.on('timeout', () => {
+        req.destroy()
+        resolve(false)
+      })
+    })
+  })
+
   // ── PLC IDE — live program deployment (Phase 4) ───────────────────────────────
 
   /**
