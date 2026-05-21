@@ -4,26 +4,26 @@
  * Rendered as a fixed-height drawer below the SCADA canvas when the simulation
  * is running and the user has toggled "Monitor" in the toolbar.
  *
- * Two tabs:
+ * Layout:
+ *   Header — "Open Grafana ↗" button (opens a separate OS window at 1400×900)
+ *             + Live Logs label + close button.
+ *   Body   — Live Logs viewer: polls the Loki HTTP API (proxied through the
+ *             Electron main process to avoid CORS). Displays Suricata IPS alerts
+ *             and Zeek network analysis entries with per-source color coding.
+ *             Filterable by source; auto-scrolls to latest entries.
  *
- *   Dashboards — Embeds the Grafana ICS Lab Overview dashboard (uid: ics-overview)
- *     in an Electron <webview> tag. The webview bypasses X-Frame-Options and CSP
- *     headers that would block a standard <iframe>. Grafana runs on localhost:3000
- *     (published by the compose generator) with anonymous read access enabled.
- *
- *   Live Logs — Native log viewer that polls the Loki HTTP API (proxied through
- *     the Electron main process to avoid CORS). Displays Suricata IPS alerts and
- *     Zeek network analysis entries with per-source color coding. The view is
- *     filterable and auto-scrolls to keep the latest entries visible.
+ * Grafana is no longer embedded as a <webview>. Opening it in a separate window
+ * gives students the full viewport, lets them undock it to a second monitor, and
+ * avoids the height constraint imposed by the drawer layout.
  *
  * Loki response format:
  *   { data: { result: [{ stream: { job: "suricata" }, values: [["ns", "line"], ...] }] } }
  *   values[n][0] is a nanosecond timestamp string; values[n][1] is the raw log line.
  *
  * Performance:
- *   Log polling runs only when the Logs tab is active. Entries are deduplicated by
- *   their nanosecond timestamp string. The displayed buffer is capped at MAX_LOG_LINES
- *   to prevent unbounded memory growth during long simulations.
+ *   Entries are deduplicated by their nanosecond timestamp string. The displayed
+ *   buffer is capped at MAX_LOG_LINES to prevent unbounded memory growth during
+ *   long simulations.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -36,9 +36,6 @@ const POLL_INTERVAL_MS = 3000
 
 /** How far back to look on each Loki poll (milliseconds). */
 const LOOK_BACK_MS = 15_000
-
-/** Grafana dashboard webview URL — kiosk mode, dark theme, 5 s auto-refresh. */
-const GRAFANA_URL = 'http://localhost:3000/d/ics-overview?orgId=1&kiosk&theme=dark&refresh=5s'
 
 /** LogQL queries for each job source. */
 const LOKI_QUERIES: Record<string, string> = {
@@ -126,9 +123,6 @@ function parseLokiResponse(raw: LokiResponse): LogEntry[] {
  * @param onClose - Callback to collapse the monitor panel.
  */
 export function MonitorPanel({ onClose }: MonitorPanelProps) {
-  /** Which top-level tab is active: Grafana embed or native log viewer. */
-  const [tab, setTab] = useState<'grafana' | 'logs'>('grafana')
-
   /** Filter for the log viewer (all sources, Suricata only, Zeek only). */
   const [logFilter, setLogFilter] = useState<LogFilter>('all')
 
@@ -146,9 +140,8 @@ export function MonitorPanel({ onClose }: MonitorPanelProps) {
 
   /**
    * Whether Grafana's /api/health endpoint has returned HTTP 200.
-   * Polled every 2 s when the Grafana tab is active so the <webview> is not
-   * mounted until the container is actually serving requests (avoids the
-   * ERR_CONNECTION_REFUSED that appears during the 15–30 s startup window).
+   * Polled every 2 s to enable/disable the "Open Grafana" button so students
+   * don't open a blank window during the 15–30 s Grafana startup window.
    */
   const [grafanaReady, setGrafanaReady] = useState(false)
 
@@ -165,8 +158,6 @@ export function MonitorPanel({ onClose }: MonitorPanelProps) {
   // ── Loki poll loop ──────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (tab !== 'logs') return
-
     /**
      * Queries Loki for log entries in the look-back window.
      * Merges new entries into the buffer, deduplicating by tsNs.
@@ -214,28 +205,26 @@ export function MonitorPanel({ onClose }: MonitorPanelProps) {
     poll()
     const timer = setInterval(poll, POLL_INTERVAL_MS)
     return () => clearInterval(timer)
-  }, [tab, logFilter])
+  }, [logFilter])
 
   // ── Grafana readiness poll ──────────────────────────────────────────────────
   // Polls monitor:grafanaReady every 2 s until Grafana's /api/health returns 200.
-  // Stops polling once grafanaReady is true (clears interval on next re-render).
+  // Once ready the button becomes enabled; the interval clears on the next render.
   useEffect(() => {
-    if (tab !== 'grafana' || grafanaReady) return
+    if (grafanaReady) return
     const check = async (): Promise<void> => {
       const ready = await window.electronAPI.monitor.grafanaReady()
       if (ready) setGrafanaReady(true)
     }
-    check() // immediate check on tab switch
+    check()
     const timer = setInterval(check, 2000)
     return () => clearInterval(timer)
-  }, [tab, grafanaReady])
+  }, [grafanaReady])
 
   // ── Auto-scroll to bottom when new log entries arrive ──────────────────────
   useEffect(() => {
-    if (tab === 'logs') {
-      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [logs, tab])
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [logs])
 
   // ── Clear log buffer when the filter changes ────────────────────────────────
   const handleFilterChange = useCallback((f: LogFilter) => {
@@ -244,102 +233,89 @@ export function MonitorPanel({ onClose }: MonitorPanelProps) {
     seenNsRef.current.clear()
   }, [])
 
+  // ── Open Grafana in a separate OS window ────────────────────────────────────
+  const handleOpenGrafana = useCallback(async () => {
+    const result = await window.electronAPI.monitor.openGrafana()
+    if (!result.ok && result.error) {
+      console.error('[MonitorPanel] openGrafana failed:', result.error)
+    }
+  }, [])
+
   // ── Filtered view ────────────────────────────────────────────────────────────
   const visibleLogs = logFilter === 'all' ? logs : logs.filter(l => l.job === logFilter)
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="monitor-panel">
-      {/* Panel header: tab bar on the left, close button on the right */}
+      {/* Panel header: Grafana launch button on the left, title, close button on the right */}
       <div className="monitor-header">
-        <div className="monitor-tabs">
+        <div className="monitor-header-left">
+          {/* Opens a dedicated 1400×900 BrowserWindow — can be moved to a second monitor */}
           <button
-            className={`monitor-tab ${tab === 'grafana' ? 'active' : ''}`}
-            onClick={() => setTab('grafana')}
+            className={`monitor-grafana-btn ${grafanaReady ? '' : 'loading'}`}
+            onClick={handleOpenGrafana}
+            disabled={!grafanaReady}
+            title={
+              grafanaReady
+                ? 'Open Grafana ICS Lab Overview in a separate window'
+                : 'Waiting for Grafana to start… (15–30 s on first launch)'
+            }
           >
-            Grafana Dashboards
+            {grafanaReady ? 'Open Grafana ↗' : 'Grafana starting…'}
           </button>
-          <button
-            className={`monitor-tab ${tab === 'logs' ? 'active' : ''}`}
-            onClick={() => setTab('logs')}
-          >
-            Live Logs
-          </button>
+          <span className="monitor-panel-label">Live Logs</span>
         </div>
         <button className="monitor-close" onClick={onClose} title="Close monitor panel">
           ×
         </button>
       </div>
 
-      {/* Grafana webview — uses Electron webview tag to bypass X-Frame-Options */}
-      {tab === 'grafana' && (
-        <div className="monitor-grafana">
-          {grafanaReady ? (
-            <>
-              {/* webview bypasses X-Frame-Options/CSP headers, unlike a standard iframe */}
-              <webview src={GRAFANA_URL} className="monitor-grafana-webview" />
-              <p className="monitor-grafana-hint">
-                Use <strong>Explore</strong> in Grafana to write custom LogQL or InfluxQL queries.
-              </p>
-            </>
-          ) : (
-            /* Loading spinner shown while Grafana container is still starting up */
-            <div className="monitor-grafana-loading">
+      {/* Native log viewer — polls Loki API via IPC proxy */}
+      <div className="monitor-logs">
+        {/* Source filter chips */}
+        <div className="monitor-logs-toolbar">
+          <div className="monitor-filter-group">
+            {(['all', 'suricata', 'zeek'] as LogFilter[]).map(f => (
+              <button
+                key={f}
+                className={`monitor-filter-btn monitor-filter-${f} ${logFilter === f ? 'active' : ''}`}
+                onClick={() => handleFilterChange(f)}
+              >
+                {f === 'all' ? 'All Sources' : f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+          </div>
+          <span className="monitor-logs-count">{visibleLogs.length} entries</span>
+        </div>
+
+        {/* Log entries — scrollable list */}
+        <div className="monitor-logs-body">
+          {!lokiReady && (
+            <div className="monitor-logs-waiting">
               <span className="status-dot checking" />
-              <span>Waiting for Grafana to start… (15–30 s on first launch)</span>
+              Waiting for Loki to start… (may take 15–30 s after simulation launch)
             </div>
           )}
-        </div>
-      )}
-
-      {/* Native log viewer — polls Loki API via IPC proxy */}
-      {tab === 'logs' && (
-        <div className="monitor-logs">
-          {/* Source filter chips */}
-          <div className="monitor-logs-toolbar">
-            <div className="monitor-filter-group">
-              {(['all', 'suricata', 'zeek'] as LogFilter[]).map(f => (
-                <button
-                  key={f}
-                  className={`monitor-filter-btn monitor-filter-${f} ${logFilter === f ? 'active' : ''}`}
-                  onClick={() => handleFilterChange(f)}
-                >
-                  {f === 'all' ? 'All Sources' : f.charAt(0).toUpperCase() + f.slice(1)}
-                </button>
-              ))}
+          {lokiReady && visibleLogs.length === 0 && (
+            <div className="monitor-logs-waiting">
+              No {logFilter === 'all' ? '' : logFilter + ' '}log entries yet. Traffic will appear as
+              devices communicate.
             </div>
-            <span className="monitor-logs-count">{visibleLogs.length} entries</span>
-          </div>
-
-          {/* Log entries — scrollable list */}
-          <div className="monitor-logs-body">
-            {!lokiReady && (
-              <div className="monitor-logs-waiting">
-                <span className="status-dot checking" />
-                Waiting for Loki to start… (may take 15–30 s after simulation launch)
-              </div>
-            )}
-            {lokiReady && visibleLogs.length === 0 && (
-              <div className="monitor-logs-waiting">
-                No {logFilter === 'all' ? '' : logFilter + ' '}log entries yet. Traffic will appear
-                as devices communicate.
-              </div>
-            )}
-            {visibleLogs.map(entry => (
-              <div key={entry.tsNs} className={`monitor-log-row monitor-log-${entry.job}`}>
-                {/* Timestamp */}
-                <span className="monitor-log-ts">{formatTs(entry.tsMs)}</span>
-                {/* Source badge (Suricata = red, Zeek = blue) */}
-                <span className={`monitor-log-badge monitor-badge-${entry.job}`}>{entry.job}</span>
-                {/* Raw log line — truncated visually via CSS overflow: hidden */}
-                <span className="monitor-log-line">{entry.line}</span>
-              </div>
-            ))}
-            {/* Scroll anchor */}
-            <div ref={logsEndRef} />
-          </div>
+          )}
+          {visibleLogs.map(entry => (
+            <div key={entry.tsNs} className={`monitor-log-row monitor-log-${entry.job}`}>
+              {/* Timestamp */}
+              <span className="monitor-log-ts">{formatTs(entry.tsMs)}</span>
+              {/* Source badge (Suricata = red, Zeek = blue) */}
+              <span className={`monitor-log-badge monitor-badge-${entry.job}`}>{entry.job}</span>
+              {/* Raw log line — truncated visually via CSS overflow: hidden */}
+              <span className="monitor-log-line">{entry.line}</span>
+            </div>
+          ))}
+          {/* Scroll anchor */}
+          <div ref={logsEndRef} />
         </div>
-      )}
+      </div>
     </div>
   )
 }

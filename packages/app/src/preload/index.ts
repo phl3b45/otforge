@@ -199,13 +199,22 @@ const api = {
      * Probes localhost:3000/api/health to determine whether the Grafana container
      * is fully started and accepting HTTP requests.
      *
-     * MonitorPanel polls this before mounting the <webview> so the user sees a
-     * loading spinner instead of an ERR_CONNECTION_REFUSED error page during the
-     * 15–30 s Grafana startup window.
+     * MonitorPanel polls this before enabling the "Open Grafana" button so students
+     * don't open a blank window during the 15–30 s Grafana startup window.
      *
      * @returns true once Grafana responds with HTTP 2xx; false while still starting.
      */
-    grafanaReady: (): Promise<boolean> => ipcRenderer.invoke('monitor:grafanaReady')
+    grafanaReady: (): Promise<boolean> => ipcRenderer.invoke('monitor:grafanaReady'),
+
+    /**
+     * Opens the Grafana ICS Lab Overview dashboard in a standalone Electron
+     * BrowserWindow at 1400×900. The window can be moved to a second monitor and
+     * resized independently of the main simulator.
+     *
+     * @returns { ok: true } on success; { ok: false, error } if no simulation running.
+     */
+    openGrafana: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('monitor:openGrafana')
   },
 
   // ── License (Phase 12 stubs) ──────────────────────────────────────────────────

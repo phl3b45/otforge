@@ -2636,7 +2636,7 @@ code.prop-value {
   border-top: 1px solid var(--border-color);
 }
 
-/* ── Panel header: tab bar (left) + close button (right) ─────────────────── */
+/* ── Panel header: Grafana button + label (left) + close button (right) ───── */
 
 .monitor-header {
   display: flex;
@@ -2649,35 +2649,53 @@ code.prop-value {
   flex-shrink: 0;
 }
 
-.monitor-tabs {
+/* Left side of the header: Grafana launch button + "Live Logs" label */
+.monitor-header-left {
   display: flex;
-  gap: 2px;
+  align-items: center;
+  gap: 12px;
 }
 
 /*
- * Each tab is a ghost button. The .active variant gets a bottom border accent
- * (instead of a background fill) to keep the chrome minimal inside the drawer.
+ * "Open Grafana ↗" button in the panel header.
+ * Uses accent-teal when Grafana is ready; dims and shows "Grafana starting…"
+ * while the container is still initialising (15–30 s on first launch).
  */
-.monitor-tab {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  padding: 4px 10px;
+.monitor-grafana-btn {
+  background: rgba(57, 208, 176, 0.1);
+  border: 1px solid var(--accent-teal);
+  color: var(--accent-teal);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 10px;
   border-radius: 4px;
   cursor: pointer;
-  transition: color 0.15s;
-  border-bottom: 2px solid transparent;
+  transition:
+    background 0.15s,
+    opacity 0.15s;
 }
 
-.monitor-tab:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
+.monitor-grafana-btn:hover:not(:disabled) {
+  background: rgba(57, 208, 176, 0.2);
 }
 
-.monitor-tab.active {
-  color: var(--accent-teal);
-  border-bottom-color: var(--accent-teal);
+/* Greyed-out state while Grafana container is still starting */
+.monitor-grafana-btn.loading,
+.monitor-grafana-btn:disabled {
+  border-color: var(--border-color);
+  color: var(--text-muted);
+  background: none;
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* "Live Logs" label — small, muted section title */
+.monitor-panel-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 /* × close button — larger click target than the tooltip close buttons */
@@ -2696,59 +2714,6 @@ code.prop-value {
 .monitor-close:hover {
   color: var(--text-primary);
   background: rgba(255, 255, 255, 0.06);
-}
-
-/* ── Grafana webview tab ──────────────────────────────────────────────────── */
-
-/*
- * .monitor-grafana is the flex column that holds the webview and the hint text.
- * flex: 1 ensures it fills all remaining panel height below the header.
- */
-.monitor-grafana {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  overflow: hidden;
-  position: relative;
-}
-
-/*
- * The Electron <webview> tag behaves like a replaced element — it must have an
- * explicit height to render. flex: 1 on its own is insufficient without
- * align-self: stretch; both are set here for cross-platform reliability.
- */
-.monitor-grafana-webview {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  border: none;
-  display: block;
-}
-
-/* Hint text rendered below the webview — very small, muted, italic */
-.monitor-grafana-hint {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  padding: 4px 10px;
-  margin: 0;
-  font-style: italic;
-  flex-shrink: 0;
-  border-top: 1px solid var(--border-color);
-  background: #161b22;
-}
-
-/*
- * Loading state shown in the Grafana tab while the container is still starting.
- * Mirrors the .monitor-logs-waiting style so the two tabs look consistent.
- */
-.monitor-grafana-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  flex: 1;
-  color: var(--text-muted);
-  font-size: 0.85rem;
 }
 
 /* ── Live logs tab ────────────────────────────────────────────────────────── */

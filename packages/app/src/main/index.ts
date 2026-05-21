@@ -963,6 +963,57 @@ function registerIPCHandlers(): void {
     })
   })
 
+  // ── Monitoring — open Grafana in a separate OS window ────────────────────────
+
+  /**
+   * Opens the Grafana ICS Lab Overview dashboard in a standalone Electron
+   * BrowserWindow rather than embedding it in the MonitorPanel drawer webview.
+   *
+   * A dedicated window lets students undock Grafana to a second monitor, resize
+   * it independently of the main simulator, and interact with all Grafana features
+   * (Explore, variable controls, time range picker) without being constrained by
+   * the drawer height.
+   *
+   * The window opens at 1400×900 — large enough to show the two-column dashboard
+   * layout without horizontal scrolling on a 1920×1080 display.
+   *
+   * If Grafana is not yet ready (port 3000 not open) the window still opens;
+   * Grafana's own loading screen handles the transient connection state.
+   *
+   * @returns { ok: true } on success; { ok: false, error } if no simulation is running.
+   */
+  ipcMain.handle('monitor:openGrafana', async (): Promise<{ ok: boolean; error?: string }> => {
+    if (!activeProjectName) {
+      return { ok: false, error: 'No simulation is running.' }
+    }
+
+    const grafanaWindow = new BrowserWindow({
+      width: 1400,
+      height: 900,
+      minWidth: 900,
+      minHeight: 600,
+      title: 'Grafana — ICS Lab Overview',
+      autoHideMenuBar: true,
+      // Dark background matches Grafana's dark theme and prevents white flash on load
+      backgroundColor: '#111217',
+      webPreferences: {
+        // Full sandbox — Grafana is a third-party web app with no Electron APIs needed
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        webviewTag: false
+      }
+    })
+
+    // Load with dark theme, 5 s auto-refresh; omit kiosk so the full nav is available
+    grafanaWindow.loadURL('http://localhost:3000/d/ics-overview?orgId=1&theme=dark&refresh=5s')
+
+    // Prevent Grafana from spawning pop-out windows that bypass our sandbox settings
+    grafanaWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
+    return { ok: true }
+  })
+
   // ── PLC IDE — live program deployment (Phase 4) ───────────────────────────────
 
   /**
