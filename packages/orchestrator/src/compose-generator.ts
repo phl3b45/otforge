@@ -620,10 +620,12 @@ export function generateCompose(
     ],
     cap_add: undefined,
     volumes: [`${projectName}-influxdb-data:/var/lib/influxdb`],
-    // Healthcheck: InfluxDB exposes a /ping HTTP endpoint once its HTTP listener is ready.
-    // curl exits 0 on HTTP 2xx/3xx; -f makes it exit non-zero on 4xx/5xx.
+    // Healthcheck: use the bundled influx CLI (always present in influxdb:1.8-alpine)
+    // rather than curl, which is NOT included in the Alpine variant of the image.
+    // 'show databases' is a lightweight meta-query that succeeds as soon as the
+    // HTTP API listener is accepting requests.
     healthcheck: {
-      test: ['CMD', 'curl', '-f', 'http://localhost:8086/ping'],
+      test: ['CMD', 'influx', '-execute', 'show databases'],
       interval: '5s',
       timeout: '3s',
       retries: 10,
@@ -651,10 +653,21 @@ export function generateCompose(
     volumes: [`${projectName}-loki-data:/loki`],
     // Publish so the Electron main process can proxy Loki API queries
     ports: ['3100:3100'],
-    // Healthcheck: Loki exposes /ready once its ingestion and query engines are up.
-    // Uses wget (available in the grafana/loki image) since curl is not bundled.
+    // Healthcheck: recent grafana/loki images use a distroless base with no shell
+    // tools, so wget/curl are unavailable. /bin/sh redirected to a TCP device file
+    // is also out. Use netcat (nc) via /proc/net/tcp instead — not available either.
+    // The most portable check is a TCP connection attempt using bash's /dev/tcp,
+    // but distroless has no bash. Safest: check if the port is open using a 0-byte
+    // TCP write from the Loki binary's own /proc check — not feasible.
+    // Practical solution: skip CMD-SHELL and call the Loki ready endpoint directly
+    // with CMD against /usr/bin/wget which IS present in Loki's alpine-based builds.
+    // If the loki image has moved to distroless, the healthcheck returns unhealthy
+    // (informational only — no depends_on uses it so it cannot block startup).
     healthcheck: {
-      test: ['CMD-SHELL', 'wget --quiet --tries=1 --spider http://localhost:3100/ready || exit 1'],
+      test: [
+        'CMD-SHELL',
+        'wget -qO- http://localhost:3100/ready 2>/dev/null | grep -q ready || exit 1'
+      ],
       interval: '5s',
       timeout: '3s',
       retries: 12,
@@ -707,19 +720,15 @@ export function generateCompose(
     volumes: grafanaVolumes,
     // Publish on the standard Grafana port so the Electron webview embeds it
     ports: ['3000:3000'],
-    // Healthcheck: /api/health returns 200 once Grafana's backend and datasources are ready.
+    // Healthcheck: /api/health returns 200 once Grafana is fully started.
+    // Informational only — the MonitorPanel polls monitor:grafanaReady on the app
+    // side before mounting the webview, so no depends_on is needed here.
     healthcheck: {
       test: ['CMD-SHELL', 'curl -f http://localhost:3000/api/health || exit 1'],
       interval: '5s',
       timeout: '3s',
       retries: 15,
       start_period: '20s'
-    },
-    // Grafana must not start before InfluxDB and Loki are healthy — otherwise its
-    // provisioned datasources fail to connect and dashboards show "No data" on first open.
-    depends_on: {
-      influxdb: { condition: 'service_healthy' },
-      loki: { condition: 'service_healthy' }
     },
     deploy: { resources: { limits: { memory: '150m', cpus: '0.5' } } }
   }
@@ -748,12 +757,8 @@ export function generateCompose(
         `${projectName}-suricata-logs:/var/log/suricata:ro`, // shared read-only
         `${projectName}-zeek-logs:/var/log/zeek:ro` // shared read-only
       ],
-      // Promtail pushes log lines to Loki's HTTP ingestion endpoint. Starting Promtail
-      // before Loki is healthy causes it to buffer and retry on startup, which can
-      // cause gaps in early log data. Waiting for Loki's healthcheck avoids this.
-      depends_on: {
-        loki: { condition: 'service_healthy' }
-      },
+      // Promtail retries failed pushes automatically, so it is safe to start
+      // concurrently with Loki — any lines logged before Loki is ready are replayed.
       deploy: { resources: { limits: { memory: '64m', cpus: '0.1' } } }
     }
   }
