@@ -1,15 +1,22 @@
 FROM jasonish/suricata:latest
 
-# ICS-specific Suricata rules
-COPY ics-rules.rules /etc/suricata/rules/ics-sim.rules
+# ICS/OT-specific rules — loaded by the rule-files list in otforge.yaml
+COPY ics-rules.rules /etc/suricata/rules/otforge.rules
 
-# Main config (our minimal overlay)
-COPY suricata.yaml /etc/suricata/ics-sim.yaml
+# Suricata overlay config — sets HOME_NET, enables Modbus/DNP3 decoders,
+# configures EVE JSON output, and lists rule files. The entrypoint passes
+# -c /etc/suricata/otforge.yaml so this file must be at exactly this path.
+COPY suricata.yaml /etc/suricata/otforge.yaml
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-ENV DEVICE_ID=suricata-1 \
-    SURICATA_IFACE=eth0
+# DEVICE_ID is overridden at runtime via compose environment.
+# SURICATA_IFACE is intentionally NOT set here — leaving it unset triggers the
+# multi-interface auto-detection logic in entrypoint.sh, which discovers every
+# 10.x interface (ot-net, control-net, internet-dmz-net, attacker-net) and
+# starts one AF_PACKET worker per bridge. Set SURICATA_IFACE in compose to
+# force single-interface mode (e.g., for unit testing).
+ENV DEVICE_ID=suricata-1
 
 ENTRYPOINT ["/entrypoint.sh"]
