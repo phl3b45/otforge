@@ -182,6 +182,39 @@ export interface OpcUaConfig {
   nodes: Array<{ nodeId: string; name: string; dataType: string; value: unknown }>
 }
 
+/**
+ * EtherNet/IP (CIP over TCP/UDP) configuration for PLCs and RTUs.
+ *
+ * EtherNet/IP is the primary Ethernet-based industrial protocol used by
+ * Rockwell Automation (Allen-Bradley) controllers and most modern OT devices.
+ * It carries the Common Industrial Protocol (CIP) and supports both:
+ *   - Explicit messaging (TCP 44818) — configuration, programming, on-demand reads
+ *   - Implicit messaging / I/O (UDP 2222) — real-time cyclic I/O data exchange
+ *
+ * OpenPLC Runtime v3's Linux driver compiles in a CIP server on port 44818 by
+ * default. The same process variables exposed over Modbus are accessible via CIP
+ * object classes (Assembly, Identity, MessageRouter).
+ *
+ * Tools that use this configuration:
+ *   - FUXA HMI (EtherNet/IP driver) — connects to port/slot for live tag reads
+ *   - pycomm3 / cpppo — Python libraries used in red-team exercises on Kali
+ *   - Nmap NSE scripts (enip-info, cip-info) — fingerprinting during recon
+ */
+export interface EtherNetIPConfig {
+  /**
+   * TCP port for CIP explicit messaging.
+   * Standard EtherNet/IP port — should always be 44818 unless a non-standard
+   * deployment is being simulated.
+   */
+  port: number
+  /**
+   * Backplane slot number for the controller in its chassis.
+   * 0 for single-controller chassis (most lab PLCs).
+   * Needed by FUXA and pycomm3 when forming CIP connection paths.
+   */
+  slot: number
+}
+
 export interface PLCProgramConfig {
   language: 'ladder' | 'st'
   source: string // base64-encoded .st source file
@@ -270,6 +303,7 @@ export interface DeviceConfig {
   modbus?: ModbusConfig
   dnp3?: DNP3Config
   opcua?: OpcUaConfig
+  ethernetip?: EtherNetIPConfig // EtherNet/IP CIP config (plc, rtu devices)
   s7?: S7Config // Siemens S7comm config (legacy-plc devices, Phase 10)
   iec104?: Iec104Config // IEC 60870-5-104 config (iec104-rtu devices, Phase 10)
   processUnit?: ProcessUnitConfig // Physics process simulation config (Phase 11)

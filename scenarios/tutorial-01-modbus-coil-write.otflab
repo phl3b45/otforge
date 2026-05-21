@@ -229,7 +229,11 @@
         "nodeId": "plc-1",
         "category": "plc",
         "ipAddress": "10.200.10.10",
-        "protocols": ["modbus-tcp"],
+        "protocols": ["modbus-tcp", "ethernet-ip"],
+        "ethernetip": {
+          "port": 44818,
+          "slot": 0
+        },
         "modbus": {
           "mode": "tcp",
           "port": 502,
@@ -357,6 +361,24 @@
         "destinationPort": 502,
         "action": "allow",
         "comment": "Allow HMI and historian to read Modbus registers from PLCs"
+      },
+      {
+        "id": "rule-allow-control-ot-enip-tcp",
+        "sourceZone": "control",
+        "destinationZone": "ot",
+        "protocol": "tcp",
+        "destinationPort": 44818,
+        "action": "allow",
+        "comment": "Allow HMI and engineering workstations to use EtherNet/IP explicit messaging (CIP) to PLCs"
+      },
+      {
+        "id": "rule-allow-control-ot-enip-udp",
+        "sourceZone": "control",
+        "destinationZone": "ot",
+        "protocol": "udp",
+        "destinationPort": 2222,
+        "action": "allow",
+        "comment": "Allow EtherNet/IP implicit I/O messaging (real-time cyclic data) from control to OT"
       },
       {
         "id": "rule-allow-ot-control-any",

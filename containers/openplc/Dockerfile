@@ -27,9 +27,15 @@ WORKDIR /opt/openplc
 # Run the automated installer (Linux target)
 RUN chmod +x install.sh && ./install.sh linux
 
-# Expose the web interface port and Modbus slave port
+# Expose all protocol ports served by OpenPLC Runtime v3 Linux driver:
+#   8080     — OpenPLC web interface (REST API for program upload, status)
+#   502/tcp  — Modbus TCP slave
+#   44818/tcp — EtherNet/IP explicit messaging (CIP over TCP)
+#   2222/udp  — EtherNet/IP implicit messaging (real-time I/O data)
 EXPOSE 8080
 EXPOSE 502
+EXPOSE 44818
+EXPOSE 2222/udp
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
@@ -37,6 +43,8 @@ RUN chmod +x /entrypoint.sh
 ENV DEVICE_ID=plc-1 \
     DEVICE_CATEGORY=plc \
     OPENPLC_PORT=8080 \
-    MODBUS_PORT=502
+    MODBUS_PORT=502 \
+    ENIP_PORT=44818 \
+    ENIP_SLOT=0
 
 ENTRYPOINT ["/entrypoint.sh"]

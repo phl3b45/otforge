@@ -1034,6 +1034,15 @@ function buildDeviceEnv(
     env.push(`OPCUA_NAMESPACE=${device.opcua.namespace}`)
   }
 
+  // EtherNet/IP CIP configuration — consumed by OpenPLC Runtime (port 44818 always
+  // active on the Linux driver) and any future standalone EtherNet/IP adapter containers.
+  // ENIP_PORT and ENIP_SLOT are read by the OpenPLC entrypoint for logging and by
+  // custom EtherNet/IP server images that need runtime configuration.
+  if (device.ethernetip) {
+    env.push(`ENIP_PORT=${device.ethernetip.port}`)
+    env.push(`ENIP_SLOT=${device.ethernetip.slot}`)
+  }
+
   // Siemens S7comm configuration — consumed by containers/conpot/server.py
   // (DEVICE_CATEGORY=legacy-plc). S7_DEVICE_TYPE selects the CPU model which
   // determines the order number and firmware version returned in SZL responses.

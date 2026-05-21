@@ -14,10 +14,15 @@
 #                          the scenario device has a plcProgram defined.
 #   PLC_VAR_COUNT        — (Optional) Number of protocol-mapped variables in the
 #                          program. Informational — logged at startup.
+#   ENIP_PORT            — EtherNet/IP CIP TCP port (default: 44818). OpenPLC
+#                          Runtime v3 Linux driver always binds this port; the env
+#                          var is logged here and used by the scenario for FUXA/
+#                          pycomm3 configuration.
+#   ENIP_SLOT            — Backplane slot number for this controller (default: 0).
 
 set -e
 
-echo "[ics-openplc] Device=${DEVICE_ID}  category=${DEVICE_CATEGORY}  web=${OPENPLC_PORT}  modbus=${MODBUS_PORT}"
+echo "[ics-openplc] Device=${DEVICE_ID}  category=${DEVICE_CATEGORY}  web=${OPENPLC_PORT}  modbus=${MODBUS_PORT}  enip=${ENIP_PORT:-44818}  slot=${ENIP_SLOT:-0}"
 
 cd /opt/openplc
 
