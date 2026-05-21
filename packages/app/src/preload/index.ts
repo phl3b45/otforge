@@ -247,7 +247,19 @@ const api = {
      *
      * @returns PlcImportResult with .routines[] on success, or .error string on failure.
      */
-    importProgram: (): Promise<PlcImportResult> => ipcRenderer.invoke('plc:importProgram')
+    importProgram: (): Promise<PlcImportResult> => ipcRenderer.invoke('plc:importProgram'),
+
+    /**
+     * Opens the OpenPLC Runtime web interface for the given device in the
+     * system browser. Provides access to Ladder Logic editing, real-time
+     * variable monitoring, and all other native OpenPLC IDE features.
+     *
+     * Only meaningful while the simulation is running — the host port is only
+     * bound while the container is active. Default credentials: openplc / openplc
+     *
+     * @param nodeId - Canvas node ID of the target PLC device.
+     */
+    openWebUI: (nodeId: string): Promise<void> => ipcRenderer.invoke('plc:openWebUI', { nodeId })
   },
 
   // ── Network settings ──────────────────────────────────────────────────────────

@@ -612,6 +612,10 @@ export function PlcIdePanel({
     setTimeout(() => setStatusMsg(null), 4000)
   }, [buildProgram, device.nodeId, onProgramChange])
 
+  const handleOpenWebUI = useCallback(() => {
+    window.electronAPI.plc.openWebUI(device.nodeId)
+  }, [device.nodeId])
+
   const handleDeploy = useCallback(async () => {
     onProgramChange(device.nodeId, buildProgram())
     setDeploying(true)
@@ -796,6 +800,18 @@ export function PlcIdePanel({
                 Save Program
               </button>
               <button
+                className="btn btn-ghost plc-openui-btn"
+                onClick={handleOpenWebUI}
+                disabled={!simRunning}
+                title={
+                  simRunning
+                    ? 'Open OpenPLC web IDE in browser — Ladder Logic, monitoring, all languages (openplc / openplc)'
+                    : 'Start simulation first to access the OpenPLC web IDE'
+                }
+              >
+                Open in OpenPLC ↗
+              </button>
+              <button
                 className="btn btn-run"
                 onClick={handleDeploy}
                 disabled={!simRunning || deploying}
@@ -867,6 +883,18 @@ export function PlcIdePanel({
         </button>
         <button className="btn btn-sm btn-secondary" onClick={handleSave}>
           Save
+        </button>
+        <button
+          className="btn btn-sm btn-ghost plc-openui-btn"
+          onClick={handleOpenWebUI}
+          disabled={!simRunning}
+          title={
+            simRunning
+              ? 'Open OpenPLC web IDE in browser — Ladder Logic, monitoring (openplc / openplc)'
+              : 'Start simulation first'
+          }
+        >
+          OpenPLC ↗
         </button>
         <button
           className="btn btn-sm btn-run"

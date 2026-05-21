@@ -1046,6 +1046,24 @@ function registerIPCHandlers(): void {
     }
   )
 
+  /**
+   * Opens the OpenPLC Runtime web interface for the given device in the user's
+   * default browser, enabling access to Ladder Logic editing, monitoring, and
+   * all features of the native OpenPLC IDE that are not exposed in the built-in
+   * ST editor.
+   *
+   * The URL is http://localhost:{hostPort} where hostPort is the host-published
+   * port from activePlcPorts (base 18080, incremented per PLC in scenario order).
+   * Default OpenPLC credentials: openplc / openplc
+   *
+   * @param nodeId - Canvas node ID of the target PLC device.
+   */
+  ipcMain.handle('plc:openWebUI', async (_e, { nodeId }: { nodeId: string }) => {
+    const hostPort = activePlcPorts.get(nodeId)
+    if (!hostPort) return
+    await shell.openExternal(`http://localhost:${hostPort}`)
+  })
+
   // ── Attack terminal ───────────────────────────────────────────────────────────
 
   /**
