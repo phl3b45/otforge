@@ -350,6 +350,14 @@ export function generateCompose(
   ])
 
   /**
+   * Records the final Docker IP claimed for each device (nodeId → IP string).
+   * Used when setting the attack machine's `dns:` field so it points to the
+   * actual container IP rather than the scenario's declared IP, which may have
+   * been bumped by claimIp() if the host octet was in a reserved range.
+   */
+  const claimedDeviceIps = new Map<string, string>()
+
+  /**
    * Returns a unique IP on netName for the given preferredIp.
    * If the preferred host octet is already taken, increments until a free slot
    * in the user-device range (.10–.239) is found and reserves it.
@@ -390,6 +398,8 @@ export function generateCompose(
     // has stale or duplicate IPs — the compose file is always self-consistent.
     const resolvedIp = resolveDeviceIp(device.ipAddress, scenario, effectiveZones)
     const effectiveIp = claimIp(netName, resolvedIp)
+    // Record so attack-machine DNS lookup can reference the actual assigned IP
+    claimedDeviceIps.set(nodeId, effectiveIp)
 
     services[serviceName] = {
       image,
@@ -482,7 +492,15 @@ export function generateCompose(
         d => d.category === 'dns-server'
       )
       if (dnsDevice) {
-        const dnsIp = resolveDeviceIp(dnsDevice.ipAddress, scenario, effectiveZones)
+        // Use the claimed IP (post-dedup) rather than the raw resolved IP. claimIp()
+        // may have bumped the host octet if the scenario assigned an IP below .10
+        // (e.g., .5 for a "standalone appliance" convention). The claimed IP is always
+        // populated by the time the attack machine is processed in well-ordered scenario
+        // JSON (dns-server defined before attack-machine). Falls back to resolveDeviceIp
+        // for scenarios where the DNS server appears later in the JSON object.
+        const dnsIp =
+          claimedDeviceIps.get(dnsDevice.nodeId) ??
+          resolveDeviceIp(dnsDevice.ipAddress, scenario, effectiveZones)
         // Include 8.8.8.8 as a fallback so Kali can resolve public names (and browse the
         // internet) via attacker-net even when the scenario's DNS server is air-gapped
         // (DNS_UPSTREAM=""). Without this fallback, Firefox and apt can't reach the internet.

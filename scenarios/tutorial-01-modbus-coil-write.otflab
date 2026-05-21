@@ -20,7 +20,7 @@
         "id": "step-01-osint",
         "title": "Step 1 — OSINT: Discover the Target",
         "body": "Start by visiting the Meridian Process Controls company website. In a real engagement, an attacker would begin with open-source intelligence (OSINT) before touching any systems.\n\nFrom the attack machine terminal, use `curl` to fetch the site and examine the **HTML source**. Developers often leave infrastructure comments in source code that reveal internal network addresses and credentials.\n\n**How to run commands:** Click the **⚔ Kali Terminal** button in the toolbar. The terminal opens as a separate window. Click the **Copy** button above to copy the command, then press **Ctrl+V** inside the Kali terminal to paste and run it.\n\n**Note:** Paste only works in the **⚔ Kali Terminal** window. The **🖥 Kali Desktop** (noVNC) does not support clipboard paste.",
-        "command": "curl -s http://{{web-company-1.ip}}/ | grep -i 'TODO\\|OT\\|subnet\\|admin\\|password\\|172\\.' | head -30",
+        "command": "curl -s http://{{web-company-1.ip}}/ | grep -iE 'TODO|OT|subnet|admin|password|[0-9]+\\.[0-9]+\\.[0-9]+' | head -30",
         "successCheck": "You should see a developer comment in the HTML containing the OT subnet, admin credentials (admin / Meridian2024!), and Modbus port (502). Note these down — you will need them."
       },
       {
@@ -302,7 +302,7 @@
       "dns-1": {
         "nodeId": "dns-1",
         "category": "dns-server",
-        "ipAddress": "10.200.50.5",
+        "ipAddress": "10.200.50.11",
         "protocols": ["none"],
         "dns": {
           "domain": "meridian-process.com",
