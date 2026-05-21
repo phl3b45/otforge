@@ -29,7 +29,6 @@ RUN chmod +x /entrypoint.sh
 # Default zone configuration — overridden at runtime by compose env vars
 ENV DNS_DOMAIN=meridian-process.com \
     WEB_SERVER_IP=203.0.113.10 \
-    MAIL_SERVER_IP= \
     DNS_UPSTREAM=8.8.8.8
 
 # DNS standard ports — UDP for queries, TCP for responses > 512 bytes

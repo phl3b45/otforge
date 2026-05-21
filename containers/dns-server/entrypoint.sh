@@ -9,8 +9,7 @@
 #
 # Environment variables:
 #   DNS_DOMAIN      Authoritative domain to serve (default: meridian-process.com)
-#   WEB_SERVER_IP   A record for apex + www + remote + vpn  (default: 203.0.113.10)
-#   MAIL_SERVER_IP  A record for mail  (default: same as WEB_SERVER_IP)
+#   WEB_SERVER_IP   A record for apex + www + remote  (default: 203.0.113.10)
 #   DNS_UPSTREAM    Upstream resolver for non-local names  (default: 8.8.8.8)
 #                   Set to "" for fully air-gapped operation.
 #
@@ -26,7 +25,6 @@ set -e
 
 DNS_DOMAIN="${DNS_DOMAIN:-meridian-process.com}"
 WEB_SERVER_IP="${WEB_SERVER_IP:-203.0.113.10}"
-MAIL_SERVER_IP="${MAIL_SERVER_IP:-${WEB_SERVER_IP}}"
 # Use ${VAR-default} (not ${VAR:-default}) so that DNS_UPSTREAM="" (empty string,
 # injected by the compose generator for air-gapped scenarios) is respected.
 # With :- the shell replaces even an empty value with the default.
@@ -35,7 +33,6 @@ DNS_UPSTREAM="${DNS_UPSTREAM-8.8.8.8}"
 echo "[otforge-dns] ================================================"
 echo "[otforge-dns] Domain:      ${DNS_DOMAIN}"
 echo "[otforge-dns] Web server:  ${WEB_SERVER_IP}"
-echo "[otforge-dns] Mail server: ${MAIL_SERVER_IP}"
 if [ -n "${DNS_UPSTREAM}" ]; then
     echo "[otforge-dns] Upstream:    ${DNS_UPSTREAM}"
 else
@@ -70,15 +67,13 @@ domain=${DNS_DOMAIN}
 # exercise by making non-existent names like ot/scada/plc appear to resolve.
 host-record=${DNS_DOMAIN},${WEB_SERVER_IP}
 
-# Specific subdomains — only these names should resolve.
-# Students enumerate these with dig and discover: www and remote point to the
-# web server, vpn and mail exist, but ot/scada/plc/hmi return NXDOMAIN —
-# demonstrating that the OT network is not advertised in DNS even though
-# a firewall misconfiguration makes it reachable.
+# Specific subdomains — only www and remote resolve (both hosted on the same
+# single internet-facing server). vpn/mail/ot/scada/plc/hmi all return NXDOMAIN:
+# Meridian uses a cloud mail provider (not in this zone) and has no VPN appliance.
+# The OT names are absent from DNS deliberately — the network is reachable only
+# because of the firewall misconfiguration, not because it is advertised.
 address=/www.${DNS_DOMAIN}/${WEB_SERVER_IP}
 address=/remote.${DNS_DOMAIN}/${WEB_SERVER_IP}
-address=/vpn.${DNS_DOMAIN}/${WEB_SERVER_IP}
-address=/mail.${DNS_DOMAIN}/${MAIL_SERVER_IP}
 DNSCONF
 
 # Add upstream resolver unless air-gapped mode is requested
