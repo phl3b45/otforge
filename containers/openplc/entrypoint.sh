@@ -39,6 +39,7 @@ cd /opt/openplc
 if [ -n "${INITIAL_PROGRAM_B64}" ]; then
   PROGRAM_DIR="/opt/openplc/webserver/st_files"
   PROGRAM_FILE="${PROGRAM_DIR}/${DEVICE_ID}.st"
+  PROG_BASENAME="${DEVICE_ID}.st"
 
   echo "[ics-openplc] Decoding INITIAL_PROGRAM_B64 → ${PROGRAM_FILE}"
   echo "${INITIAL_PROGRAM_B64}" | base64 -d > "${PROGRAM_FILE}"
@@ -47,29 +48,55 @@ if [ -n "${INITIAL_PROGRAM_B64}" ]; then
     echo "[ics-openplc] Program has ${PLC_VAR_COUNT} variable binding(s)"
   fi
 
-  # Trigger IEC-to-C compilation by writing the program filename into
-  # OpenPLC's persistent settings database. The runtime reads this at
-  # startup and compiles before beginning PLC scan execution.
+  # OpenPLC Runtime v3 uses three mechanisms to auto-start a program:
   #
-  # The settings database is a SQLite file at:
-  #   /opt/openplc/webserver/openplc.db
-  # The 'Settings' table has a row with Key='Prog_Name' and Value=<filename>.
-  PROG_BASENAME="$(basename "${PROGRAM_FILE}")"
+  #   1. active_program   — plain-text file under webserver/ containing the
+  #                         ST filename.  webserver.py reads this at startup
+  #                         to look up the program record in the DB.
+  #
+  #   2. Programs table   — SQLite row with columns (File, Name, Description).
+  #                         webserver.py queries this by filename to get the
+  #                         human-readable name/description for the UI.
+  #
+  #   3. Start_run_mode   — Settings row; when 'true', webserver.py calls
+  #                         openplc_runtime.start_runtime() automatically
+  #                         and the Modbus/TCP + EtherNet/IP servers bind.
+  #
+  # All three must be set; updating only one is not sufficient.
+
+  DB="/opt/openplc/webserver/openplc.db"
+
   if command -v sqlite3 &>/dev/null; then
-    sqlite3 /opt/openplc/webserver/openplc.db \
-      "UPDATE Settings SET Value='${PROG_BASENAME}' WHERE Key='Prog_Name';" 2>/dev/null || true
-    echo "[ics-openplc] Registered '${PROG_BASENAME}' as active program"
+    # Upsert into Programs so webserver.py can look up the project metadata
+    sqlite3 "${DB}" \
+      "INSERT OR REPLACE INTO Programs (Name, Description, File, Date_upload) \
+       VALUES ('${DEVICE_ID}', 'Auto-loaded program for ${DEVICE_ID}', \
+               '${PROG_BASENAME}', strftime('%s','now'));" 2>/dev/null || true
+
+    # Set Start_run_mode so the runtime launches automatically at startup
+    sqlite3 "${DB}" \
+      "UPDATE Settings SET Value='true' WHERE Key='Start_run_mode';" 2>/dev/null || true
+
+    echo "[ics-openplc] Registered '${PROG_BASENAME}' in DB with auto-start enabled"
   else
-    echo "[ics-openplc] sqlite3 not found — program registered by filename only"
+    echo "[ics-openplc] sqlite3 not found — DB registration skipped"
   fi
+
+  # Update the active_program pointer that webserver.py reads on startup
+  echo "${PROG_BASENAME}" > /opt/openplc/webserver/active_program
+  echo "[ics-openplc] active_program → ${PROG_BASENAME}"
+
 else
   echo "[ics-openplc] No INITIAL_PROGRAM_B64 set — starting with no program loaded"
 fi
 
 # ── Start OpenPLC Runtime ──────────────────────────────────────────────────────
-# The `./openplc` binary is the Flask web server that:
-#   1. Serves the web UI at port ${OPENPLC_PORT} (8080)
-#   2. Manages the IEC-to-C compilation pipeline
-#   3. Runs the PLC scan cycle in a background thread
-#   4. Provides a Modbus/TCP slave at port ${MODBUS_PORT} (502)
-exec ./openplc "$@"
+# OpenPLC Runtime v3 starts via start_openplc.sh, which:
+#   1. Changes to /opt/openplc/webserver
+#   2. Launches webserver.py under the .venv Python interpreter
+#   3. webserver.py (Flask) manages IEC-to-C compilation and spawns the
+#      compiled PLC scan binary (webserver/core/openplc) as a subprocess
+#   4. The core binary serves:
+#      - Modbus/TCP slave on port ${MODBUS_PORT} (502)
+#      - EtherNet/IP CIP server on port ${ENIP_PORT:-44818}
+exec /opt/openplc/start_openplc.sh "$@"

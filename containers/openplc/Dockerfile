@@ -2,10 +2,14 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Build dependencies for OpenPLC Runtime
+# Build dependencies for OpenPLC Runtime.
+# automake   — provides aclocal, required by autoreconf when building MatIEC compiler
+# python3-venv — required by install.sh to create the .venv for the Flask web server
+# libtool    — needed by MatIEC's autoconf build system
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git build-essential pkg-config bison flex autoconf \
-    libssl-dev libffi-dev python3 python3-pip \
+    git build-essential pkg-config bison flex autoconf automake libtool \
+    cmake sudo \
+    libssl-dev libffi-dev python3 python3-pip python3-venv \
     curl wget sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
