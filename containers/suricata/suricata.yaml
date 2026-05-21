@@ -55,3 +55,5 @@ outputs:
 rule-files:
   - /etc/suricata/rules/otforge.rules
   - /var/lib/suricata/rules/suricata.rules
+  # Written at container startup from IDS_CUSTOM_RULES_B64; empty when no custom rules set
+  - /etc/suricata/rules/custom.rules

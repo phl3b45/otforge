@@ -327,16 +327,19 @@ const ZEEK_SCRIPTS_OPTIONS: { id: string; label: string; hint: string }[] = [
 ]
 
 /**
- * IDSPanel — edits scenario.security.ids (Suricata rulesets, Zeek scripts, disabled SIDs).
+ * IDSPanel — edits scenario.security.ids (Suricata rulesets, Zeek scripts, disabled SIDs,
+ * and custom Suricata rules).
  *
  * Shows:
  *   1. Suricata ruleset checkboxes — which Emerging Threats Open categories to enable.
  *   2. Zeek script checkboxes — which ICS protocol analyzers to load.
  *   3. Disabled SIDs text input — comma-separated SID numbers to suppress (committed on blur).
+ *   4. Custom Rules textarea — raw Suricata rule text saved to scenario and injected as
+ *      IDS_CUSTOM_RULES_B64 by compose-generator → decoded to custom.rules at container start.
  *
  * Changes write back to scenario.security.ids via onSecurityChange. The compose generator
- * reads these and passes IDS_RULESETS, ZEEK_SCRIPTS, and IDS_DISABLED_SIDS env vars to
- * the Suricata and Zeek containers at simulation start.
+ * reads these and passes IDS_RULESETS, ZEEK_SCRIPTS, IDS_DISABLED_SIDS, and
+ * IDS_CUSTOM_RULES_B64 env vars to the Suricata and Zeek containers at simulation start.
  */
 export function IDSPanel({ security, onSecurityChange }: SecurityPanelProps) {
   /**
@@ -344,6 +347,12 @@ export function IDSPanel({ security, onSecurityChange }: SecurityPanelProps) {
    * Held locally to avoid re-rendering the scenario on every keystroke.
    */
   const [sidText, setSidText] = useState(security.ids.disabledRuleIds.join(', '))
+
+  /**
+   * Local draft of the custom rules textarea — committed on Save button click.
+   * Multiline Suricata rule text; each non-empty line should be a valid rule.
+   */
+  const [customRulesDraft, setCustomRulesDraft] = useState(security.ids.customRules ?? '')
 
   /** Toggle a single Suricata ruleset on or off. */
   const toggleRuleset = useCallback(
@@ -381,6 +390,20 @@ export function IDSPanel({ security, onSecurityChange }: SecurityPanelProps) {
       .filter(n => !isNaN(n))
     onSecurityChange(s => ({ ...s, ids: { ...s.ids, disabledRuleIds: sids } }))
   }, [sidText, onSecurityChange])
+
+  /**
+   * Commit the custom rules draft to scenario state.
+   * Stores the raw rule text; compose-generator base64-encodes it when building
+   * the IDS_CUSTOM_RULES_B64 env var for the Suricata container.
+   * Empty string is stored as undefined so serialized scenarios stay clean.
+   */
+  const commitCustomRules = useCallback(() => {
+    const trimmed = customRulesDraft.trim()
+    onSecurityChange(s => ({
+      ...s,
+      ids: { ...s.ids, customRules: trimmed.length > 0 ? trimmed : undefined }
+    }))
+  }, [customRulesDraft, onSecurityChange])
 
   return (
     <>
@@ -435,6 +458,59 @@ export function IDSPanel({ security, onSecurityChange }: SecurityPanelProps) {
         <p className="ids-sids-hint">
           Comma-separated Suricata SID numbers to suppress (false-positive overrides).
         </p>
+      </section>
+
+      {/* ── Custom Suricata Rules ─────────────────────────────────────────── */}
+      {/*
+       * Each line is a standard Suricata rule in the format:
+       *   action proto src_ip src_port -> dst_ip dst_port (options)
+       *
+       * Example — alert on any Modbus write to coils (FC 05):
+       *   alert tcp any any -> $OT_NETWORK 502 (msg:"Modbus Write Single Coil"; \
+       *     content:"|00 00|"; offset:2; depth:2; content:"|00 05|"; \
+       *     sid:9000001; rev:1;)
+       *
+       * Rules are saved to the scenario file and injected as IDS_CUSTOM_RULES_B64
+       * at simulation start. Suricata loads them from /etc/suricata/rules/custom.rules.
+       * Click Save to commit — changes do not apply until the simulation restarts.
+       */}
+      <section className="prop-section">
+        <div className="prop-section-title">
+          Custom Rules
+          {(security.ids.customRules?.trim().length ?? 0) > 0 && (
+            <span className="prop-section-badge">
+              {
+                security.ids
+                  .customRules!.trim()
+                  .split('\n')
+                  .filter(l => l.trim().length > 0).length
+              }
+            </span>
+          )}
+        </div>
+        <textarea
+          className="ids-custom-rules-editor"
+          value={customRulesDraft}
+          onChange={e => setCustomRulesDraft(e.target.value)}
+          placeholder={
+            'alert tcp any any -> $OT_NETWORK 502 (msg:"Modbus coil write"; content:"|00 05|"; sid:9000001; rev:1;)'
+          }
+          spellCheck={false}
+          aria-label="Custom Suricata rules"
+          rows={6}
+        />
+        <div className="ids-custom-rules-footer">
+          <p className="ids-sids-hint">
+            Standard Suricata rule syntax. Use SIDs ≥ 9000000 to avoid conflicts with Emerging
+            Threats rules. Restart simulation to apply.
+          </p>
+          <button
+            className="btn btn-sm btn-secondary ids-custom-rules-save"
+            onClick={commitCustomRules}
+          >
+            Save Rules
+          </button>
+        </div>
       </section>
     </>
   )

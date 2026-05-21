@@ -598,15 +598,29 @@ export function generateCompose(
   // Placed on both OT and IT nets so it can analyze cross-zone traffic.
   // Eve JSON logs go to a named volume, then Loki reads them (Phase 6).
   //
-  // IDS_RULESETS — comma-separated Emerging Threats ruleset IDs selected in the
+  // IDS_RULESETS       — comma-separated Emerging Threats ruleset IDs selected in the
   //   IDSPanel UI (scenario.security.ids.enabledRulesets). Defaults to
   //   "emerging-scada,emerging-modbus" when the scenario has no selection.
-  // IDS_DISABLED_SIDS — comma-separated SID numbers to suppress in threshold.conf.
+  // IDS_DISABLED_SIDS  — comma-separated SID numbers to suppress in threshold.conf.
+  // IDS_CUSTOM_RULES_B64 — base64-encoded Suricata rule text from the IDSPanel custom
+  //   rules textarea. Decoded to /etc/suricata/rules/custom.rules at container startup.
+  //   Only injected when the scenario has non-empty custom rules.
   const suricataRulesets =
     scenario.security.ids.enabledRulesets.length > 0
       ? scenario.security.ids.enabledRulesets.join(',')
       : 'emerging-scada,emerging-modbus'
   const suricataDisabledSids = scenario.security.ids.disabledRuleIds.join(',')
+
+  const suricataEnv: string[] = [
+    `IDS_RULESETS=${suricataRulesets}`,
+    `IDS_DISABLED_SIDS=${suricataDisabledSids}`
+  ]
+  const customRulesText = scenario.security.ids.customRules?.trim()
+  if (customRulesText) {
+    suricataEnv.push(
+      `IDS_CUSTOM_RULES_B64=${Buffer.from(customRulesText, 'utf-8').toString('base64')}`
+    )
+  }
 
   volumes[`${projectName}-suricata-logs`] = {}
   services['suricata'] = {
@@ -617,7 +631,7 @@ export function generateCompose(
       'ot-net': { ipv4_address: `${otBase}.253` },
       'control-net': { ipv4_address: `${controlBase}.253` }
     },
-    environment: [`IDS_RULESETS=${suricataRulesets}`, `IDS_DISABLED_SIDS=${suricataDisabledSids}`],
+    environment: suricataEnv,
     cap_add: ['NET_ADMIN', 'NET_RAW'], // AF_PACKET mode requires raw socket access
     volumes: [`${projectName}-suricata-logs:/var/log/suricata`],
     deploy: { resources: { limits: { memory: '150m', cpus: '0.5' } } }

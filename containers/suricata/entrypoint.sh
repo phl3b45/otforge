@@ -22,6 +22,7 @@ set -e
 IFACE="${SURICATA_IFACE:-eth0}"
 RULESETS="${IDS_RULESETS:-emerging-scada,emerging-modbus}"
 DISABLED_SIDS="${IDS_DISABLED_SIDS:-}"
+CUSTOM_RULES_B64="${IDS_CUSTOM_RULES_B64:-}"
 
 echo "[ics-suricata] Device=${DEVICE_ID}  interface=${IFACE}"
 echo "[ics-suricata] Enabled rulesets: ${RULESETS}"
@@ -45,6 +46,25 @@ if [ -n "$DISABLED_SIDS" ]; then
             echo "[ics-suricata] Suppressing SID ${sid_clean}"
         fi
     done
+fi
+
+# ── Write custom rules ──────────────────────────────────────────────────────────
+# IDS_CUSTOM_RULES_B64 carries base64-encoded Suricata rule text authored in the
+# OTForge IDSPanel. Decoded to custom.rules so Suricata loads it on startup.
+# The rule-files list in otforge.yaml always includes this path; when no custom
+# rules are set, an empty file satisfies the include without generating errors.
+CUSTOM_RULES_FILE="/etc/suricata/rules/custom.rules"
+if [ -n "${CUSTOM_RULES_B64}" ]; then
+    echo "[ics-suricata] Decoding custom rules → ${CUSTOM_RULES_FILE}"
+    echo "${CUSTOM_RULES_B64}" | base64 -d > "${CUSTOM_RULES_FILE}"
+    # Count non-comment, non-blank lines as a proxy for rule count
+    rule_count=$(grep -cE '^(alert|drop|pass|reject|rejectsrc|rejectdst|rejectboth)\s' \
+        "${CUSTOM_RULES_FILE}" 2>/dev/null || echo 0)
+    echo "[ics-suricata] Custom rules loaded: ${rule_count} rule(s)"
+else
+    # Create an empty file so the rule-files entry in otforge.yaml is always satisfied
+    > "${CUSTOM_RULES_FILE}"
+    echo "[ics-suricata] No custom rules — ${CUSTOM_RULES_FILE} is empty"
 fi
 
 # ── Update rulesets ─────────────────────────────────────────────────────────────

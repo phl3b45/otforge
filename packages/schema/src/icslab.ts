@@ -344,6 +344,13 @@ export interface IDSConfig {
   enabledRulesets: string[] // e.g. ["emerging-scada", "emerging-modbus"]
   disabledRuleIds: number[] // individual Suricata SID overrides
   zeekScripts: string[] // e.g. ["modbus.zeek", "dnp3.zeek"]
+  /**
+   * Raw Suricata rule text authored in the IDSPanel.
+   * Injected as IDS_CUSTOM_RULES_B64 (base64) by compose-generator and decoded
+   * to /etc/suricata/rules/custom.rules inside the container at startup.
+   * Undefined / empty string means no custom rules file is written.
+   */
+  customRules?: string
 }
 
 export interface SecurityLayer {
