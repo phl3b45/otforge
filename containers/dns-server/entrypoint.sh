@@ -13,6 +13,14 @@
 #   MAIL_SERVER_IP  A record for mail  (default: same as WEB_SERVER_IP)
 #   DNS_UPSTREAM    Upstream resolver for non-local names  (default: 8.8.8.8)
 #                   Set to "" for fully air-gapped operation.
+#
+# NOTE on dnsmasq address= vs host-record=:
+#   address=/example.com/IP  matches the apex AND all *.example.com subdomains
+#   (wildcard catch-all — not what we want here).
+#   host-record=example.com,IP  creates an exact A record for the apex only.
+#   We use host-record for the apex and address=/sub.example.com/IP for each
+#   specific subdomain so that unlisted names (ot, scada, plc, hmi) return
+#   NXDOMAIN — which is the intended behaviour for the DNS enumeration exercise.
 
 set -e
 
@@ -56,17 +64,20 @@ local=/${DNS_DOMAIN}/
 domain=${DNS_DOMAIN}
 
 # ── A Records ──────────────────────────────────────────────────────────────────
-# Apex and www → company web server
-address=/${DNS_DOMAIN}/${WEB_SERVER_IP}
+# Apex — host-record creates an exact A record for the bare domain only.
+# Do NOT use address=/${DNS_DOMAIN}/IP here: that acts as a wildcard and
+# returns the IP for every *.${DNS_DOMAIN} query, breaking the enumeration
+# exercise by making non-existent names like ot/scada/plc appear to resolve.
+host-record=${DNS_DOMAIN},${WEB_SERVER_IP}
+
+# Specific subdomains — only these names should resolve.
+# Students enumerate these with dig and discover: www and remote point to the
+# web server, vpn and mail exist, but ot/scada/plc/hmi return NXDOMAIN —
+# demonstrating that the OT network is not advertised in DNS even though
+# a firewall misconfiguration makes it reachable.
 address=/www.${DNS_DOMAIN}/${WEB_SERVER_IP}
-
-# Remote access portal (same host as www in this deployment)
 address=/remote.${DNS_DOMAIN}/${WEB_SERVER_IP}
-
-# VPN gateway (resolves to the same IP in the tutorial scenario)
 address=/vpn.${DNS_DOMAIN}/${WEB_SERVER_IP}
-
-# Mail server
 address=/mail.${DNS_DOMAIN}/${MAIL_SERVER_IP}
 DNSCONF
 

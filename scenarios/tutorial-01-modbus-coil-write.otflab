@@ -35,7 +35,7 @@
         "title": "Step 3 — DNS Enumeration",
         "body": "The DNS server at `{{dns-1.ip}}` is authoritative for `meridian-process.com`. Enumerate its records to discover all subdomains — each may be a jump host, VPN gateway, or engineering workstation.\n\nUse `dig` to query A records for common subdomains: `www`, `remote`, `vpn`, `mail`, `ot`, `scada`.\n\nCopy and paste into **⚔ Kali Terminal** (Ctrl+V).",
         "command": "for sub in www remote vpn mail ot scada plc hmi; do echo -n \"$sub: \"; dig +short @{{dns-1.ip}} $sub.meridian-process.com; done",
-        "successCheck": "You should see A records for `www` ({{web-company-1.ip}}) and `remote` ({{web-company-1.ip}}). Unresolved names are also informative — they confirm scope boundaries."
+        "successCheck": "You should see A records for `www`, `remote`, `vpn`, and `mail` (all pointing to {{web-company-1.ip}} — a single-host deployment). The names `ot`, `scada`, `plc`, and `hmi` should return empty — OT infrastructure is not advertised in DNS. This is the first layer of obscurity: the OT network is reachable due to the firewall misconfiguration, but it is not visible from DNS alone."
       },
       {
         "id": "step-04-nmap",
