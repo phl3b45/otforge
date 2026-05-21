@@ -23,33 +23,52 @@ RULESETS="${IDS_RULESETS:-emerging-scada,emerging-modbus}"
 DISABLED_SIDS="${IDS_DISABLED_SIDS:-}"
 CUSTOM_RULES_B64="${IDS_CUSTOM_RULES_B64:-}"
 
-# ── Select and prepare the capture interface ────────────────────────────────────
-# Suricata runs in a Docker container whose eth0 is connected to the OT bridge.
-# Without promiscuous mode, the Linux kernel only delivers frames addressed to
-# this container's MAC — traffic between other containers is invisible. Setting
-# promisc on means the bridge sends ALL frames to our veth pair endpoint so
-# Suricata can inspect every packet on the OT network segment.
+# ── Select and prepare capture interfaces ───────────────────────────────────────
+# Suricata is attached to multiple Docker bridge networks (ot-net, control-net,
+# attacker-net). Without promiscuous mode, the Linux kernel only delivers frames
+# addressed to this container's own MAC — traffic between other containers on the
+# same bridge is invisible. Promiscuous mode makes the bridge deliver ALL frames,
+# so Suricata can inspect every packet on each segment it monitors.
 #
-# Interface selection: if SURICATA_IFACE is set, use it; otherwise scan all
-# non-loopback interfaces and pick the first one that has an IP in the 10.x
-# range (the OT/Control subnets). Falls back to eth0 if none is found.
-IFACE="${SURICATA_IFACE:-}"
-if [ -z "$IFACE" ]; then
-    for candidate in $(ls /sys/class/net/ | grep -v lo | sort); do
+# Docker's DOCKER-ISOLATION iptables chain prevents traffic from crossing between
+# bridge networks — a packet sent from attacker-net never reaches ot-net. Attaching
+# Suricata to BOTH bridges is the only way to observe traffic from both zones.
+#
+# Interface selection:
+#   If SURICATA_IFACE is set, use only that interface (useful in unit tests or
+#   when a specific single-interface deployment is required). Otherwise, discover
+#   ALL non-loopback interfaces that have an IP in the 10.x range and add an
+#   --af-packet argument for each. This multi-interface mode is the production
+#   default and is why Suricata is attached to ot-net, control-net, AND attacker-net
+#   in the compose file.
+
+AF_PACKET_ARGS=()
+
+if [ -n "${SURICATA_IFACE:-}" ]; then
+    # Explicit override — single-interface mode
+    ip link set "$SURICATA_IFACE" promisc on 2>/dev/null \
+        && echo "[ics-suricata] Promiscuous mode enabled on ${SURICATA_IFACE}" \
+        || echo "[ics-suricata] Warning: could not set promisc on ${SURICATA_IFACE}"
+    AF_PACKET_ARGS=("--af-packet=${SURICATA_IFACE}")
+else
+    # Auto-detect every non-loopback interface with a 10.x IP and monitor all of them.
+    # Each af-packet= arg spawns an independent worker thread that captures that bridge.
+    for candidate in $(ls /sys/class/net/ 2>/dev/null | grep -v lo | sort); do
         if ip addr show "$candidate" 2>/dev/null | grep -qE 'inet 10\.'; then
-            IFACE="$candidate"
-            break
+            ip link set "$candidate" promisc on 2>/dev/null \
+                && echo "[ics-suricata] Promiscuous mode enabled on ${candidate}" \
+                || echo "[ics-suricata] Warning: could not set promisc on ${candidate}"
+            AF_PACKET_ARGS+=("--af-packet=${candidate}")
         fi
     done
-    IFACE="${IFACE:-eth0}"
+    # Fall back to eth0 if no 10.x interface was found (should not happen in production)
+    if [ ${#AF_PACKET_ARGS[@]} -eq 0 ]; then
+        echo "[ics-suricata] Warning: no 10.x interface found, falling back to eth0"
+        AF_PACKET_ARGS=("--af-packet=eth0")
+    fi
 fi
 
-# Enable promiscuous mode (requires NET_ADMIN capability set in compose)
-ip link set "$IFACE" promisc on 2>/dev/null \
-    && echo "[ics-suricata] Promiscuous mode enabled on ${IFACE}" \
-    || echo "[ics-suricata] Warning: could not set promisc on ${IFACE} (may already be set)"
-
-echo "[ics-suricata] Device=${DEVICE_ID}  interface=${IFACE}"
+echo "[ics-suricata] Device=${DEVICE_ID}  interfaces=${AF_PACKET_ARGS[*]}"
 echo "[ics-suricata] Enabled rulesets: ${RULESETS}"
 [ -n "$DISABLED_SIDS" ] && echo "[ics-suricata] Suppressed SIDs: ${DISABLED_SIDS}"
 
@@ -123,12 +142,12 @@ for rs in $(echo "$RULESETS" | tr ',' ' '); do
 done
 
 # ── Start Suricata ──────────────────────────────────────────────────────────────
-# AF_PACKET mode: Suricata operates inline on the specified interface, inspecting
-# and optionally dropping packets that match IDS rules. Eve JSON output goes to
-# /var/log/suricata/ (a named volume in the compose file, consumed by Loki in Phase 6).
-echo "[ics-suricata] Starting Suricata in AF_PACKET mode on ${IFACE}..."
+# AF_PACKET mode: each --af-packet=<iface> arg spawns a worker that captures all
+# frames on that Docker bridge (ot-net, control-net, attacker-net). Eve JSON output
+# goes to /var/log/suricata/ (named volume, consumed by Loki in Phase 6).
+echo "[ics-suricata] Starting Suricata in AF_PACKET mode on ${AF_PACKET_ARGS[*]}..."
 exec suricata \
     -c /etc/suricata/otforge.yaml \
-    --af-packet="${IFACE}" \
+    "${AF_PACKET_ARGS[@]}" \
     --init-errors-fatal \
     -l /var/log/suricata

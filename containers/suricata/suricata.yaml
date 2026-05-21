@@ -5,11 +5,13 @@
 
 vars:
   address-groups:
-    OT_NETWORK: "[172.20.10.0/24]"
-    IT_NETWORK: "[172.20.20.0/24]"
-    DMZ_NETWORK: "[172.20.30.0/24]"
-    EXTERNAL: "[172.20.40.0/24]"
-    HOME_NET: "[172.20.0.0/16]"
+    # HOME_NET covers the entire 10.x.x.x RFC 1918 range so all simulation IPs
+    # (OT 10.200.10.x, Control 10.200.20.x, Attacker 10.200.60.x, etc.) are
+    # classified as internal. findFreeSubnets() may choose 10.201.x.x or higher
+    # when 10.200.x.x conflicts with a host VPN — 10.0.0.0/8 covers all cases.
+    HOME_NET: "[10.0.0.0/8]"
+    # EXTERNAL_NET catches anything not in the simulation IP space — relevant when
+    # the attack machine uses its attacker-net interface to reach the public internet.
     EXTERNAL_NET: "!$HOME_NET"
 
   port-groups:

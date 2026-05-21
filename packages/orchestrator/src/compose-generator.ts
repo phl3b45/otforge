@@ -338,9 +338,9 @@ export function generateCompose(
   // Reserved ranges per network:
   //   .1        — bridge gateway (Docker)
   //   .240–.249 — system services (influxdb, loki, grafana, fuxa, promtail)
-  //   .250      — attack machine's second leg on internet-dmz-net
+  //   .250      — attack machine's internet-dmz-net leg
   //   .252      — zeek
-  //   .253      — suricata
+  //   .253      — suricata (ot-net, control-net, internet-dmz-net, attacker-net)
   //   .254      — firewall
   const reservedHosts = new Set([1, 240, 241, 242, 243, 244, 250, 252, 253, 254])
   const usedIpsPerNet = new Map<string, Set<number>>([
@@ -359,6 +359,14 @@ export function generateCompose(
    * been bumped by claimIp() if the host octet was in a reserved range.
    */
   const claimedDeviceIps = new Map<string, string>()
+
+  // Subnet prefixes needed both during device-loop processing (attack machine network
+  // assignment) and in the infrastructure section. Derived here — before the device
+  // loop — to avoid a Temporal Dead Zone ReferenceError if declared later.
+  const otBase = effectiveZones.ot.subnet.replace('.0/24', '')
+  const controlBase = effectiveZones.control.subnet.replace('.0/24', '')
+  const attackerBase = effectiveZones.attacker.subnet.replace('.0/24', '')
+  const internetDmzBase = effectiveZones['internet-dmz'].subnet.replace('.0/24', '')
 
   /**
    * Returns a unique IP on netName for the given preferredIp.
@@ -488,12 +496,11 @@ export function generateCompose(
     if (device.category === 'attack-machine') {
       const webPort = ATTACK_NOVNC_PORT_BASE + attackPortIndex
       // Kali is dual-homed:
-      //   attacker-net   — primary interface; no internal: true so Docker NATs outbound
-      //                    traffic through the host, giving Kali internet access.
-      //   internet-dmz-net — second leg giving direct L2 adjacency to the scenario's
-      //                    web server and DNS server. .250 is reserved for this purpose
-      //                    (see reservedHosts above).
-      const internetDmzBase = effectiveZones['internet-dmz'].subnet.replace('.0/24', '')
+      //   attacker-net     — primary interface; no internal: true so Docker NATs outbound
+      //                      traffic through the host, giving Kali internet access.
+      //   internet-dmz-net — second leg (.250 reserved) giving direct L2 adjacency to the
+      //                      internet-facing server and DNS server. Suricata also lives on
+      //                      this bridge, so scans from Kali to the web server are visible.
       services[serviceName].networks = {
         'attacker-net': { ipv4_address: device.ipAddress },
         'internet-dmz-net': { ipv4_address: `${internetDmzBase}.250` }
@@ -558,12 +565,8 @@ export function generateCompose(
   // These run in every simulation regardless of scenario contents.
   // .253 and .252 are reserved host addresses in the /24 subnets.
 
-  // Base prefixes for infrastructure containers — derived from effectiveZones so
-  // Suricata, Zeek, InfluxDB, Loki, Grafana, and Promtail all get IPs inside the
-  // resolved subnets (auto-detected or user-pinned), not the hard-coded defaults.
-  // Monitoring infrastructure lives on the Control Center (Level 3) network.
-  const otBase = effectiveZones.ot.subnet.replace('.0/24', '')
-  const controlBase = effectiveZones.control.subnet.replace('.0/24', '')
+  // otBase, controlBase, attackerBase, internetDmzBase are declared before the device
+  // loop above (near claimedDeviceIps). They are reused here for infrastructure IPs.
 
   // ── Monitoring bridge (non-internal) ─────────────────────────────────────────
   // All Purdue Model zones above are created with internal: true, which prevents
@@ -628,8 +631,19 @@ export function generateCompose(
     container_name: `${projectName}-suricata`,
     restart: 'unless-stopped',
     networks: {
+      // ot-net + control-net: protect internal OT and control zone traffic
       'ot-net': { ipv4_address: `${otBase}.253` },
-      'control-net': { ipv4_address: `${controlBase}.253` }
+      'control-net': { ipv4_address: `${controlBase}.253` },
+      // internet-dmz-net: the bridge shared by the attack machine and the
+      // internet-facing server. Scan and exploit traffic from the attacker
+      // travels on this bridge — Suricata must be here to observe it.
+      // The attacker is on internet-dmz-net (at .250) and the nginx internet-server
+      // lives here too, so a scan of the web server IP is directly visible.
+      'internet-dmz-net': { ipv4_address: `${internetDmzBase}.253` },
+      // attacker-net: belt-and-suspenders — catches outbound traffic from Kali
+      // that targets anything outside internet-dmz (e.g., UDP probes, ICMP sweeps)
+      // before Docker's DOCKER-ISOLATION chain absorbs the packets.
+      'attacker-net': { ipv4_address: `${attackerBase}.253` }
     },
     environment: suricataEnv,
     cap_add: ['NET_ADMIN', 'NET_RAW'], // AF_PACKET mode requires raw socket access
