@@ -19,8 +19,26 @@
 
 set -e
 
-IFACE="${ZEEK_IFACE:-eth0}"
 SCRIPTS="${ZEEK_SCRIPTS:-modbus.zeek,dnp3.zeek}"
+
+# ── Select and prepare the capture interface ────────────────────────────────────
+# Same promiscuous-mode requirement as Suricata: without promisc, Zeek only sees
+# frames addressed to its own MAC. Enabling promisc lets the bridge deliver copies
+# of ALL frames so Zeek can build complete connection logs.
+IFACE="${ZEEK_IFACE:-}"
+if [ -z "$IFACE" ]; then
+    for candidate in $(ls /sys/class/net/ | grep -v lo | sort); do
+        if ip addr show "$candidate" 2>/dev/null | grep -qE 'inet 10\.'; then
+            IFACE="$candidate"
+            break
+        fi
+    done
+    IFACE="${IFACE:-eth0}"
+fi
+
+ip link set "$IFACE" promisc on 2>/dev/null \
+    && echo "[ics-zeek] Promiscuous mode enabled on ${IFACE}" \
+    || echo "[ics-zeek] Warning: could not set promisc on ${IFACE}"
 
 echo "[ics-zeek] Device=${DEVICE_ID}  interface=${IFACE}"
 echo "[ics-zeek] Requested scripts: ${SCRIPTS}"
@@ -47,8 +65,13 @@ for script in $(echo "$SCRIPTS" | tr ',' ' '); do
 done
 
 # ── Start Zeek ──────────────────────────────────────────────────────────────────
-# local.zeek is the Zeek site policy — it already includes ics-monitor.zeek via the
-# RUN echo "@load ics-monitor" step in the Dockerfile. Any additional scripts
-# resolved above are passed as positional arguments after the site policy.
+# `zeek -i` writes all log files (conn.log, modbus.log, etc.) to its WORKING
+# DIRECTORY — there is no --logdir flag in standalone mode (zeekctl handles that
+# in managed deployments). We cd to the named volume path before exec so the logs
+# land where Promtail expects them. exec inherits the working directory.
+LOG_DIR="/var/log/zeek"
+mkdir -p "${LOG_DIR}"
+cd "${LOG_DIR}"
+echo "[ics-zeek] Log directory: ${LOG_DIR}"
 echo "[ics-zeek] Starting Zeek passive monitor on ${IFACE}..."
 exec zeek -i "${IFACE}" "${SITE_DIR}/local.zeek" "${EXTRA_ARGS[@]}"

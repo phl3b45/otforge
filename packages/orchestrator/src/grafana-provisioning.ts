@@ -200,7 +200,10 @@ export async function writeGrafanaProvisioning(
             labels: {
               job: 'zeek',
               scenario: projectName,
-              __path__: '/var/log/zeek/current/*.log'
+              // Zeek writes logs to its working directory (/var/log/zeek) when
+              // started with `zeek -i` — no `current/` subdirectory is created
+              // (that is a zeekctl-managed deployment convention, not standalone).
+              __path__: '/var/log/zeek/*.log'
             }
           }
         ]

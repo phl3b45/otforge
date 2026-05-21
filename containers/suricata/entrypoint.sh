@@ -19,10 +19,35 @@
 
 set -e
 
-IFACE="${SURICATA_IFACE:-eth0}"
 RULESETS="${IDS_RULESETS:-emerging-scada,emerging-modbus}"
 DISABLED_SIDS="${IDS_DISABLED_SIDS:-}"
 CUSTOM_RULES_B64="${IDS_CUSTOM_RULES_B64:-}"
+
+# ── Select and prepare the capture interface ────────────────────────────────────
+# Suricata runs in a Docker container whose eth0 is connected to the OT bridge.
+# Without promiscuous mode, the Linux kernel only delivers frames addressed to
+# this container's MAC — traffic between other containers is invisible. Setting
+# promisc on means the bridge sends ALL frames to our veth pair endpoint so
+# Suricata can inspect every packet on the OT network segment.
+#
+# Interface selection: if SURICATA_IFACE is set, use it; otherwise scan all
+# non-loopback interfaces and pick the first one that has an IP in the 10.x
+# range (the OT/Control subnets). Falls back to eth0 if none is found.
+IFACE="${SURICATA_IFACE:-}"
+if [ -z "$IFACE" ]; then
+    for candidate in $(ls /sys/class/net/ | grep -v lo | sort); do
+        if ip addr show "$candidate" 2>/dev/null | grep -qE 'inet 10\.'; then
+            IFACE="$candidate"
+            break
+        fi
+    done
+    IFACE="${IFACE:-eth0}"
+fi
+
+# Enable promiscuous mode (requires NET_ADMIN capability set in compose)
+ip link set "$IFACE" promisc on 2>/dev/null \
+    && echo "[ics-suricata] Promiscuous mode enabled on ${IFACE}" \
+    || echo "[ics-suricata] Warning: could not set promisc on ${IFACE} (may already be set)"
 
 echo "[ics-suricata] Device=${DEVICE_ID}  interface=${IFACE}"
 echo "[ics-suricata] Enabled rulesets: ${RULESETS}"
