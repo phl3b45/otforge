@@ -451,6 +451,15 @@ export function generateCompose(
       if (scenario.security.firewallRules.length > 0) {
         fwEnv.push(`FW_RULES_JSON=${JSON.stringify(scenario.security.firewallRules)}`)
       }
+      // Inject effective zone subnets so the firewall entrypoint builds nftables rules
+      // against the real (auto-detected or user-pinned) subnets, not hardcoded defaults.
+      // These override the Dockerfile ENV defaults at runtime.
+      fwEnv.push(`FW_ZONE_OT=${effectiveZones.ot.subnet}`)
+      fwEnv.push(`FW_ZONE_CONTROL=${effectiveZones.control.subnet}`)
+      fwEnv.push(`FW_ZONE_PLANT_DMZ=${effectiveZones['plant-dmz'].subnet}`)
+      fwEnv.push(`FW_ZONE_ENTERPRISE=${effectiveZones.enterprise.subnet}`)
+      fwEnv.push(`FW_ZONE_INTERNET_DMZ=${effectiveZones['internet-dmz'].subnet}`)
+      fwEnv.push(`FW_ZONE_ATTACKER=${effectiveZones.attacker.subnet}`)
       services[serviceName].environment = fwEnv
     }
 

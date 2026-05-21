@@ -4,8 +4,8 @@
 # Builds an nftables ruleset from environment variables injected by the compose
 # generator (packages/orchestrator/src/compose-generator.ts) then keeps running.
 #
-# The container bridges OT, IT, and DMZ networks (three interfaces), which is why
-# NET_ADMIN and NET_RAW capabilities are required in the compose file.
+# The container bridges OT, Control, and Plant-DMZ networks (three interfaces), which
+# is why NET_ADMIN and NET_RAW capabilities are required in the compose file.
 #
 # Environment variables:
 #   DEVICE_ID          — Device node ID from the scenario (logged on start)
@@ -15,22 +15,42 @@
 #   FW_RULES_JSON      — JSON array of ACLRule objects from scenario.security.firewallRules.
 #                         Each rule: { id, sourceZone, destinationZone, protocol,
 #                                      destinationPort, action, comment? }
-#                         Zones: "ot" | "it" | "dmz" | "external" | "any"
+#                         Zones: "ot" | "control" | "plant-dmz" | "enterprise" |
+#                                "internet-dmz" | "attacker" | "any"
 #                         Protocol: "tcp" | "udp" | "icmp" | "any"
 #                         Port: number | "any"
 #                         Action: "allow" | "deny"
 #                         Parsed with jq; requires jq in the image (apk add jq).
 #
-# Network zones (per ZONE_DEFAULTS in packages/orchestrator/src/network-config.ts):
-#   OT       — 172.20.10.0/24  (PLCs, sensors, IEDs)
-#   IT       — 172.20.20.0/24  (Historian, HMI, Grafana)
-#   DMZ      — 172.20.30.0/24  (Suricata, Zeek, this firewall)
-#   External — 172.20.40.0/24  (Kali attack machine)
+# Zone subnet variables (injected by compose-generator.ts at simulation start):
+#   FW_ZONE_OT           — OT network CIDR        (default: 10.200.10.0/24)
+#   FW_ZONE_CONTROL      — Control center CIDR    (default: 10.200.20.0/24)
+#   FW_ZONE_PLANT_DMZ    — Plant DMZ CIDR         (default: 10.200.30.0/24)
+#   FW_ZONE_ENTERPRISE   — Enterprise zone CIDR   (default: 10.200.40.0/24)
+#   FW_ZONE_INTERNET_DMZ — Internet DMZ CIDR      (default: 10.200.50.0/24)
+#   FW_ZONE_ATTACKER     — Red team subnet CIDR   (default: 10.200.60.0/24)
+#
+# Network zones follow the Purdue Reference Model (IEC 62443-3-2 / NIST SP 800-82):
+#   ot           — Levels 0–2: PLCs, RTUs, IEDs, sensors, actuators
+#   control      — Level 3:    HMIs, historians, engineering workstations
+#   plant-dmz    — Level 3.5:  Firewalls, IDS/IPS, jump hosts
+#   enterprise   — Level 4:    Domain controllers, business servers, desktops
+#   internet-dmz — Level 5:    Internet-facing servers, DNS
+#   attacker     — Red team:   Isolated attack machine subnet
 
 set -e
 
 POLICY="${FW_DEFAULT_POLICY:-drop}"
+echo "[ics-firewall] ================================================"
 echo "[ics-firewall] Device=${DEVICE_ID}  default-policy=${POLICY}"
+echo "[ics-firewall] Zone subnets:"
+echo "[ics-firewall]   ot           = ${FW_ZONE_OT}"
+echo "[ics-firewall]   control      = ${FW_ZONE_CONTROL}"
+echo "[ics-firewall]   plant-dmz    = ${FW_ZONE_PLANT_DMZ}"
+echo "[ics-firewall]   enterprise   = ${FW_ZONE_ENTERPRISE}"
+echo "[ics-firewall]   internet-dmz = ${FW_ZONE_INTERNET_DMZ}"
+echo "[ics-firewall]   attacker     = ${FW_ZONE_ATTACKER}"
+echo "[ics-firewall] ================================================"
 
 # ── Enable IP forwarding ────────────────────────────────────────────────────────
 # The firewall container forwards packets between its three interfaces.
@@ -58,14 +78,18 @@ nft add rule inet ics_fw forward ip protocol icmp accept
 nft add rule inet ics_fw forward ip6 nexthdr icmpv6 accept
 
 # ── Zone subnet lookup ──────────────────────────────────────────────────────────
-# Returns the CIDR subnet for a zone name, or empty string for "any" (no src/dst filter).
+# Returns the CIDR subnet for a zone name from env vars injected by compose-generator.ts.
+# Returns empty string for "any" (no src/dst address filter in the nft rule).
+# Zone names match the NetworkZone type in packages/schema/src/icslab.ts exactly.
 zone_subnet() {
     case "$1" in
-        ot)       echo "172.20.10.0/24" ;;
-        it)       echo "172.20.20.0/24" ;;
-        dmz)      echo "172.20.30.0/24" ;;
-        external) echo "172.20.40.0/24" ;;
-        *)        echo "" ;;  # "any" or unknown → no subnet restriction
+        ot)           echo "${FW_ZONE_OT}" ;;
+        control)      echo "${FW_ZONE_CONTROL}" ;;
+        plant-dmz)    echo "${FW_ZONE_PLANT_DMZ}" ;;
+        enterprise)   echo "${FW_ZONE_ENTERPRISE}" ;;
+        internet-dmz) echo "${FW_ZONE_INTERNET_DMZ}" ;;
+        attacker)     echo "${FW_ZONE_ATTACKER}" ;;
+        *)            echo "" ;;  # "any" or unknown → no subnet restriction
     esac
 }
 
