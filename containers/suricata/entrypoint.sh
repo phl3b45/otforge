@@ -25,50 +25,60 @@ CUSTOM_RULES_B64="${IDS_CUSTOM_RULES_B64:-}"
 
 # ── Select and prepare capture interfaces ───────────────────────────────────────
 # Suricata is attached to multiple Docker bridge networks (ot-net, control-net,
-# attacker-net). Without promiscuous mode, the Linux kernel only delivers frames
-# addressed to this container's own MAC — traffic between other containers on the
-# same bridge is invisible. Promiscuous mode makes the bridge deliver ALL frames,
-# so Suricata can inspect every packet on each segment it monitors.
+# internet-dmz-net, attacker-net). Without promiscuous mode, the Linux kernel only
+# delivers frames addressed to this container's own MAC. Promiscuous mode makes the
+# bridge deliver ALL frames so Suricata can inspect every packet on each segment.
 #
-# Docker's DOCKER-ISOLATION iptables chain prevents traffic from crossing between
-# bridge networks — a packet sent from attacker-net never reaches ot-net. Attaching
-# Suricata to BOTH bridges is the only way to observe traffic from both zones.
-#
-# Interface selection:
-#   If SURICATA_IFACE is set, use only that interface (useful in unit tests or
-#   when a specific single-interface deployment is required). Otherwise, discover
-#   ALL non-loopback interfaces that have an IP in the 10.x range and add an
-#   --af-packet argument for each. This multi-interface mode is the production
-#   default and is why Suricata is attached to ot-net, control-net, AND attacker-net
-#   in the compose file.
+# IMPORTANT — why CLI --af-packet flags are NOT used here:
+#   Multiple --af-packet=ethX CLI flags all share the same default cluster-id.
+#   The Linux kernel delivers frames to only the LAST socket that registered with
+#   a given cluster-id, so only one interface actually captures. The correct approach
+#   is to write one af-packet YAML entry per interface with a UNIQUE cluster-id into
+#   the config file before starting Suricata, then start without any CLI --af-packet
+#   flags. Suricata then spawns one capture worker per config entry, each receiving
+#   its own frame copy from the kernel.
 
-AF_PACKET_ARGS=()
+IFACES=()
+CLUSTER_ID=1
 
 if [ -n "${SURICATA_IFACE:-}" ]; then
-    # Explicit override — single-interface mode
+    # Explicit single-interface override (useful for unit tests)
     ip link set "$SURICATA_IFACE" promisc on 2>/dev/null \
         && echo "[ics-suricata] Promiscuous mode enabled on ${SURICATA_IFACE}" \
         || echo "[ics-suricata] Warning: could not set promisc on ${SURICATA_IFACE}"
-    AF_PACKET_ARGS=("--af-packet=${SURICATA_IFACE}")
+    IFACES=("$SURICATA_IFACE")
 else
-    # Auto-detect every non-loopback interface with a 10.x IP and monitor all of them.
-    # Each af-packet= arg spawns an independent worker thread that captures that bridge.
+    # Auto-detect every non-loopback interface with a 10.x address
     for candidate in $(ls /sys/class/net/ 2>/dev/null | grep -v lo | sort); do
         if ip addr show "$candidate" 2>/dev/null | grep -qE 'inet 10\.'; then
             ip link set "$candidate" promisc on 2>/dev/null \
                 && echo "[ics-suricata] Promiscuous mode enabled on ${candidate}" \
                 || echo "[ics-suricata] Warning: could not set promisc on ${candidate}"
-            AF_PACKET_ARGS+=("--af-packet=${candidate}")
+            IFACES+=("$candidate")
         fi
     done
-    # Fall back to eth0 if no 10.x interface was found (should not happen in production)
-    if [ ${#AF_PACKET_ARGS[@]} -eq 0 ]; then
+    if [ ${#IFACES[@]} -eq 0 ]; then
         echo "[ics-suricata] Warning: no 10.x interface found, falling back to eth0"
-        AF_PACKET_ARGS=("--af-packet=eth0")
+        IFACES=("eth0")
     fi
 fi
 
-echo "[ics-suricata] Device=${DEVICE_ID}  interfaces=${AF_PACKET_ARGS[*]}"
+echo "[ics-suricata] Device=${DEVICE_ID}  interfaces=${IFACES[*]}"
+
+# ── Write af-packet section into config with unique cluster-ids ─────────────────
+# Each interface entry gets its own cluster-id (1, 2, 3…). cluster_flow hashing
+# ensures all packets of a given TCP/UDP flow land on the same worker thread so
+# stream reassembly works correctly across multi-packet sessions.
+{
+    printf "\naf-packet:\n"
+    for iface in "${IFACES[@]}"; do
+        printf "  - interface: %s\n"    "$iface"
+        printf "    cluster-id: %d\n"   "$CLUSTER_ID"
+        printf "    cluster-type: cluster_flow\n"
+        printf "    defrag: yes\n"
+        CLUSTER_ID=$((CLUSTER_ID + 1))
+    done
+} >> /etc/suricata/otforge.yaml
 echo "[ics-suricata] Enabled rulesets: ${RULESETS}"
 [ -n "$DISABLED_SIDS" ] && echo "[ics-suricata] Suppressed SIDs: ${DISABLED_SIDS}"
 
@@ -142,12 +152,11 @@ for rs in $(echo "$RULESETS" | tr ',' ' '); do
 done
 
 # ── Start Suricata ──────────────────────────────────────────────────────────────
-# AF_PACKET mode: each --af-packet=<iface> arg spawns a worker that captures all
-# frames on that Docker bridge (ot-net, control-net, attacker-net). Eve JSON output
-# goes to /var/log/suricata/ (named volume, consumed by Loki in Phase 6).
-echo "[ics-suricata] Starting Suricata in AF_PACKET mode on ${AF_PACKET_ARGS[*]}..."
+# No --af-packet CLI flags — the af-packet: section appended to otforge.yaml above
+# defines all interfaces with unique cluster-ids. Eve JSON output goes to
+# /var/log/suricata/ (named volume shared with Promtail, consumed by Loki).
+echo "[ics-suricata] Starting Suricata in AF_PACKET mode on ${IFACES[*]}..."
 exec suricata \
     -c /etc/suricata/otforge.yaml \
-    "${AF_PACKET_ARGS[@]}" \
     --init-errors-fatal \
     -l /var/log/suricata

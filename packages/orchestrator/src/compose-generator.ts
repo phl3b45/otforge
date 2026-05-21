@@ -825,7 +825,10 @@ export function generateCompose(
       environment: undefined,
       cap_add: undefined,
       volumes: [
-        `${promtailConfigPath}:/etc/promtail/config.yaml:ro`,
+        // grafana/promtail:latest CMD uses -config.file=/etc/promtail/config.yml (.yml)
+        // Mounting as .yaml would be silently ignored — Promtail would load its built-in
+        // default config (watching /var/log/*log) instead of our suricata/zeek config.
+        `${promtailConfigPath}:/etc/promtail/config.yml:ro`,
         `${projectName}-suricata-logs:/var/log/suricata:ro`, // shared read-only
         `${projectName}-zeek-logs:/var/log/zeek:ro` // shared read-only
       ],
