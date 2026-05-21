@@ -325,6 +325,9 @@ export function generateCompose(
   let plcPortIndex = 0
   const ATTACK_NOVNC_PORT_BASE = 6900
   let attackPortIndex = 0
+  // Collected during the device loop so we can attach PLC services to
+  // monitoring-net after that network is defined (later in this function).
+  const plcServiceNames: string[] = []
 
   // ── IP deduplication ────────────────────────────────────────────────────────
   // Tracks host octets already assigned per Docker network so that stale or
@@ -418,10 +421,15 @@ export function generateCompose(
 
     // PLC containers publish their OpenPLC web interface (port 8080) on a
     // deterministic host port so the main process can reach the REST API for
-    // live ST program deployment (plc:deploy IPC handler).
+    // live ST program deployment (plc:deploy IPC handler) and so the user can
+    // open the full OpenPLC IDE (Ladder Logic, monitoring) in a browser.
+    // NOTE: the ports: binding only works because we also attach PLCs to the
+    // non-internal monitoring-net below — ot-net is internal: true and Docker
+    // silently drops port bindings on internal-only networks.
     if (device.category === 'plc') {
       const hostPort = PLC_WEB_PORT_BASE + plcPortIndex
       services[serviceName].ports = [`${hostPort}:8080`]
+      plcServiceNames.push(serviceName)
       plcPortIndex++
     }
 
@@ -564,10 +572,11 @@ export function generateCompose(
   // a container's ONLY networks are internal: true — Docker cannot create the
   // required NAT rules through an internal-only bridge.
   //
-  // This dedicated non-internal bridge gives Grafana, Loki, and FUXA a second
-  // interface through which Docker can publish ports to the host. It carries no
-  // OT traffic and is not reachable from any device container. Third octet 70
-  // continues the zone numbering scheme (OT=10, Control=20, …, Attacker=60).
+  // This dedicated non-internal bridge gives Grafana, Loki, FUXA, and PLC
+  // containers a second interface through which Docker can publish ports to the
+  // host. It carries no OT traffic and is not reachable from any device
+  // container. Third octet 70 continues the zone numbering scheme
+  // (OT=10, Control=20, …, Attacker=60).
   const monitorBase = `${controlBase.split('.').slice(0, 2).join('.')}.70`
   networks['monitoring-net'] = {
     driver: 'bridge',
@@ -576,6 +585,14 @@ export function generateCompose(
       config: [{ subnet: `${monitorBase}.0/24`, gateway: `${monitorBase}.1` }]
     }
   }
+
+  // Attach each PLC service to monitoring-net so its ports: binding is honoured
+  // by Docker Desktop. IPs start at .10 (fixed infrastructure uses .1–.9).
+  plcServiceNames.forEach((svcName, idx) => {
+    services[svcName].networks['monitoring-net'] = {
+      ipv4_address: `${monitorBase}.${10 + idx}`
+    }
+  })
 
   // ── Suricata — inline IPS/IDS on OT and IT networks ──────────────────────
   // Placed on both OT and IT nets so it can analyze cross-zone traffic.
