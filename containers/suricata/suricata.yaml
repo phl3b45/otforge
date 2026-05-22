@@ -10,9 +10,13 @@ vars:
     # classified as internal. findFreeSubnets() may choose 10.201.x.x or higher
     # when 10.200.x.x conflicts with a host VPN — 10.0.0.0/8 covers all cases.
     HOME_NET: "[10.0.0.0/8]"
-    # EXTERNAL_NET catches anything not in the simulation IP space — relevant when
-    # the attack machine uses its attacker-net interface to reach the public internet.
-    EXTERNAL_NET: "!$HOME_NET"
+    # EXTERNAL_NET is set to "any" rather than "!$HOME_NET" because in this lab the
+    # attacker container is on the same RFC-1918 range as the OT/control networks.
+    # With "!$HOME_NET", ET SCAN/EXPLOIT rules that match "$EXTERNAL_NET → $HOME_NET"
+    # would never fire since the attacker IP is always in HOME_NET.
+    # "any" treats every source address as potentially external, which is the
+    # standard configuration for IDS labs where attacker and victim share a /8.
+    EXTERNAL_NET: "any"
 
   port-groups:
     MODBUS_PORTS: "502"
