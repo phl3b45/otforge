@@ -46,7 +46,7 @@ echo "[ics-zeek] Requested scripts: ${SCRIPTS}"
 # ── Resolve requested scripts to absolute paths ─────────────────────────────────
 # Each script name in ZEEK_SCRIPTS is resolved against the Zeek site directory.
 # Non-existent scripts are skipped with a warning rather than failing the container.
-SITE_DIR="/opt/zeek/share/zeek/site"
+SITE_DIR="/usr/local/zeek/share/zeek/site"
 EXTRA_ARGS=()
 
 for script in $(echo "$SCRIPTS" | tr ',' ' '); do

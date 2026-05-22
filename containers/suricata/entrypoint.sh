@@ -158,11 +158,14 @@ echo "[ics-suricata] Launching suricata-update in background (non-blocking)..."
 disown $!
 
 # ── Start Suricata ──────────────────────────────────────────────────────────────
-# No --af-packet CLI flags — the af-packet: section appended to otforge.yaml above
-# defines all interfaces with unique cluster-ids. Eve JSON output goes to
+# --af-packet (no argument) tells Suricata 8+ to activate AF_PACKET capture mode
+# and read interface definitions from the af-packet: section we appended above.
+# Without this flag Suricata 8 does not know which capture method to use and
+# exits immediately with a usage message. Eve JSON output goes to
 # /var/log/suricata/ (named volume shared with Promtail, consumed by Loki).
 echo "[ics-suricata] Starting Suricata in AF_PACKET mode on ${IFACES[*]}..."
 exec suricata \
+    --af-packet \
     -c /etc/suricata/otforge.yaml \
     --init-errors-fatal \
     -l /var/log/suricata

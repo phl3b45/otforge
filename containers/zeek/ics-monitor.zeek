@@ -18,19 +18,17 @@ export {
     };
 }
 
-# ── Network definitions (match docker-compose subnets) ───────────────────────
+# ── Network definitions ───────────────────────────────────────────────────────
+# Subnets are dynamically assigned at simulation start by findFreeSubnets() and
+# may be anything in 10.x.x.x space — do NOT hardcode specific /24s here.
+# All 10.0.0.0/8 addresses are simulation-internal; anything outside is external
+# (e.g., public internet reached from the attacker VM).
 
-const OT_SUBNET:       subnet = 172.20.10.0/24;
-const IT_SUBNET:       subnet = 172.20.20.0/24;
-const DMZ_SUBNET:      subnet = 172.20.30.0/24;
-const EXTERNAL_SUBNET: subnet = 172.20.40.0/24;
+const SIMULATION_NET: subnet = 10.0.0.0/8;
 
 function zone_name(a: addr): string {
-    if (a in OT_SUBNET)       return "OT";
-    if (a in IT_SUBNET)       return "IT";
-    if (a in DMZ_SUBNET)      return "DMZ";
-    if (a in EXTERNAL_SUBNET) return "External";
-    return "Unknown";
+    if (a in SIMULATION_NET) return "Simulation";
+    return "External";
 }
 
 # ── Modbus logging ────────────────────────────────────────────────────────────
