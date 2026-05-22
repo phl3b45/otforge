@@ -71,6 +71,8 @@ echo "[ics-suricata] Device=${DEVICE_ID}  interfaces=${IFACES[*]}"
 # TCP/UDP flow land on the same worker thread for correct stream reassembly.
 AF_PACKET_CONF="/etc/suricata/af-packet.yaml"
 {
+    # Suricata requires all included config files to begin with the YAML 1.1 header
+    printf "%%YAML 1.1\n---\n"
     printf "af-packet:\n"
     for iface in "${IFACES[@]}"; do
         printf "  - interface: %s\n"    "$iface"
