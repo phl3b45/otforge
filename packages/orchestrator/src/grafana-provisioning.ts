@@ -239,13 +239,18 @@ function buildIcsDashboard(): object {
   const lokiDs = { type: 'loki', uid: 'otflab-loki' }
 
   // LogQL that formats a Suricata alert as a readable one-liner.
-  // Two | json stages: first extracts top-level fields (event_type, src_ip, etc.),
-  // second uses expression mapping to pull nested alert.* fields.
+  //
+  // Design: use event_type="alert" in the stream selector (Promtail labels it) so no
+  // intermediate | json + filter chain is needed. A single | json stage extracts both
+  // top-level fields (src_ip, proto…) and the nested alert.signature / alert.severity
+  // fields simultaneously — this avoids the silent entry-drop that occurs when two
+  // chained | json stages interact in some Loki versions. alert_category is already a
+  // Promtail stream label so it's available in line_format without extraction.
   const alertsFormattedExpr =
-    '{job="suricata"} | json' +
-    ' | event_type=`alert`' +
-    ' | json alert_sig="alert.signature", alert_sev="alert.severity", alert_cat="alert.category"' +
-    ' | line_format `[sev={{.alert_sev}}] {{.alert_sig}} | {{.src_ip}}:{{.src_port}} → {{.dest_ip}}:{{.dest_port}} ({{.proto}}) [{{.alert_cat}}]`'
+    '{job="suricata", event_type="alert"}' +
+    ' | json sig="alert.signature", sev="alert.severity",' +
+    ' src_ip="src_ip", src_port="src_port", dest_ip="dest_ip", dest_port="dest_port", proto="proto"' +
+    ' | line_format `[{{.sev}}] {{.sig}} | {{.src_ip}}:{{.src_port}} → {{.dest_ip}}:{{.dest_port}} ({{.proto}}) [{{.alert_category}}]`'
 
   return {
     id: null,
