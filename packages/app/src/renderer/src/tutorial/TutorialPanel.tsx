@@ -195,7 +195,7 @@ export function TutorialPanel({ steps, devices, onClose }: TutorialPanelProps): 
   // The panel is 440 px wide (matching .tutorial-panel CSS); place it bottom-right.
   useEffect(() => {
     const panelW = 440
-    const panelH = 520
+    const panelH = 640 // updated to match tutorial-body max-height increase
     setPosition({
       x: Math.max(0, window.innerWidth - panelW - 24),
       y: Math.max(0, window.innerHeight - panelH - 48)

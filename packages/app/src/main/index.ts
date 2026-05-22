@@ -1221,6 +1221,73 @@ function registerIPCHandlers(): void {
     }
   )
 
+  /**
+   * Reads holding registers from a PLC via Modbus TCP FC03 (Read Holding Registers).
+   *
+   * Used by ScadaCanvas to poll tank_level (HR 0) for the Water Tank fill-level animation.
+   * Mirrors the modbus:readCoils handler but sends FC03 and returns uint16 values.
+   *
+   * @param nodeId - Scenario device node ID of the target PLC.
+   * @param count  - Number of holding registers to read starting at address 0.
+   */
+  ipcMain.handle(
+    'modbus:readHoldingRegisters',
+    async (_e, { nodeId, count }: { nodeId: string; count: number }): Promise<number[]> => {
+      const hostPort = activePlcModbusPorts.get(nodeId)
+      if (!hostPort) return []
+
+      return new Promise<number[]>(resolve => {
+        const socket = new net.Socket()
+        const TIMEOUT_MS = 2500
+
+        const fail = () => {
+          if (!socket.destroyed) socket.destroy()
+          resolve([])
+        }
+
+        socket.setTimeout(TIMEOUT_MS)
+        socket.once('error', fail)
+        socket.once('timeout', fail)
+
+        socket.connect(hostPort, '127.0.0.1', () => {
+          // Modbus TCP FC03 (Read Holding Registers) request — 12 bytes.
+          // MBAP header (7 bytes): Transaction ID=1, Protocol=0, Length=6, Unit=1
+          // PDU (5 bytes): FC=0x03, Start Address=0x0000, Quantity=count
+          const req = Buffer.alloc(12)
+          req.writeUInt16BE(1, 0) // Transaction ID
+          req.writeUInt16BE(0, 2) // Protocol ID
+          req.writeUInt16BE(6, 4) // Length
+          req.writeUInt8(1, 6) // Unit ID = 1
+          req.writeUInt8(0x03, 7) // Function Code: Read Holding Registers
+          req.writeUInt16BE(0, 8) // Starting Address: 0
+          req.writeUInt16BE(count, 10) // Quantity of Registers
+          socket.write(req)
+        })
+
+        // FC03 response: 9-byte header + 2 bytes per register
+        const chunks: Buffer[] = []
+        socket.on('data', (chunk: Buffer) => {
+          chunks.push(chunk)
+          const data = Buffer.concat(chunks)
+          const expectedLen = 9 + count * 2
+          if (data.length < expectedLen) return
+          socket.destroy()
+          // Modbus exception response: function code | 0x80
+          if ((data[7] & 0x80) !== 0) {
+            resolve([])
+            return
+          }
+          // Parse register values: 2 bytes each, big-endian unsigned 16-bit
+          const regs: number[] = []
+          for (let i = 0; i < count; i++) {
+            regs.push(data.readUInt16BE(9 + i * 2))
+          }
+          resolve(regs)
+        })
+      })
+    }
+  )
+
   // ── Attack terminal ───────────────────────────────────────────────────────────
 
   /**

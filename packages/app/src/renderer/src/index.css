@@ -770,10 +770,36 @@ select {
   overflow: hidden;
   cursor: pointer;
   transition: box-shadow 0.15s;
+  /* Required so the absolutely-positioned water fill stays inside the node border */
+  position: relative;
 }
 
 .device-node:hover {
   background: var(--bg-panel-hover);
+}
+
+/*
+ * Water fill indicator — rendered only inside process-unit (Water Tank) nodes while
+ * the simulation is running. Rises from the bottom as tank_level increases.
+ *
+ * The height and background are set inline from DeviceNode.tsx using the live HR0 value:
+ *   - height 0%–100%  driven by tank_level 0–1000 cm
+ *   - background transitions blue→amber→red via inline style (fillColor logic in DeviceNode)
+ * The CSS transition animates the fill smoothly between 2 s Modbus polling ticks so
+ * students see a continuous rise rather than a discrete jump every poll cycle.
+ * z-index: 0 keeps the fill behind the icon and label (z-index: 1) so the node stays legible.
+ */
+.device-node-water-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-radius: 0 0 3px 3px;
+  transition:
+    height 0.5s ease,
+    background 0.5s ease;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .device-node-icon {
@@ -781,12 +807,18 @@ select {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  /* Sit above the water fill layer */
+  position: relative;
+  z-index: 1;
 }
 
 .device-node-info {
   text-align: center;
   width: 100%;
   overflow: hidden;
+  /* Sit above the water fill layer */
+  position: relative;
+  z-index: 1;
 }
 
 .device-node-label {
@@ -4807,10 +4839,10 @@ code.prop-value {
   flex-direction: column;
   gap: 10px;
   overflow-y: auto;
-  /* Scale with the viewport so tall steps don't clip content. Min of 60 % viewport
-     height and 520 px ensures the body is roomy on a 1080 p display while still
-     fitting on small 768 p laptop screens. */
-  max-height: min(62vh, 520px);
+  /* Increased to 640 px (from 520) so steps with a command block + success check
+     (e.g., steps 5 and 6) show the full command without requiring the student
+     to scroll. min() keeps it within 70 % viewport height on small screens. */
+  max-height: min(70vh, 640px);
   /* Custom scrollbar to match dark theme */
   scrollbar-width: thin;
   scrollbar-color: #30363d transparent;

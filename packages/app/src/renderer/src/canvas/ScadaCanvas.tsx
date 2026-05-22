@@ -319,8 +319,12 @@ function scenarioToNodes(scenario: OTForgeScenario, activeLayer: NetworkZone): D
         data: {
           device: scenario.devices.devices[cn.id] ?? {
             nodeId: cn.id,
-            category: 'sensor' as DeviceCategory,
-            ipAddress: '0.0.0.0',
+            // Visual-only nodes (pump, valve, sensor) live in visual.nodes but not in
+            // devices.devices because they have no container. Use cn.type (the category
+            // written at drop time) so the correct icon appears instead of defaulting
+            // to 'sensor' for everything. ipAddress '' suppresses the IP label display.
+            category: (cn.type as DeviceCategory) ?? ('sensor' as DeviceCategory),
+            ipAddress: '',
             protocols: ['none' as Protocol]
           },
           label: cn.data.label,
@@ -450,6 +454,13 @@ export function ScadaCanvas({
    */
   const [coilStates, setCoilStates] = useState<Map<string, boolean>>(new Map())
 
+  /**
+   * Live holding-register map — keyed by PLC nodeId, value is HR0 (tank_level, 0–1000 cm).
+   * Populated alongside coilStates in the same polling loop via FC03 Read Holding Registers.
+   * Empty map = simulation not running. Used to derive fillLevel for process-unit nodes.
+   */
+  const [levelStates, setLevelStates] = useState<Map<string, number>>(new Map())
+
   /** Right-click context menu — null when closed. */
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
 
@@ -494,32 +505,39 @@ export function ScadaCanvas({
   const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /**
-   * Polls PLC coil states via Modbus TCP while the simulation is running on the OT layer.
+   * Polls PLC coil states AND holding registers via Modbus TCP while the simulation
+   * is running on the OT layer.
    *
-   * Every 2 s, collects edges with a `coilSource` binding, groups them by PLC nodeId to
-   * minimise IPC calls, and calls window.electronAPI.modbus.readCoils() once per PLC.
-   * Results are written to `coilStates` — a flat map keyed by "${nodeId}:${coilIndex}".
+   * Every 2 s:
+   *   - FC01 Read Coils  → coilStates  → pipe-edge flow animation (green/red)
+   *   - FC03 Read Holding Registers → levelStates → process-unit fill animation
+   *
+   * Groups reads by PLC nodeId so one IPC round-trip covers all coil edges for a PLC.
+   * Holding registers always read 3 registers (HR0=tank_level, HR1=inlet_flow,
+   * HR2=outlet_flow) from the same PLCs found via coilSource edges.
    *
    * The polling interval clears when the simulation stops, the layer changes, or the
    * component unmounts so there are no dangling timers.
    *
-   * Polling failures are silent (readCoils returns [] on any TCP/timeout error) so a
-   * temporarily unreachable PLC does not break the canvas — the last known state persists.
+   * All failures are silent (readCoils/readHoldingRegisters return [] on error) so a
+   * temporarily unreachable PLC does not break the canvas — last known state persists.
    */
   useEffect(() => {
     if (!simRunning || activeLayer !== 'ot') {
       setCoilStates(new Map())
+      setLevelStates(new Map())
       return
     }
 
-    // Collect edges that have a coilSource binding
+    // Collect edges that carry a coilSource binding (the wired OT pipe edges)
     const coilEdges = edges.filter(e => {
       const d = e.data as import('./PipeEdge').PipeEdgeData
       return d?.coilSource !== undefined
     })
     if (coilEdges.length === 0) return
 
-    // Group by nodeId, tracking the max coilIndex needed per PLC to batch reads
+    // Group by PLC nodeId, tracking the highest coilIndex needed for each PLC so
+    // a single FC01 frame reads all coils in one round-trip.
     const plcMaxCoil = new Map<string, number>()
     for (const edge of coilEdges) {
       const { nodeId, coilIndex } = (edge.data as import('./PipeEdge').PipeEdgeData).coilSource!
@@ -528,21 +546,35 @@ export function ScadaCanvas({
     }
 
     const poll = async () => {
-      const next = new Map<string, boolean>()
+      const nextCoils = new Map<string, boolean>()
+      const nextLevels = new Map<string, number>()
+
       for (const [nodeId, maxIdx] of plcMaxCoil.entries()) {
+        // ── FC01 Read Coils — drives pipe-edge flow animation ──────────────────
         try {
           const coils = await window.electronAPI.modbus.readCoils(nodeId, maxIdx + 1)
           for (let i = 0; i <= maxIdx; i++) {
-            if (coils[i] !== undefined) next.set(`${nodeId}:${i}`, coils[i])
+            if (coils[i] !== undefined) nextCoils.set(`${nodeId}:${i}`, coils[i])
           }
         } catch {
-          // Non-fatal: keep previous state for this PLC
+          // Non-fatal: keep previous coil state for this PLC
+        }
+
+        // ── FC03 Read Holding Registers — drives Water Tank fill animation ─────
+        // Read 3 registers: HR0=tank_level (0–1000 cm), HR1=inlet_flow, HR2=outlet_flow
+        try {
+          const regs = await window.electronAPI.modbus.readHoldingRegisters(nodeId, 3)
+          if (regs.length > 0) nextLevels.set(nodeId, regs[0]) // HR0 = tank_level
+        } catch {
+          // Non-fatal: keep previous level state for this PLC
         }
       }
-      setCoilStates(next)
+
+      setCoilStates(nextCoils)
+      setLevelStates(nextLevels)
     }
 
-    poll() // Immediate first poll
+    poll() // Immediate first poll — don't wait 2 s for initial values
     const timer = setInterval(poll, 2000)
     return () => clearInterval(timer)
   }, [simRunning, activeLayer, edges])
@@ -585,36 +617,74 @@ export function ScadaCanvas({
   }, [contextMenu, nodes])
 
   /**
-   * Nodes augmented with connection-state CSS classes:
-   *   'connection-source' — the node that was right-clicked to start the connection.
-   *                         Gets a teal glow so the student remembers which device
-   *                         they're connecting FROM.
-   *   'invalid-target'    — nodes the student cannot connect to with the selected protocol.
-   *                         Dimmed to 30% opacity and cursor changes to not-allowed.
+   * Nodes augmented with two kinds of live data, merged into a single memoised array:
    *
-   * React Flow applies the node's `className` property to the wrapper div it renders,
-   * so `.invalid-target .device-node { ... }` selectors in CSS work correctly.
+   * 1. Connection-state CSS classes (when a pending connection is active):
+   *    'connection-source' — the node that was right-clicked to start the connection;
+   *                          gets a teal glow so the student knows which device is FROM.
+   *    'invalid-target'    — nodes that cannot receive the selected protocol;
+   *                          dimmed to 30% opacity, cursor changes to not-allowed.
+   *    React Flow applies node.className to its wrapper div, so CSS selectors like
+   *    `.invalid-target .device-node { ... }` work correctly.
    *
-   * Computed from the base `nodes` state — the underlying state stays clean so
-   * position persistence, deletion, and edge connections are not affected.
+   * 2. fillLevel for process-unit (Water Tank) nodes — a 0.0–1.0 fraction derived
+   *    from HR0 (tank_level, 0–1000 cm) polled from the PLC every 2 s. DeviceNode
+   *    uses this to render a rising water fill animation that makes the overflow attack
+   *    visible to students without needing a separate Grafana dashboard.
+   *
+   * The underlying `nodes` state is never mutated — changes live only in displayNodes.
    */
   const displayNodes = useMemo(() => {
-    if (!pendingConnection) return nodes
-    const sourceNode = nodes.find(n => n.id === pendingConnection.sourceId)
-    if (!sourceNode) return nodes
-    const sourceCategory = (sourceNode.data as DeviceNodeData).device.category
+    // Step 1 — apply connection-state class names when a pending connection is active
+    let result: typeof nodes = nodes
 
-    return nodes.map(n => {
-      if (n.id === pendingConnection.sourceId) {
-        // Highlight the initiating node with a source glow
-        return { ...n, className: 'connection-source' }
+    if (pendingConnection) {
+      const sourceNode = nodes.find(n => n.id === pendingConnection.sourceId)
+      if (sourceNode) {
+        const sourceCategory = (sourceNode.data as DeviceNodeData).device.category
+        result = nodes.map(n => {
+          if (n.id === pendingConnection.sourceId) {
+            return { ...n, className: 'connection-source' }
+          }
+          const targetCategory = (n.data as DeviceNodeData).device.category
+          const valid = isConnectionValid(
+            sourceCategory,
+            targetCategory,
+            pendingConnection.protocol
+          )
+          return { ...n, className: valid ? '' : 'invalid-target' }
+        })
       }
-      const targetCategory = (n.data as DeviceNodeData).device.category
-      const valid = isConnectionValid(sourceCategory, targetCategory, pendingConnection.protocol)
-      // Dim nodes that cannot receive the selected protocol
-      return { ...n, className: valid ? '' : 'invalid-target' }
-    })
-  }, [nodes, pendingConnection])
+    }
+
+    // Step 2 — inject fillLevel into process-unit nodes from live HR0 register polling.
+    // Only runs while the simulation is active (levelStates is empty map otherwise).
+    if (levelStates.size > 0) {
+      result = result.map(n => {
+        const data = n.data as DeviceNodeData
+        if (data.device.category !== 'process-unit') return n
+
+        // Find any connected edge that carries a coilSource to identify which PLC
+        // owns the tank_level register. The coilSource.nodeId is the PLC node.
+        const connectedEdge = edges.find(e => {
+          const d = e.data as import('./PipeEdge').PipeEdgeData
+          return d?.coilSource !== undefined && (e.source === n.id || e.target === n.id)
+        })
+        if (!connectedEdge) return n
+
+        const { nodeId: plcId } = (connectedEdge.data as import('./PipeEdge').PipeEdgeData)
+          .coilSource!
+        const raw = levelStates.get(plcId)
+        if (raw === undefined) return n
+
+        // Scale tank_level (0–1000 cm) → fillLevel (0.0–1.0), clamped for safety
+        const fillLevel = Math.min(1, Math.max(0, raw / 1000))
+        return { ...n, data: { ...data, fillLevel } }
+      })
+    }
+
+    return result
+  }, [nodes, pendingConnection, levelStates, edges])
 
   // Sync canvas state when the scenario or active layer changes
   useEffect(() => {

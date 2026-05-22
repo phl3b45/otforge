@@ -361,10 +361,10 @@ const api = {
   // ── Modbus coil polling — live pipe-flow animation ───────────────────────────
   // Called by ScadaCanvas every 2 s while the simulation is running and the OT
   // layer is active. The main process connects to localhost:18550+n (the PLC's
-  // published Modbus port) and issues a raw FC01 Read Coils frame.
+  // published Modbus port) and issues raw Modbus TCP frames.
   modbus: {
     /**
-     * Reads coil states from a PLC via Modbus TCP and returns them as booleans.
+     * Reads coil states from a PLC via Modbus TCP FC01 (Read Coils).
      *
      * The main process connects to the PLC's host-published Modbus port (base 18550,
      * assigned by compose-generator.ts). The renderer uses this to animate OT-layer
@@ -375,7 +375,22 @@ const api = {
      * @returns Array of booleans, coil[0] = address 0. Returns [] on failure.
      */
     readCoils: (nodeId: string, count: number): Promise<boolean[]> =>
-      ipcRenderer.invoke('modbus:readCoils', { nodeId, count })
+      ipcRenderer.invoke('modbus:readCoils', { nodeId, count }),
+
+    /**
+     * Reads holding register values from a PLC via Modbus TCP FC03 (Read Holding Registers).
+     *
+     * Used to poll process values (e.g., tank_level at %MW0, inlet_flow at %MW1,
+     * outlet_flow at %MW2) that the PLC program writes to memory words each scan cycle.
+     * ScadaCanvas uses register 0 (tank_level) to drive the Water Tank fill-level
+     * animation on the process-unit canvas node.
+     *
+     * @param nodeId - Scenario device node ID of the target PLC.
+     * @param count  - Number of holding registers to read starting at address 0.
+     * @returns Array of uint16 values, regs[0] = address 0. Returns [] on failure.
+     */
+    readHoldingRegisters: (nodeId: string, count: number): Promise<number[]> =>
+      ipcRenderer.invoke('modbus:readHoldingRegisters', { nodeId, count })
   },
 
   // ── Clipboard ─────────────────────────────────────────────────────────────────

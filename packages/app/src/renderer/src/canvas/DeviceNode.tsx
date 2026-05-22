@@ -38,6 +38,17 @@ export type DeviceNodeData = {
   label: string
   /** Network zone this device belongs to — determines border/icon color. */
   zone: NetworkZone
+  /**
+   * Water fill level for process-unit (Water Tank) nodes — 0.0 (empty) to 1.0 (full/overflow).
+   * Derived from HR0 (tank_level, 0–1000 cm) polled via FC03 Read Holding Registers.
+   * When undefined, no fill indicator is shown (simulation not running or node is not a tank).
+   *
+   * Fill color changes with level to give students an immediate visual warning:
+   *   0.0–0.5  → blue   (safe operating range, inlet and outlet balanced)
+   *   0.5–0.8  → amber  (elevated — outlet may be restricted)
+   *   0.8–1.0  → red    (critical — overflow imminent or occurring)
+   */
+  fillLevel?: number
 }
 
 /** Typed React Flow node shape for use with useNodesState and NodeTypes. */
@@ -73,9 +84,23 @@ export const ZONE_COLORS: Record<NetworkZone, string> = {
  *   - Top Handle type="target" — accepts incoming edges (e.g., PLC → Sensor)
  *   - Bottom Handle type="source" — emits outgoing edges
  *   Both handles are colored with the zone accent color for visual continuity.
+ *
+ * Process-unit nodes additionally render a water fill indicator that rises as
+ * tank_level increases. The fill color shifts blue → amber → red so students can
+ * see the overflow condition developing without consulting Grafana.
  */
 export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps<DeviceNodeType>) {
   const zoneColor = ZONE_COLORS[data.zone]
+  const isProcessUnit = data.device.category === 'process-unit'
+  const fillLevel = isProcessUnit ? (data.fillLevel ?? 0) : 0
+
+  // Water fill color transitions blue (safe) → amber (elevated) → red (critical)
+  const fillColor =
+    fillLevel < 0.5
+      ? 'rgba(56, 139, 253, 0.28)'
+      : fillLevel < 0.8
+        ? 'rgba(210, 153, 34, 0.35)'
+        : 'rgba(248, 81, 73, 0.42)'
 
   return (
     <div
@@ -94,15 +119,30 @@ export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps
         style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
       />
 
+      {/*
+       * Water fill indicator — only rendered for process-unit (Water Tank) nodes while
+       * the simulation is running (fillLevel is set by ScadaCanvas polling HR0).
+       * Positioned behind the icon/label via z-index so content remains legible.
+       * CSS transition animates the rising level smoothly between 2 s poll ticks.
+       */}
+      {isProcessUnit && data.fillLevel !== undefined && (
+        <div
+          className="device-node-water-fill"
+          style={{ height: `${fillLevel * 100}%`, background: fillColor }}
+        />
+      )}
+
       {/* ISA-5.1 device icon, colored by zone — sized to fill the cell */}
       <div className="device-node-icon" style={{ color: zoneColor }}>
         <DeviceIcon category={data.device.category} size={44} />
       </div>
 
-      {/* Label and IP address, compact layout to fit the 80 × 80 cell */}
+      {/* Label and IP address, compact layout to fit the 80 × 80 cell.
+          IP address row is suppressed when empty (visual-only nodes like pump/valve/sensor
+          have no container so they carry no real IP address). */}
       <div className="device-node-info">
         <div className="device-node-label">{data.label}</div>
-        <div className="device-node-meta">{data.device.ipAddress}</div>
+        {data.device.ipAddress && <div className="device-node-meta">{data.device.ipAddress}</div>}
       </div>
 
       {/* Outgoing connection handle — positioned at the bottom of the node */}
