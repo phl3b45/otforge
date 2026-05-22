@@ -33,7 +33,8 @@ function zone_name(a: addr): string {
 
 # ── Modbus logging ────────────────────────────────────────────────────────────
 
-event modbus_message(c: connection, is_orig: bool, headers: ModbusHeaders, data: ModbusData) {
+# Zeek 8.x: parameter order is (c, headers, is_orig); ModbusData type was removed.
+event modbus_message(c: connection, headers: ModbusHeaders, is_orig: bool) {
     local src_zone  = zone_name(c$id$orig_h);
     local dst_zone  = zone_name(c$id$resp_h);
 
@@ -57,8 +58,9 @@ event modbus_write_multiple_registers_request(c: connection, headers: ModbusHead
 
 # ── DNP3 logging ──────────────────────────────────────────────────────────────
 
+# Zeek 8.x: signature is (c, is_orig, application, fc); fir/fin/con/uns/seq removed.
 event dnp3_application_request_header(c: connection, is_orig: bool,
-        fc: count, fir: bool, fin: bool, con: bool, uns: bool, seq: count) {
+        application: count, fc: count) {
     # FC 3 = DIRECT_OPERATE
     if (fc == 3) {
         NOTICE([$note=DNP3_Direct_Operate,
