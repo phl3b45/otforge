@@ -177,19 +177,24 @@ export async function writeGrafanaProvisioning(
           }
         ],
         pipeline_stages: [
-          // Parse the EVE JSON record to extract indexed fields
+          // Parse the EVE JSON record to extract indexed fields.
+          // alert.category uses dot-notation to reach the nested alert object —
+          // populated only on alert events, empty string on all other event types.
           {
             json: {
               expressions: {
                 event_type: 'event_type',
                 src_ip: 'src_ip',
                 dest_ip: 'dest_ip',
-                proto: 'proto'
+                proto: 'proto',
+                alert_category: 'alert.category'
               }
             }
           },
           // Promote parsed fields to Loki stream labels so they're queryable
-          { labels: { event_type: '', proto: '' } }
+          // without needing a full JSON parse in every LogQL query.
+          // alert_category is only set on alert events; empty on dns/http/flow/stats.
+          { labels: { event_type: '', proto: '', alert_category: '' } }
         ]
       },
       {
@@ -220,26 +225,27 @@ export async function writeGrafanaProvisioning(
  * dashboard JSON file. The dashboard uses Grafana v10 schema (schemaVersion: 38)
  * and references the provisioned Loki datasource by its explicit UID.
  *
- * Panels:
- *   1. Suricata Alerts — logs panel, LogQL `{job="suricata"} | json | event_type="alert"`
- *   2. Zeek Network Logs — logs panel, LogQL `{job="zeek"}`
+ * Layout (24-column grid):
+ *   Row 0  y=0  h=4  : Stats row — total alerts | alert rate sparkline | top category
+ *   Row 1  y=4  h=14 : Formatted alerts (left) | Zeek connections (right)
+ *   Row 2  y=18 h=10 : All Suricata events (full width, collapsed by default)
  *
- * Both panels auto-refresh every 5 seconds and show the last 1 hour by default.
+ * The formatted alerts panel uses LogQL line_format to produce readable one-liners
+ * instead of dumping raw EVE JSON, e.g.:
+ *   [2] ICS-SIM Modbus port scan detected | 10.200.60.10:54321 → 10.200.10.10:502 (TCP)
  */
 function buildIcsDashboard(): object {
   /** Common datasource reference for all Loki panels. */
   const lokiDs = { type: 'loki', uid: 'otflab-loki' }
 
-  /** Shared options for all log panels. */
-  const logsOptions = {
-    dedupStrategy: 'none',
-    enableLogDetails: true,
-    prettifyLogMessage: false,
-    showLabels: true,
-    showTime: true,
-    sortOrder: 'Descending',
-    wrapLogMessage: true
-  }
+  // LogQL that formats a Suricata alert as a readable one-liner.
+  // Two | json stages: first extracts top-level fields (event_type, src_ip, etc.),
+  // second uses expression mapping to pull nested alert.* fields.
+  const alertsFormattedExpr =
+    '{job="suricata"} | json' +
+    ' | event_type=`alert`' +
+    ' | json alert_sig="alert.signature", alert_sev="alert.severity", alert_cat="alert.category"' +
+    ' | line_format `[sev={{.alert_sev}}] {{.alert_sig}} | {{.src_ip}}:{{.src_port}} → {{.dest_ip}}:{{.dest_port}} ({{.proto}}) [{{.alert_cat}}]`'
 
   return {
     id: null,
@@ -249,42 +255,163 @@ function buildIcsDashboard(): object {
     tags: ['ics', 'scada', 'security', 'suricata', 'zeek'],
     timezone: 'browser',
     schemaVersion: 38,
-    version: 1,
+    version: 2,
     refresh: '5s',
     time: { from: 'now-1h', to: 'now' },
     fiscalYearStartMonth: 0,
     graphTooltip: 0,
     links: [],
     panels: [
-      // ── Suricata alerts log panel ─────────────────────────────────────────
+      // ── Row 0: Stats ──────────────────────────────────────────────────────
+
+      // Total alert count — instant count of all alert events in window
       {
-        id: 1,
-        type: 'logs',
-        title: 'Suricata IPS — Alerts',
-        description: 'Real-time Suricata EVE JSON alerts filtered by event_type="alert".',
-        gridPos: { h: 14, w: 12, x: 0, y: 0 },
+        id: 10,
+        type: 'stat',
+        title: 'Total Alerts',
+        description: 'Count of Suricata alert events in the selected time window.',
+        gridPos: { h: 4, w: 4, x: 0, y: 0 },
         datasource: lokiDs,
-        options: logsOptions,
+        options: {
+          reduceOptions: { calcs: ['sum'], fields: '', values: false },
+          orientation: 'auto',
+          textMode: 'auto',
+          colorMode: 'background',
+          graphMode: 'none',
+          justifyMode: 'center'
+        },
+        fieldConfig: {
+          defaults: {
+            color: { mode: 'thresholds' },
+            thresholds: {
+              mode: 'absolute',
+              steps: [
+                { color: 'green', value: null },
+                { color: 'yellow', value: 1 },
+                { color: 'red', value: 10 }
+              ]
+            }
+          }
+        },
         targets: [
           {
             datasource: lokiDs,
             editorMode: 'code',
-            // Filter for alert events; students can edit this in Grafana Explore
-            expr: '{job="suricata"} | json | event_type=`alert`',
+            expr: 'sum(count_over_time({job="suricata", event_type="alert"}[$__range]))',
+            queryType: 'instant',
+            refId: 'A'
+          }
+        ]
+      },
+
+      // Alert rate over time — sparkline bar chart
+      {
+        id: 11,
+        type: 'timeseries',
+        title: 'Alert Rate',
+        description: 'Suricata alerts per minute over the selected time window.',
+        gridPos: { h: 4, w: 12, x: 4, y: 0 },
+        datasource: lokiDs,
+        options: {
+          legend: { displayMode: 'hidden', placement: 'bottom' },
+          tooltip: { mode: 'single', sort: 'none' }
+        },
+        fieldConfig: {
+          defaults: {
+            color: { mode: 'fixed', fixedColor: 'red' },
+            custom: { drawStyle: 'bars', fillOpacity: 80, lineWidth: 0 }
+          }
+        },
+        targets: [
+          {
+            datasource: lokiDs,
+            editorMode: 'code',
+            expr: 'sum(rate({job="suricata", event_type="alert"}[1m]))',
+            queryType: 'range',
+            legendFormat: 'alerts/min',
+            refId: 'A'
+          }
+        ]
+      },
+
+      // Alert breakdown by category label (set by Promtail pipeline)
+      {
+        id: 12,
+        type: 'piechart',
+        title: 'Alerts by Category',
+        description: 'Distribution of Suricata alert categories in the selected time window.',
+        gridPos: { h: 4, w: 8, x: 16, y: 0 },
+        datasource: lokiDs,
+        options: {
+          legend: { displayMode: 'list', placement: 'right' },
+          pieType: 'donut',
+          tooltip: { mode: 'single' }
+        },
+        targets: [
+          {
+            datasource: lokiDs,
+            editorMode: 'code',
+            // Count alerts grouped by the alert_category label extracted by Promtail
+            expr: 'sum by (alert_category) (count_over_time({job="suricata", event_type="alert"}[$__range]))',
+            queryType: 'instant',
+            legendFormat: '{{alert_category}}',
+            refId: 'A'
+          }
+        ]
+      },
+
+      // ── Row 1: Main detail panels ─────────────────────────────────────────
+
+      // Formatted Suricata alerts — readable one-liners via line_format
+      {
+        id: 1,
+        type: 'logs',
+        title: 'Suricata — Alerts',
+        description:
+          'Formatted alert log: [severity] rule name | src → dst (proto) [category]. ' +
+          'Click a line to expand the raw EVE JSON. Edit the LogQL in Explore for custom filters.',
+        gridPos: { h: 14, w: 14, x: 0, y: 4 },
+        datasource: lokiDs,
+        options: {
+          dedupStrategy: 'none',
+          enableLogDetails: true,
+          // prettifyLogMessage applies to the raw detail view, not the formatted line
+          prettifyLogMessage: true,
+          showLabels: false,
+          showTime: true,
+          sortOrder: 'Descending',
+          wrapLogMessage: false
+        },
+        targets: [
+          {
+            datasource: lokiDs,
+            editorMode: 'code',
+            expr: alertsFormattedExpr,
             queryType: 'range',
             refId: 'A'
           }
         ]
       },
-      // ── Zeek network log panel ────────────────────────────────────────────
+
+      // Zeek network connections
       {
         id: 2,
         type: 'logs',
         title: 'Zeek — Network Analysis',
-        description: 'Zeek protocol analyzer logs (conn.log, dns.log, modbus.log, dnp3.log).',
-        gridPos: { h: 14, w: 12, x: 12, y: 0 },
+        description:
+          'Zeek protocol analyzer logs (conn.log, dns.log, modbus.log, dnp3.log). ' +
+          'Each file is tagged with a filename label by Promtail.',
+        gridPos: { h: 14, w: 10, x: 14, y: 4 },
         datasource: lokiDs,
-        options: logsOptions,
+        options: {
+          dedupStrategy: 'none',
+          enableLogDetails: true,
+          prettifyLogMessage: false,
+          showLabels: true,
+          showTime: true,
+          sortOrder: 'Descending',
+          wrapLogMessage: true
+        },
         targets: [
           {
             datasource: lokiDs,
@@ -295,20 +422,35 @@ function buildIcsDashboard(): object {
           }
         ]
       },
-      // ── All Suricata events (not just alerts) ─────────────────────────────
+
+      // ── Row 2: Raw event stream (full width) ──────────────────────────────
+
+      // Full Suricata EVE stream — dns, http, tls, flow, stats, alerts
       {
         id: 3,
         type: 'logs',
-        title: 'Suricata — All Events',
-        description: 'Full Suricata EVE stream: dns, http, tls, flow, stats and alerts.',
-        gridPos: { h: 10, w: 24, x: 0, y: 14 },
+        title: 'Suricata — All Events (raw EVE JSON)',
+        description:
+          'Complete Suricata EVE stream including dns, http, tls, flow, stats and alerts. ' +
+          'Use event_type label filter to narrow: | event_type=`dns` etc.',
+        gridPos: { h: 10, w: 24, x: 0, y: 18 },
         datasource: lokiDs,
-        options: { ...logsOptions, showLabels: false },
+        collapsed: false,
+        options: {
+          dedupStrategy: 'none',
+          enableLogDetails: true,
+          prettifyLogMessage: true,
+          showLabels: false,
+          showTime: true,
+          sortOrder: 'Descending',
+          wrapLogMessage: false
+        },
         targets: [
           {
             datasource: lokiDs,
             editorMode: 'code',
-            expr: '{job="suricata"}',
+            // Exclude high-volume stats events from the default view
+            expr: '{job="suricata"} | json | event_type != `stats`',
             queryType: 'range',
             refId: 'A'
           }
