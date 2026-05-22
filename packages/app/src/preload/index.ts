@@ -358,6 +358,26 @@ const api = {
       ipcRenderer.invoke('pack:openScenario', { packId, relativePath })
   },
 
+  // ── Modbus coil polling — live pipe-flow animation ───────────────────────────
+  // Called by ScadaCanvas every 2 s while the simulation is running and the OT
+  // layer is active. The main process connects to localhost:18550+n (the PLC's
+  // published Modbus port) and issues a raw FC01 Read Coils frame.
+  modbus: {
+    /**
+     * Reads coil states from a PLC via Modbus TCP and returns them as booleans.
+     *
+     * The main process connects to the PLC's host-published Modbus port (base 18550,
+     * assigned by compose-generator.ts). The renderer uses this to animate OT-layer
+     * pipe edges based on real PLC coil states (green = flowing, red = stopped).
+     *
+     * @param nodeId - Scenario device node ID of the target PLC.
+     * @param count  - Number of coils to read starting at Modbus address 0.
+     * @returns Array of booleans, coil[0] = address 0. Returns [] on failure.
+     */
+    readCoils: (nodeId: string, count: number): Promise<boolean[]> =>
+      ipcRenderer.invoke('modbus:readCoils', { nodeId, count })
+  },
+
   // ── Clipboard ─────────────────────────────────────────────────────────────────
   // Both methods use Electron's native clipboard module (not the Web Clipboard API)
   // so they work reliably in the non-HTTPS Electron renderer context.

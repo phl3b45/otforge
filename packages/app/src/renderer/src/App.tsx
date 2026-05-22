@@ -1612,6 +1612,7 @@ export default function App() {
           showGrid={effectiveShowGrid}
           readOnly={!builderModeActive}
           packDeviceTypes={allPackDeviceTypes}
+          simRunning={simStatus === 'running'}
           onSelectDevice={handleSelectDevice}
           onScenarioChange={handleScenarioChange}
         />

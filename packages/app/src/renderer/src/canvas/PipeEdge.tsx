@@ -10,8 +10,15 @@
  *   - Filled arrowhead at the target, indicating flow direction.
  *   - Same protocol color scheme as ProtocolEdge so users learn one legend
  *     that applies across both OT and IT layer canvases.
- *   - When the simulation is running, a stroke-dasharray animation (CSS) gives
- *     the impression of fluid/signal moving through the pipe.
+ *
+ * Flow state animation (when coilSource is set and simulation is running):
+ *   - flowActive === true  → bright green (#22c55e) animated dashes — fluid flowing
+ *   - flowActive === false → red (#ef4444) solid stroke — flow stopped/blocked
+ *   - flowActive undefined → default protocol color, no animation
+ *
+ * The `coilSource` field identifies which PLC coil drives this pipe's state.
+ * ScadaCanvas polls coil states via the `modbus:readCoils` IPC channel and
+ * sets `flowActive` on each edge before passing them to React Flow.
  *
  * Protocol color mapping (matches ProtocolEdge.tsx):
  *   modbus-tcp/rtu/ascii → #39d0b0  teal   (most common OT signal)
@@ -55,11 +62,34 @@ const PROTOCOL_LABELS: Partial<Record<Protocol, string>> = {
   'iec-104': 'IEC 104' // Phase 10
 }
 
+/** Bright green used when a coil-driven flow is active. */
+const FLOW_ACTIVE_COLOR = '#22c55e'
+/** Red used when a coil-driven flow is stopped or blocked. */
+const FLOW_INACTIVE_COLOR = '#ef4444'
+
 export interface PipeEdgeData {
   /** The ICS protocol carried by this pipe connection. */
   protocol: Protocol
   /** Optional label override — shown instead of the protocol name when set. */
   label?: string
+  /**
+   * Identifies which PLC coil state drives this pipe's flow animation.
+   * When set, ScadaCanvas polls the coil at runtime and writes `flowActive`.
+   * When absent, the edge uses the static protocol color with no animation.
+   */
+  coilSource?: {
+    /** nodeId of the PLC device in the scenario device map. */
+    nodeId: string
+    /** Zero-based coil index (Modbus FC01 address). */
+    coilIndex: number
+  }
+  /**
+   * Computed by ScadaCanvas from live Modbus coil polling.
+   *   true  → coil is ON  — render as green flowing animation
+   *   false → coil is OFF — render as solid red (stopped)
+   *   undefined → coilSource not set or simulation not running — use protocol color
+   */
+  flowActive?: boolean
 }
 
 /** React Flow typed edge record for PipeEdge. */
@@ -91,8 +121,38 @@ export function PipeEdge({
 }: EdgeProps) {
   const edgeData = data as unknown as PipeEdgeData
   const protocol = edgeData?.protocol ?? 'none'
-  const color = PIPE_COLORS[protocol] ?? '#484f58'
   const isNone = protocol === 'none'
+  const { flowActive, coilSource } = edgeData ?? {}
+
+  // Flow state overrides the default protocol color when a coilSource is configured.
+  // The three states give students immediate visual feedback about PLC coil changes:
+  //   green + animated  = process is running (coil ON)
+  //   red + static      = process stopped/blocked (coil OFF)
+  //   protocol color    = no coil binding, normal network topology display
+  let strokeColor: string
+  let flowClass: string
+  let strokeDasharray: string | undefined
+
+  if (coilSource !== undefined) {
+    if (flowActive === true) {
+      strokeColor = FLOW_ACTIVE_COLOR
+      flowClass = 'pipe-edge--active'
+      strokeDasharray = '8 4'
+    } else if (flowActive === false) {
+      strokeColor = FLOW_INACTIVE_COLOR
+      flowClass = 'pipe-edge--inactive'
+      strokeDasharray = undefined
+    } else {
+      // coilSource set but simulation not running — show protocol color, no animation
+      strokeColor = PIPE_COLORS[protocol] ?? '#484f58'
+      flowClass = ''
+      strokeDasharray = undefined
+    }
+  } else {
+    strokeColor = PIPE_COLORS[protocol] ?? '#484f58'
+    flowClass = ''
+    strokeDasharray = isNone ? 'none' : undefined
+  }
 
   // Orthogonal routing — getSmoothStepPath produces right-angle bends
   const [edgePath, labelX, labelY] = getSmoothStepPath({
@@ -125,7 +185,7 @@ export function PipeEdge({
           orient="auto"
           markerUnits="strokeWidth"
         >
-          <path d="M0,0 L0,6 L8,3 z" fill={color} opacity={opacity} />
+          <path d="M0,0 L0,6 L8,3 z" fill={strokeColor} opacity={opacity} />
         </marker>
       </defs>
 
@@ -134,16 +194,13 @@ export function PipeEdge({
         id={id}
         path={edgePath}
         style={{
-          stroke: color,
+          stroke: strokeColor,
           strokeWidth,
           opacity,
           markerEnd: `url(#${markerId})`,
-          // CSS animation class applied via data attribute; the actual keyframe
-          // is defined in index.css and only triggers when .simulation-running
-          // class is present on a parent element (added by App.tsx when running).
-          strokeDasharray: isNone ? 'none' : undefined
+          strokeDasharray
         }}
-        className={`pipe-edge${isNone ? ' pipe-edge--none' : ''}`}
+        className={`pipe-edge${isNone ? ' pipe-edge--none' : ''}${flowClass ? ` ${flowClass}` : ''}`}
       />
 
       {/* Protocol label chip — only shown for named protocols */}
@@ -154,8 +211,8 @@ export function PipeEdge({
             style={{
               position: 'absolute',
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              borderColor: color,
-              color,
+              borderColor: strokeColor,
+              color: strokeColor,
               pointerEvents: 'all'
             }}
           >

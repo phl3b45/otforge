@@ -378,7 +378,13 @@ function scenarioToEdges(
       type: edgeType,
       data: {
         protocol: ce.data.protocol,
-        ...(ce.data.label !== undefined ? { label: ce.data.label } : {})
+        ...(ce.data.label !== undefined ? { label: ce.data.label } : {}),
+        // Pass coilSource through to PipeEdge so the ScadaCanvas polling loop
+        // knows which PLC coil drives this edge's flow-state animation.
+        // Only present on OT-layer edges that have a coilSource in the scenario.
+        ...(activeLayer === 'ot' && ce.data.coilSource !== undefined
+          ? { coilSource: ce.data.coilSource }
+          : {})
       }
     }))
 }
@@ -407,6 +413,12 @@ interface ScadaCanvasProps {
    * Passed down from App so the canvas doesn't need to call the IPC directly.
    */
   packDeviceTypes?: import('@otforge/schema').ResolvedPackDeviceType[]
+  /**
+   * Whether the simulation is currently running.
+   * When true and the OT layer is active, the canvas polls PLC coil states every
+   * 2 s and applies flow-state colors and animations to coil-sourced pipe edges.
+   */
+  simRunning?: boolean
   onSelectDevice: (nodeId: string | null, device: DeviceConfig | null) => void
   onScenarioChange: (updater: (s: OTForgeScenario | null) => OTForgeScenario | null) => void
 }
@@ -424,11 +436,19 @@ export function ScadaCanvas({
   showGrid,
   readOnly = false,
   packDeviceTypes = [],
+  simRunning = false,
   onSelectDevice,
   onScenarioChange
 }: ScadaCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
+
+  /**
+   * Live coil state map — keyed by "${nodeId}:${coilIndex}", value is boolean.
+   * Populated by the polling useEffect below when the simulation is running and
+   * the OT layer is active. Empty map = simulation not running or no coil edges.
+   */
+  const [coilStates, setCoilStates] = useState<Map<string, boolean>>(new Map())
 
   /** Right-click context menu — null when closed. */
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
@@ -472,6 +492,79 @@ export function ScadaCanvas({
    * (prevents stale closures from clearing a tooltip the user just triggered).
    */
   const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /**
+   * Polls PLC coil states via Modbus TCP while the simulation is running on the OT layer.
+   *
+   * Every 2 s, collects edges with a `coilSource` binding, groups them by PLC nodeId to
+   * minimise IPC calls, and calls window.electronAPI.modbus.readCoils() once per PLC.
+   * Results are written to `coilStates` — a flat map keyed by "${nodeId}:${coilIndex}".
+   *
+   * The polling interval clears when the simulation stops, the layer changes, or the
+   * component unmounts so there are no dangling timers.
+   *
+   * Polling failures are silent (readCoils returns [] on any TCP/timeout error) so a
+   * temporarily unreachable PLC does not break the canvas — the last known state persists.
+   */
+  useEffect(() => {
+    if (!simRunning || activeLayer !== 'ot') {
+      setCoilStates(new Map())
+      return
+    }
+
+    // Collect edges that have a coilSource binding
+    const coilEdges = edges.filter(e => {
+      const d = e.data as import('./PipeEdge').PipeEdgeData
+      return d?.coilSource !== undefined
+    })
+    if (coilEdges.length === 0) return
+
+    // Group by nodeId, tracking the max coilIndex needed per PLC to batch reads
+    const plcMaxCoil = new Map<string, number>()
+    for (const edge of coilEdges) {
+      const { nodeId, coilIndex } = (edge.data as import('./PipeEdge').PipeEdgeData).coilSource!
+      const current = plcMaxCoil.get(nodeId) ?? -1
+      if (coilIndex > current) plcMaxCoil.set(nodeId, coilIndex)
+    }
+
+    const poll = async () => {
+      const next = new Map<string, boolean>()
+      for (const [nodeId, maxIdx] of plcMaxCoil.entries()) {
+        try {
+          const coils = await window.electronAPI.modbus.readCoils(nodeId, maxIdx + 1)
+          for (let i = 0; i <= maxIdx; i++) {
+            if (coils[i] !== undefined) next.set(`${nodeId}:${i}`, coils[i])
+          }
+        } catch {
+          // Non-fatal: keep previous state for this PLC
+        }
+      }
+      setCoilStates(next)
+    }
+
+    poll() // Immediate first poll
+    const timer = setInterval(poll, 2000)
+    return () => clearInterval(timer)
+  }, [simRunning, activeLayer, edges])
+
+  /**
+   * Edges augmented with live `flowActive` values for coil-sourced pipe edges.
+   * Derived from `edges` (React Flow state) and `coilStates` (polling result).
+   * Only pipe edges with a `coilSource` binding are modified; all others pass through.
+   * Passed to ReactFlow's `edges` prop while the underlying state stays clean for
+   * position/type mutations.
+   */
+  const displayEdges = useMemo(() => {
+    if (coilStates.size === 0) return edges
+    return edges.map(edge => {
+      const pipeData = edge.data as import('./PipeEdge').PipeEdgeData
+      if (!pipeData?.coilSource) return edge
+      const key = `${pipeData.coilSource.nodeId}:${pipeData.coilSource.coilIndex}`
+      const flowActive = coilStates.get(key)
+      if (flowActive === undefined) return edge
+      return { ...edge, data: { ...pipeData, flowActive } }
+    })
+  }, [edges, coilStates])
 
   /**
    * Context-menu protocol options filtered to only those valid for the source device.
@@ -949,7 +1042,7 @@ export function ScadaCanvas({
     >
       <ReactFlow
         nodes={displayNodes}
-        edges={edges}
+        edges={displayEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodesDelete={readOnly ? undefined : onNodesDelete}

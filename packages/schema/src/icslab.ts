@@ -95,6 +95,17 @@ export interface CanvasEdge {
   data: {
     protocol: Protocol
     label?: string
+    /**
+     * Optional coil binding for OT-layer pipe flow animation.
+     * When set, the SCADA canvas polls the named PLC coil at runtime and colors
+     * the pipe edge green (flowing) or red (stopped) based on the coil state.
+     */
+    coilSource?: {
+      /** nodeId of the PLC device in the scenario device map. */
+      nodeId: string
+      /** Zero-based Modbus coil address (FC01). */
+      coilIndex: number
+    }
   }
 }
 

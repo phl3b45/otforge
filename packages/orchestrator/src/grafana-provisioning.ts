@@ -161,7 +161,11 @@ export async function writeGrafanaProvisioning(
   const promtailConfig = {
     server: { http_listen_port: 9080, grpc_listen_port: 0 },
     positions: { filename: '/tmp/positions.yaml' },
-    clients: [{ url: `http://${LOKI_IP}:3100/loki/api/v1/push` }],
+    // batchwait halved from the 1 s default to reduce the lag between Suricata/Zeek
+    // writing a log line and it appearing in Grafana and the Live Logs panel.
+    clients: [
+      { url: `http://${LOKI_IP}:3100/loki/api/v1/push`, batchwait: '500ms', batchsize: 524288 }
+    ],
     scrape_configs: [
       {
         job_name: 'suricata',
@@ -278,7 +282,10 @@ function buildIcsDashboard(): object {
         gridPos: { h: 4, w: 4, x: 0, y: 0 },
         datasource: lokiDs,
         options: {
-          reduceOptions: { calcs: ['sum'], fields: '', values: false },
+          // fields:'' (all fields) so Grafana finds the numeric field regardless of
+          // what the Loki datasource names it in the returned data frame. lastNotNull
+          // on an instant query returns the single scalar value the query produces.
+          reduceOptions: { calcs: ['lastNotNull'], fields: '', values: false },
           orientation: 'auto',
           textMode: 'auto',
           colorMode: 'background',
@@ -314,7 +321,8 @@ function buildIcsDashboard(): object {
         id: 11,
         type: 'timeseries',
         title: 'Alert Rate',
-        description: 'Suricata alerts per minute over the selected time window.',
+        description:
+          'Suricata alerts per Grafana time interval. Spikes correspond to attack bursts.',
         gridPos: { h: 4, w: 12, x: 4, y: 0 },
         datasource: lokiDs,
         options: {
@@ -331,9 +339,13 @@ function buildIcsDashboard(): object {
           {
             datasource: lokiDs,
             editorMode: 'code',
-            expr: 'sum(rate({job="suricata", event_type="alert"}[1m]))',
+            // count_over_time with $__interval gives alert counts per Grafana time
+            // bucket. rate([1m]) returns alerts-per-second fractions that render as
+            // near-zero values when alerts arrive in short bursts, making the chart
+            // appear empty. count_over_time produces a visible spike for each burst.
+            expr: 'sum(count_over_time({job="suricata", event_type="alert"}[$__interval]))',
             queryType: 'range',
-            legendFormat: 'alerts/min',
+            legendFormat: 'alerts',
             refId: 'A'
           }
         ]
@@ -348,6 +360,13 @@ function buildIcsDashboard(): object {
         gridPos: { h: 4, w: 8, x: 16, y: 0 },
         datasource: lokiDs,
         options: {
+          // fields:'' (all fields) is required here. The instant query path sets
+          // fields:'Value', which causes Grafana to drop the series label metadata and
+          // display "Value #A" instead of the actual alert_category string.
+          // Using a range query + calcs:['sum'] avoids that: Grafana builds a proper
+          // labeled time series per category, sums each to one number, and uses the
+          // legendFormat to name each pie slice.
+          reduceOptions: { calcs: ['sum'], fields: '', values: false },
           legend: { displayMode: 'list', placement: 'right' },
           pieType: 'donut',
           tooltip: { mode: 'single' }
@@ -356,9 +375,11 @@ function buildIcsDashboard(): object {
           {
             datasource: lokiDs,
             editorMode: 'code',
-            // Count alerts grouped by the alert_category label extracted by Promtail
-            expr: 'sum by (alert_category) (count_over_time({job="suricata", event_type="alert"}[$__range]))',
-            queryType: 'instant',
+            // Range query so Grafana builds a labeled time series per alert_category.
+            // $__interval buckets the time range into Grafana's auto step; calcs:['sum']
+            // collapses the buckets into one total per category for the pie slice value.
+            expr: 'sum by (alert_category) (count_over_time({job="suricata", event_type="alert"}[$__interval]))',
+            queryType: 'range',
             legendFormat: '{{alert_category}}',
             refId: 'A'
           }

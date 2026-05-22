@@ -33,23 +33,44 @@ IFACES=()
 CLUSTER_ID=1
 
 if [ -n "${SURICATA_IFACE:-}" ]; then
-    # Explicit single-interface override (useful for unit tests)
+    # Explicit single-interface override (useful for unit tests or non-host-mode deployments)
     ip link set "$SURICATA_IFACE" promisc on 2>/dev/null \
         && echo "[ics-suricata] Promiscuous mode enabled on ${SURICATA_IFACE}" \
         || echo "[ics-suricata] Warning: could not set promisc on ${SURICATA_IFACE}"
     IFACES=("$SURICATA_IFACE")
 else
-    # Auto-detect every non-loopback interface with a 10.x address
-    for candidate in $(ls /sys/class/net/ 2>/dev/null | grep -v lo | sort); do
-        if ip addr show "$candidate" 2>/dev/null | grep -qE 'inet 10\.'; then
-            ip link set "$candidate" promisc on 2>/dev/null \
-                && echo "[ics-suricata] Promiscuous mode enabled on ${candidate}" \
-                || echo "[ics-suricata] Warning: could not set promisc on ${candidate}"
-            IFACES+=("$candidate")
+    # Running in host network mode: detect Docker bridge interfaces (br-XXXX) that carry
+    # simulation traffic. Docker creates a br-XXXX Linux bridge on the host for each
+    # network; the host-side bridge sees ALL inter-container unicast frames, unlike a
+    # container veth which only receives frames addressed to its own MAC.
+    #
+    # Selection criteria:
+    #   1. Interface has a "bridge" kernel type (directory /sys/class/net/<iface>/bridge exists)
+    #   2. Interface has an address in 10.200.x.x (our simulation subnet range)
+    #
+    # We do NOT set promiscuous mode on bridge interfaces — the bridge already receives
+    # all frames from its member ports. Promisc on br-XXXX is a no-op for capture purposes.
+    for candidate in $(ls /sys/class/net/ 2>/dev/null | sort); do
+        if [ -d "/sys/class/net/${candidate}/bridge" ] 2>/dev/null; then
+            if ip addr show "$candidate" 2>/dev/null | grep -qE 'inet 10\.200\.'; then
+                echo "[ics-suricata] Found simulation bridge: ${candidate}"
+                IFACES+=("$candidate")
+            fi
         fi
     done
     if [ ${#IFACES[@]} -eq 0 ]; then
-        echo "[ics-suricata] Warning: no 10.x interface found, falling back to eth0"
+        # Fallback: no bridge interfaces found — may be running outside host-network mode.
+        # Fall back to scanning all non-loopback interfaces with a 10.x address (old behaviour).
+        echo "[ics-suricata] Warning: no br-XXXX bridge interfaces found, falling back to veth scan"
+        for candidate in $(ls /sys/class/net/ 2>/dev/null | grep -v lo | sort); do
+            if ip addr show "$candidate" 2>/dev/null | grep -qE 'inet 10\.'; then
+                ip link set "$candidate" promisc on 2>/dev/null
+                IFACES+=("$candidate")
+            fi
+        done
+    fi
+    if [ ${#IFACES[@]} -eq 0 ]; then
+        echo "[ics-suricata] Warning: no suitable interface found, falling back to eth0"
         IFACES=("eth0")
     fi
 fi

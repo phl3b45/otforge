@@ -370,6 +370,16 @@ let activeProjectName: string | null = null
 const activePlcPorts = new Map<string, number>()
 
 /**
+ * Maps PLC device nodeIds to their published Modbus TCP host ports.
+ * Base port 18550 matches PLC_MODBUS_PORT_BASE in compose-generator.ts.
+ * Populated at simulation start, cleared on stop.
+ *
+ * Used by modbus:readCoils to connect directly to the PLC's Modbus server from
+ * the Electron main process and read coil states for the pipe-flow animation.
+ */
+const activePlcModbusPorts = new Map<string, number>()
+
+/**
  * Maps attack-machine device nodeIds to their published host ports.
  * Populated on simulation start with the same index ordering as the compose
  * generator's ATTACK_NOVNC_PORT_BASE=6900 logic (host port → container port 3000).
@@ -761,12 +771,15 @@ function registerIPCHandlers(): void {
         // as compose-generator.ts so the IPC handlers can find host ports without re-parsing
         // the generated compose file.
         activePlcPorts.clear()
+        activePlcModbusPorts.clear()
         activeAttackPorts.clear()
         let plcIdx = 0
         let attackIdx = 0
         for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
           if (device.category === 'plc') {
             activePlcPorts.set(nodeId, 18080 + plcIdx)
+            // 18550 matches PLC_MODBUS_PORT_BASE in compose-generator.ts
+            activePlcModbusPorts.set(nodeId, 18550 + plcIdx)
             plcIdx++
           }
           if (device.category === 'attack-machine') {
@@ -839,6 +852,7 @@ function registerIPCHandlers(): void {
         // Reset active project so a retry doesn't think a simulation is already running
         activeProjectName = null
         activePlcPorts.clear()
+        activePlcModbusPorts.clear()
         activeAttackPorts.clear()
         return { ok: false, error: `Simulation start failed: ${(err as Error).message}` }
       }
@@ -866,6 +880,7 @@ function registerIPCHandlers(): void {
       await clearActiveScenario()
       activeProjectName = null
       activePlcPorts.clear()
+      activePlcModbusPorts.clear()
       activeAttackPorts.clear()
     }
     return result
@@ -1114,6 +1129,97 @@ function registerIPCHandlers(): void {
     if (!hostPort) return
     await shell.openExternal(`http://localhost:${hostPort}`)
   })
+
+  // ── Modbus coil polling — live pipe-flow animation ────────────────────────────
+
+  /**
+   * Reads a block of coil states from a PLC via Modbus TCP and returns them as
+   * a boolean array. Called by ScadaCanvas's coil-polling useEffect (every 2 s)
+   * to drive the pipe-flow animation in the OT layer canvas.
+   *
+   * Implementation: raw Modbus TCP via Node.js net module (no third-party library).
+   * Connects to localhost:${activePlcModbusPorts.get(nodeId)} — the PLC Modbus port
+   * published by compose-generator.ts (base 18550). Sends FC01 Read Coils MBAP
+   * frame, parses the response bit-fields into a boolean[].
+   *
+   * Returns [] (empty array) on connection failure so the canvas keeps the last
+   * known coil state rather than resetting to undefined.
+   *
+   * @param nodeId - Scenario device node ID of the target PLC.
+   * @param count  - Number of coils to read starting at address 0.
+   */
+  ipcMain.handle(
+    'modbus:readCoils',
+    async (_e, { nodeId, count }: { nodeId: string; count: number }): Promise<boolean[]> => {
+      const hostPort = activePlcModbusPorts.get(nodeId)
+      if (!hostPort) return []
+
+      return new Promise<boolean[]>(resolve => {
+        const socket = new net.Socket()
+        const TIMEOUT_MS = 2500
+
+        // Non-fatal failure path: always resolve (never reject) so the renderer
+        // never needs to catch a promise rejection in the polling loop.
+        const fail = () => {
+          if (!socket.destroyed) socket.destroy()
+          resolve([])
+        }
+
+        socket.setTimeout(TIMEOUT_MS)
+        socket.once('error', fail)
+        socket.once('timeout', fail)
+
+        socket.connect(hostPort, '127.0.0.1', () => {
+          // Build Modbus TCP FC01 (Read Coils) request frame — 12 bytes total.
+          // MBAP header (7 bytes):
+          //   [0-1] Transaction ID = 1  (any non-zero value; echoed in response)
+          //   [2-3] Protocol ID   = 0  (always 0 for Modbus TCP)
+          //   [4-5] Length        = 6  (bytes after Length: Unit ID + 5 PDU bytes)
+          //   [6]   Unit ID       = 1  (OpenPLC default slave ID)
+          // PDU (5 bytes):
+          //   [7]   Function Code = 0x01 (Read Coils)
+          //   [8-9] Start Address = 0   (coil 0)
+          //   [10-11] Quantity    = count
+          const req = Buffer.alloc(12)
+          req.writeUInt16BE(1, 0) // Transaction ID
+          req.writeUInt16BE(0, 2) // Protocol ID
+          req.writeUInt16BE(6, 4) // Length (6 bytes: unit + function + 2 addr + 2 qty)
+          req.writeUInt8(1, 6) // Unit ID = 1
+          req.writeUInt8(0x01, 7) // Function Code: Read Coils
+          req.writeUInt16BE(0, 8) // Starting Address: 0
+          req.writeUInt16BE(count, 10) // Quantity of Coils
+          socket.write(req)
+        })
+
+        // Accumulate response chunks until the full frame arrives.
+        // Cast to Buffer — socket encoding is not set so data arrives as Buffer, not string.
+        const chunks: Buffer[] = []
+        socket.on('data', (chunk: Buffer) => {
+          chunks.push(chunk)
+          const data = Buffer.concat(chunks)
+          // Response: 7-byte MBAP + 1 function code + 1 byte count + ceil(count/8) coil bytes
+          const coilByteCount = Math.ceil(count / 8)
+          const expectedLen = 9 + coilByteCount
+          if (data.length < expectedLen) return // wait for more data
+          socket.destroy()
+          // Check for Modbus exception (function code | 0x80)
+          if ((data[7] & 0x80) !== 0) {
+            resolve([])
+            return
+          }
+          // Parse coil bits: each byte holds 8 coils, LSB first.
+          const coilBytes = data.slice(9, 9 + coilByteCount)
+          const coils: boolean[] = []
+          for (let i = 0; i < count; i++) {
+            const byteIdx = Math.floor(i / 8)
+            const bitIdx = i % 8
+            coils.push((coilBytes[byteIdx] & (1 << bitIdx)) !== 0)
+          }
+          resolve(coils)
+        })
+      })
+    }
+  )
 
   // ── Attack terminal ───────────────────────────────────────────────────────────
 

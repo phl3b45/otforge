@@ -159,7 +159,15 @@ interface ComposeService {
   image: string
   container_name: string
   restart: string
-  networks: Record<string, { ipv4_address: string }>
+  /**
+   * When set to 'host', the container shares the host's network namespace. Mutually
+   * exclusive with `networks` — Docker Compose ignores `networks` when `network_mode`
+   * is present. Used by Suricata so it can open AF_PACKET sockets on the host-side
+   * br-XXXX Docker bridge interfaces and see all inter-container traffic.
+   */
+  network_mode?: string
+  /** Per-network IP assignments. Omitted when network_mode is set. */
+  networks?: Record<string, { ipv4_address: string }>
   environment: string[] | undefined
   volumes: string[] | undefined
   cap_add: string[] | undefined
@@ -322,6 +330,10 @@ export function generateCompose(
   //   ordering is replicated in main/index.ts → activeAttackPorts map, which
   //   the terminal:getVncUrl IPC handler uses to build the noVNC URL.
   const PLC_WEB_PORT_BASE = 18080
+  // PLC Modbus TCP port (502) published on host starting at 18550 so the
+  // Electron main process can poll coil states directly from Node.js via TCP.
+  // The same base is mirrored in main/index.ts → activePlcModbusPorts map.
+  const PLC_MODBUS_PORT_BASE = 18550
   let plcPortIndex = 0
   const ATTACK_NOVNC_PORT_BASE = 6900
   let attackPortIndex = 0
@@ -365,7 +377,6 @@ export function generateCompose(
   // loop — to avoid a Temporal Dead Zone ReferenceError if declared later.
   const otBase = effectiveZones.ot.subnet.replace('.0/24', '')
   const controlBase = effectiveZones.control.subnet.replace('.0/24', '')
-  const attackerBase = effectiveZones.attacker.subnet.replace('.0/24', '')
   const internetDmzBase = effectiveZones['internet-dmz'].subnet.replace('.0/24', '')
 
   /**
@@ -435,8 +446,13 @@ export function generateCompose(
     // non-internal monitoring-net below — ot-net is internal: true and Docker
     // silently drops port bindings on internal-only networks.
     if (device.category === 'plc') {
-      const hostPort = PLC_WEB_PORT_BASE + plcPortIndex
-      services[serviceName].ports = [`${hostPort}:8080`]
+      const hostWebPort = PLC_WEB_PORT_BASE + plcPortIndex
+      const hostModbusPort = PLC_MODBUS_PORT_BASE + plcPortIndex
+      // Publish both the OpenPLC web IDE (8080) and the Modbus TCP server (502).
+      // Modbus is published so the Electron renderer can poll coil states directly
+      // via Node.js raw TCP sockets (modbus:readCoils IPC channel) for the
+      // live pipe-flow animation without needing docker exec or extra containers.
+      services[serviceName].ports = [`${hostWebPort}:8080`, `${hostModbusPort}:502`]
       plcServiceNames.push(serviceName)
       plcPortIndex++
     }
@@ -509,6 +525,23 @@ export function generateCompose(
       // Port 6080: noVNC WebSocket bridge served by our custom otforge-attack-base image
       services[serviceName].ports = [`${webPort}:6080`]
       attackPortIndex++
+
+      // Inject PLC_IP / PLC_PORT so the Attack_Scripts (read_coils.py, write_coil.py)
+      // connect to the correct PLC without students needing to look up IPs.
+      // Uses the first PLC device in the scenario; claimedDeviceIps gives the
+      // post-dedup address (in case claimIp() bumped the scenario-declared IP).
+      const firstPlc = Object.values(scenario.devices.devices).find(d => d.category === 'plc')
+      if (firstPlc) {
+        const plcIp =
+          claimedDeviceIps.get(firstPlc.nodeId) ??
+          resolveDeviceIp(firstPlc.ipAddress, scenario, effectiveZones)
+        const plcPort = firstPlc.modbus?.port ?? 502
+        const attackEnv: string[] = services[serviceName].environment ?? []
+        attackEnv.push(`PLC_IP=${plcIp}`)
+        attackEnv.push(`PLC_PORT=${plcPort}`)
+        services[serviceName].environment = attackEnv
+      }
+
       // Point Kali's resolver at the scenario's dns-server so exercise hostnames
       // (e.g., meridian-process.com) resolve inside the simulation without needing
       // the public internet.
@@ -546,7 +579,7 @@ export function generateCompose(
       for (const extraZone of device.extraNetworks) {
         const extraNetName = `${extraZone}-net`
         // Skip if the device is already on this network (avoids duplicate attachment)
-        if (services[serviceName].networks[extraNetName]) continue
+        if (services[serviceName].networks![extraNetName]) continue
         // Pick a free IP in the .200–.239 "extra network" host range
         const extraBase = effectiveZones[extraZone].subnet.replace('.0/24', '')
         let extraHost = 200
@@ -554,7 +587,7 @@ export function generateCompose(
         while (usedSet.has(extraHost) && extraHost < 240) extraHost++
         usedSet.add(extraHost)
         usedIpsPerNet.set(extraNetName, usedSet)
-        services[serviceName].networks[extraNetName] = {
+        services[serviceName].networks![extraNetName] = {
           ipv4_address: `${extraBase}.${extraHost}`
         }
       }
@@ -592,14 +625,20 @@ export function generateCompose(
   // Attach each PLC service to monitoring-net so its ports: binding is honoured
   // by Docker Desktop. IPs start at .10 (fixed infrastructure uses .1–.9).
   plcServiceNames.forEach((svcName, idx) => {
-    services[svcName].networks['monitoring-net'] = {
+    services[svcName].networks!['monitoring-net'] = {
       ipv4_address: `${monitorBase}.${10 + idx}`
     }
   })
 
-  // ── Suricata — inline IPS/IDS on OT and IT networks ──────────────────────
-  // Placed on both OT and IT nets so it can analyze cross-zone traffic.
-  // Eve JSON logs go to a named volume, then Loki reads them (Phase 6).
+  // ── Suricata — host-network IDS/IPS monitoring all simulation bridge interfaces ──
+  // Suricata runs with network_mode: host so it shares the Docker host's network
+  // namespace. In host mode it can open AF_PACKET sockets on the br-XXXX Linux bridge
+  // interfaces that Docker creates for each simulation network. Those host-side bridges
+  // see ALL inter-container unicast traffic — equivalent to a Linux bridge between two
+  // physical NICs in a bump-in-the-wire IDS deployment (e.g. Ubuntu VM with br0
+  // spanning eth0/eth1). Containers in their own network namespace only see frames
+  // addressed to their own veth, making per-container AF_PACKET capture of cross-
+  // container unicast impossible without host mode.
   //
   // IDS_RULESETS       — comma-separated Emerging Threats ruleset IDs selected in the
   //   IDSPanel UI (scenario.security.ids.enabledRulesets). Defaults to
@@ -630,26 +669,16 @@ export function generateCompose(
     image: 'ghcr.io/iburres/otforge-suricata:latest',
     container_name: `${projectName}-suricata`,
     restart: 'unless-stopped',
-    networks: {
-      // ot-net + control-net: protect internal OT and control zone traffic
-      'ot-net': { ipv4_address: `${otBase}.253` },
-      'control-net': { ipv4_address: `${controlBase}.253` },
-      // internet-dmz-net: the bridge shared by the attack machine and the
-      // internet-facing server. Scan and exploit traffic from the attacker
-      // travels on this bridge — Suricata must be here to observe it.
-      // The attacker is on internet-dmz-net (at .250) and the nginx internet-server
-      // lives here too, so a scan of the web server IP is directly visible.
-      'internet-dmz-net': { ipv4_address: `${internetDmzBase}.253` },
-      // attacker-net: belt-and-suspenders — catches outbound traffic from Kali
-      // that targets anything outside internet-dmz (e.g., UDP probes, ICMP sweeps)
-      // before Docker's DOCKER-ISOLATION chain absorbs the packets.
-      'attacker-net': { ipv4_address: `${attackerBase}.253` }
-    },
+    // Host network mode: Suricata joins the Docker host's network namespace so it
+    // can open AF_PACKET sockets on the br-XXXX bridge interfaces. No per-network
+    // IP assignments are needed — the entrypoint discovers the correct bridges at
+    // startup by scanning for bridge-type interfaces with 10.200.x.x addresses.
+    network_mode: 'host',
     environment: suricataEnv,
-    cap_add: ['NET_ADMIN', 'NET_RAW'], // AF_PACKET mode requires raw socket access
+    cap_add: ['NET_ADMIN', 'NET_RAW'], // AF_PACKET and promisc mode require raw socket access
     volumes: [`${projectName}-suricata-logs:/var/log/suricata`],
-    // 512 MB: Suricata with 4 AF_PACKET interfaces + full Emerging Threats ruleset
-    // typically peaks at 300–450 MB RSS. 150 MB caused OOM kills with no alerts generated.
+    // 512 MB: Suricata with multiple AF_PACKET bridge interfaces + full Emerging Threats
+    // ruleset typically peaks at 300–450 MB RSS.
     deploy: { resources: { limits: { memory: '512m', cpus: '1.0' } } }
   }
 
@@ -1173,9 +1202,9 @@ function buildDeviceEnv(
   //   The source field in PLCProgramConfig is already base64-encoded (btoa in the UI).
   if (device.plcProgram?.source) {
     env.push(`INITIAL_PROGRAM_B64=${device.plcProgram.source}`)
-    // Also inject the Modbus variable binding count so the bridge script knows
-    // how many protocol-mapped registers to initialise.
-    env.push(`PLC_VAR_COUNT=${device.plcProgram.variables.length}`)
+    // Inject variable binding count for informational logging in entrypoint.sh.
+    // Optional-chain guards scenarios that omit the variables array (e.g. hand-authored JSON).
+    env.push(`PLC_VAR_COUNT=${device.plcProgram.variables?.length ?? 0}`)
   }
 
   return env

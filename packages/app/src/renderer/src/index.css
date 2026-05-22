@@ -2474,6 +2474,32 @@ code.prop-value {
   box-shadow: 0 0 0 1px currentColor;
 }
 
+/* ── Pipe flow animation ──────────────────────────────────────────────────────
+ * Applied by PipeEdge when coilSource is set and the coil state is polled.
+ * pipe-edge--active:   coil ON  — animated dashes suggest flowing fluid (green).
+ * pipe-edge--inactive: coil OFF — no animation; static red stroke (flow blocked).
+ * stroke color and strokeDasharray are set inline in PipeEdge.tsx; only the
+ * dash-offset animation lives here so its timing is driven by CSS.
+ */
+@keyframes pipe-flow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Flowing state: marching dashes animate in the edge's draw direction. */
+.pipe-edge--active {
+  animation: pipe-flow 0.8s linear infinite;
+}
+
+/* Stopped state: no animation — color is already set to red inline. */
+.pipe-edge--inactive {
+  animation: none;
+}
+
 /* ── Right-click connection context menu ──────────────────────────────────────── */
 
 /*
