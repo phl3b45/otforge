@@ -160,14 +160,16 @@ export function MonitorPanel({ onClose }: MonitorPanelProps) {
   useEffect(() => {
     /**
      * Queries Loki for log entries in the look-back window.
-     * Merges new entries into the buffer, deduplicating by tsNs.
+     * Always fetches all sources — the filter tabs only control the display view,
+     * not the Loki query. This prevents the buffer from being wiped when the user
+     * switches filter tabs, which caused a jarring "logs disappear" flash.
      */
     const poll = async (): Promise<void> => {
       const toNs = String(Date.now() * 1_000_000)
       const fromNs = String((Date.now() - LOOK_BACK_MS) * 1_000_000)
 
       const result = await window.electronAPI.monitor.getLogs(
-        LOKI_QUERIES[logFilter],
+        LOKI_QUERIES['all'],
         fromNs,
         toNs,
         200
@@ -205,7 +207,8 @@ export function MonitorPanel({ onClose }: MonitorPanelProps) {
     poll()
     const timer = setInterval(poll, POLL_INTERVAL_MS)
     return () => clearInterval(timer)
-  }, [logFilter])
+    // No logFilter dependency — query is always "all"; filter tabs only affect visibleLogs.
+  }, [])
 
   // ── Grafana readiness poll ──────────────────────────────────────────────────
   // Polls monitor:grafanaReady every 2 s until Grafana's /api/health returns 200.
@@ -226,11 +229,9 @@ export function MonitorPanel({ onClose }: MonitorPanelProps) {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logs])
 
-  // ── Clear log buffer when the filter changes ────────────────────────────────
+  // ── Switch the display filter — buffer is preserved, view updates instantly ──
   const handleFilterChange = useCallback((f: LogFilter) => {
     setLogFilter(f)
-    setLogs([])
-    seenNsRef.current.clear()
   }, [])
 
   // ── Open Grafana in a separate OS window ────────────────────────────────────
