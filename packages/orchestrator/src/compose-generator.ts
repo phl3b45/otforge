@@ -784,6 +784,10 @@ export function generateCompose(
     'GF_SECURITY_ADMIN_PASSWORD=otflab',
     'GF_AUTH_ANONYMOUS_ENABLED=true', // No login required in the embedded panel
     'GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer', // Restrict anonymous sessions to read-only
+    // Allow anonymous viewers to use Explore and inspect panel queries without
+    // being able to save or delete dashboards. Required for students to run
+    // ad-hoc LogQL queries against Suricata/Zeek data without logging in.
+    'GF_USERS_VIEWERS_CAN_EDIT=true',
     'GF_SECURITY_ALLOW_EMBEDDING=true', // Required for Electron webview embedding
     'GF_SERVER_ROOT_URL=http://localhost:3000', // Canonical URL for link generation
     'GF_ANALYTICS_REPORTING_ENABLED=false' // No telemetry from lab environments
