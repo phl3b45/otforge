@@ -73,9 +73,10 @@ interface PropertiesPanelProps {
    */
   security: SecurityLayer | null
   /**
-   * When true the panel is view-only: PLC IDE and security editing buttons are hidden.
-   * Used in Student mode (locked scenario) to prevent topology/security modification.
-   * Device identity and protocol sections are always shown regardless of this flag.
+   * When true the panel is view-only: PLC Save Program and security editing buttons
+   * are hidden. Currently always false — students are permitted to edit firewall rules,
+   * IDS rules, and PLC programs as hands-on lab exercises. Reserved for future use
+   * if a stricter read-only mode is ever needed.
    */
   readOnly?: boolean
   /**
@@ -196,13 +197,38 @@ export function PropertiesPanel({
             </div>
           </section>
 
-          {/* IDE launch — hidden in Student mode (read-only); instructors only */}
+          {/* PLC controls — hidden in Student mode (read-only); instructors only */}
           {!readOnly && (
             <div className="prop-plc-ide-launch">
-              <button className="btn btn-primary btn-plc-ide" onClick={() => onOpenPlcIde(device)}>
-                Open PLC IDE
-              </button>
-              <span className="prop-plc-ide-hint">IEC 61131-3 ST · Ladder · OpenPLC v3</span>
+              {/*
+               * Two-button row:
+               *   Save Program   — opens the Save Program sheet to persist ST source +
+               *                    variable bindings to the scenario JSON.
+               *   OpenPLC IDE ↗  — opens localhost:18080 (the real OpenPLC web IDE) in a
+               *                    separate window. Always available so the author can
+               *                    pre-load and review programs before starting the simulation.
+               */}
+              <div className="prop-plc-btn-row">
+                <button
+                  className="btn btn-secondary btn-plc-save"
+                  onClick={() => onOpenPlcIde(device)}
+                  title="Save ST source and variable bindings to the scenario file"
+                >
+                  Save Program
+                </button>
+                <button
+                  className="btn btn-primary btn-plc-ide"
+                  onClick={() => window.electronAPI.plc.openWebUI(device.nodeId)}
+                  title="Open OpenPLC web IDE — write ST/LD/FBD, compile, deploy, monitor"
+                >
+                  OpenPLC IDE ↗
+                </button>
+              </div>
+              <span className="prop-plc-ide-hint">
+                {simRunning
+                  ? 'OpenPLC IDE ready · localhost:18080'
+                  : 'OpenPLC IDE · localhost:18080'}
+              </span>
             </div>
           )}
         </div>

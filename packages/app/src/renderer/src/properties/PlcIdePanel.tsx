@@ -565,9 +565,8 @@ function RoutinePickerModal({
  * Local state:
  *   source    — raw ST source in the editor textarea
  *   varRows   — variable binding table rows
- *   activeTab — 'st' | 'ladder' (modal mode only)
- *   statusMsg — feedback from save/deploy operations
- *   deploying — true while awaiting the OpenPLC IPC response
+ *   statusMsg — feedback from save operations
+ *   importing — true while the native file-picker + parse operation is in flight
  */
 export function PlcIdePanel({
   device,
@@ -585,7 +584,6 @@ export function PlcIdePanel({
   const [varRows, setVarRows] = useState<VarRow[]>(initialRows)
   const [statusMsg, setStatusMsg] = useState<string | null>(null)
   const [deploying, setDeploying] = useState(false)
-  const [activeTab, setActiveTab] = useState<'st' | 'ladder'>('st')
 
   /** True while the native file picker + parse operation is in flight. */
   const [importing, setImporting] = useState(false)
@@ -661,7 +659,6 @@ export function PlcIdePanel({
         }))
       )
       setImportPickerRoutines(null)
-      setActiveTab('st')
       const warnNote =
         routine.warnings.length > 0
           ? `\n${routine.warnings.length} warning(s) — check variable table.`
@@ -720,11 +717,17 @@ export function PlcIdePanel({
     }
   }, [applyImportedRoutine])
 
-  // ── Modal layout ─────────────────────────────────────────────────────────────
+  // ── Save Program modal layout ────────────────────────────────────────────────
+  //
+  // Single-column sheet: ST textarea on top, variable bindings below, Save +
+  // Import buttons at the bottom. Deploy and Ladder are intentionally absent —
+  // students write, compile, and deploy directly in the OpenPLC web IDE at
+  // localhost:18080. This modal only exists to persist the ST source and I/O
+  // bindings to the scenario JSON so they survive simulation restarts.
   if (modal) {
     return (
       <>
-        {/* Routine picker modal — shown when a multi-routine file is imported */}
+        {/* Routine picker — shown when an imported file contains multiple routines */}
         {importPickerRoutines && (
           <RoutinePickerModal
             routines={importPickerRoutines}
@@ -734,104 +737,55 @@ export function PlcIdePanel({
           />
         )}
 
-        <div className="plc-ide plc-ide-modal-body">
-          {/* Left column: tabbed ST editor / Ladder viewer */}
-          <div className="plc-ide-modal-left">
-            {/* Tab bar — tabs on the left, Import button on the right */}
-            <div className="plc-ide-tab-bar">
-              <button
-                className={`plc-ide-tab${activeTab === 'st' ? ' active' : ''}`}
-                onClick={() => setActiveTab('st')}
-              >
-                Structured Text
-                <span className="plc-ide-tab-hint">IEC 61131-3 ST</span>
-              </button>
-              <button
-                className={`plc-ide-tab${activeTab === 'ladder' ? ' active' : ''}`}
-                onClick={() => setActiveTab('ladder')}
-              >
-                Ladder Diagram
-                <span className="plc-ide-tab-hint">read-only view</span>
-              </button>
-              {/* Import button — right-aligned via plc-ide-tab-spacer flex gap */}
-              <span className="plc-ide-tab-spacer" />
-              <button
-                className="btn btn-sm btn-ghost plc-import-btn"
-                onClick={handleImport}
-                disabled={importing}
-                title="Import Structured Text program from a PLC project file (.l5x, .xml, .st, .scl)"
-              >
-                {importing ? 'Importing…' : '↑ Import Program'}
-              </button>
+        <div className="plc-save-body">
+          {/* ST editor — fills the top portion of the modal */}
+          <div className="plc-save-editor-section">
+            <div className="plc-ide-section-header plc-ide-section-header-modal">
+              <span className="plc-ide-section-title">Structured Text Program</span>
+              <span className="plc-ide-section-hint">
+                IEC 61131-3 ST · saved to scenario file on Save
+              </span>
             </div>
-
-            {/* ST editor pane */}
-            {activeTab === 'st' && (
-              <textarea
-                className="plc-st-editor plc-st-editor-modal"
-                value={source}
-                onChange={e => setSource(e.target.value)}
-                spellCheck={false}
-                aria-label="Structured Text program source"
-              />
-            )}
-
-            {/* Ladder diagram pane */}
-            {activeTab === 'ladder' && (
-              <div className="plc-ladder-modal-pane">
-                <LadderDiagram vars={varRows} large />
-              </div>
-            )}
+            <textarea
+              className="plc-st-editor plc-save-editor"
+              value={source}
+              onChange={e => setSource(e.target.value)}
+              spellCheck={false}
+              aria-label="Structured Text program source"
+            />
           </div>
 
-          {/* Right column: variable bindings + action bar */}
-          <div className="plc-ide-modal-right">
+          {/* Variable bindings — fixed-height scrollable section below the editor */}
+          <div className="plc-save-vars-section">
             <div className="plc-ide-section-header plc-ide-section-header-modal">
               <span className="plc-ide-section-title">Variable Bindings</span>
-              <span className="plc-ide-section-hint">I/O map · IEC ↔ Protocol</span>
+              <span className="plc-ide-section-hint">IEC address ↔ protocol register map</span>
             </div>
-            <div className="plc-ide-modal-vars">
+            <div className="plc-save-vars-scroll">
               <VariableTable rows={varRows} onChange={setVarRows} />
             </div>
+          </div>
 
-            {/* Action buttons */}
-            <div className="plc-ide-actions plc-ide-actions-modal">
-              <button className="btn btn-secondary" onClick={handleSave}>
-                Save Program
-              </button>
-              <button
-                className="btn btn-ghost plc-openui-btn"
-                onClick={handleOpenWebUI}
-                disabled={!simRunning}
-                title={
-                  simRunning
-                    ? 'Open OpenPLC web IDE in browser — Ladder Logic, monitoring, all languages (openplc / openplc)'
-                    : 'Start simulation first to access the OpenPLC web IDE'
-                }
-              >
-                Open in OpenPLC ↗
-              </button>
-              <button
-                className="btn btn-run"
-                onClick={handleDeploy}
-                disabled={!simRunning || deploying}
-                title={
-                  !simRunning
-                    ? 'Start simulation first to deploy'
-                    : 'Upload to running OpenPLC container'
-                }
-              >
-                {deploying ? 'Deploying…' : '▶  Deploy to PLC'}
-              </button>
-            </div>
+          {/* Action bar */}
+          <div className="plc-ide-actions plc-save-actions">
+            <button
+              className="btn btn-sm btn-ghost plc-import-btn"
+              onClick={handleImport}
+              disabled={importing}
+              title="Import ST from a PLC project file (.l5x, .xml, .st, .scl)"
+            >
+              {importing ? 'Importing…' : '↑ Import Program'}
+            </button>
+            <button className="btn btn-secondary" onClick={handleSave}>
+              Save Program
+            </button>
+          </div>
 
-            {statusMsg && <pre className="plc-deploy-output">{statusMsg}</pre>}
+          {statusMsg && <pre className="plc-deploy-output">{statusMsg}</pre>}
 
-            {/* OpenPLC runtime info footer */}
-            <div className="plc-ide-runtime-info">
-              <span className="plc-ide-runtime-badge">OpenPLC Runtime v3</span>
-              <span>IEC 61131-3 · MATIEC compiler · {device.nodeId}</span>
-            </div>
+          <div className="plc-ide-runtime-info">
+            <span className="plc-ide-runtime-badge">OpenPLC Runtime v3</span>
+            <span>IEC 61131-3 · MATIEC compiler · {device.nodeId}</span>
           </div>
         </div>
       </>

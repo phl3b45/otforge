@@ -16,7 +16,7 @@
  * @param onClose - Called when the modal is dismissed without saving.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { OTForgeMeta, Sector } from '@otforge/schema'
 
 /** Human-readable labels for the sector select. */
@@ -53,6 +53,25 @@ export function MetadataModal({ meta, onSave, onClose }: MetadataModalProps) {
   const [author, setAuthor] = useState(meta.author)
   const [sector, setSector] = useState<Sector>(meta.sector)
   const [brief, setBrief] = useState(meta.brief)
+
+  /**
+   * Ref to the Scenario Name input — focused automatically on mount so the user
+   * can start typing immediately without needing to click first.
+   *
+   * This is especially important after window.confirm() dialogs (e.g., the
+   * "discard devices?" prompt in handleNew): Electron's native dialog can leave
+   * keyboard focus outside the renderer, causing inputs to appear active but
+   * not accept keystrokes. Explicitly focusing on mount restores input capture.
+   */
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
+  // Focus the name field when the modal opens so the user can type immediately.
+  // setTimeout gives Electron time to restore OS focus to the BrowserWindow after
+  // window.confirm() or other native dialogs that steal focus before the modal mounts.
+  useEffect(() => {
+    const timer = setTimeout(() => nameInputRef.current?.focus(), 150)
+    return () => clearTimeout(timer)
+  }, [])
 
   // Close on Escape
   useEffect(() => {
@@ -104,6 +123,7 @@ export function MetadataModal({ meta, onSave, onClose }: MetadataModalProps) {
               Scenario Name <span className="meta-required">*</span>
             </label>
             <input
+              ref={nameInputRef}
               id="meta-name"
               className="meta-input"
               type="text"

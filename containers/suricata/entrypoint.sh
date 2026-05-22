@@ -121,28 +121,22 @@ else
     echo "[ics-suricata] No custom rules — ${CUSTOM_RULES_FILE} is empty"
 fi
 
-# ── Update rulesets ─────────────────────────────────────────────────────────────
-# suricata-update downloads and merges Emerging Threats Open rules. The --no-reload
-# flag skips live rule reload (not running yet). --no-test skips the self-test to
-# speed up startup. If the update fails (no internet, rate limit), Suricata falls
-# back to the bundled otforge.rules and whatever was previously cached.
+# ── Update rulesets (non-blocking background job) ────────────────────────────────
+# suricata-update downloads and merges Emerging Threats Open rules.
 #
-# The IDS_RULESETS variable is logged but not yet used to filter suricata-update
-# sources at the CLI level — source filtering requires an enable.conf file which
-# is written below for the next startup. On first run all sources update and the
-# user-selected rulesets take effect on subsequent container restarts.
-echo "[ics-suricata] Running suricata-update (may fail in offline environments)..."
-# timeout 30s prevents suricata-update from blocking container startup indefinitely
-# when the internet is slow or rate-limiting the Emerging Threats download. On timeout
-# or failure, Suricata falls back to the bundled otforge.rules from the image layer.
-timeout 30s suricata-update \
-    --no-reload \
-    --no-test \
-    --suricata-conf /etc/suricata/otforge.yaml \
-    2>/dev/null || echo "[ics-suricata] Rule update failed or timed out — continuing with bundled rules"
+# Previous behaviour: suricata-update ran synchronously with a 30-second timeout
+# BEFORE Suricata started. On air-gapped or rate-limited networks this always timed
+# out, adding 30 s to every startup with no benefit — Suricata would fall back to
+# the bundled rules anyway. Worse, if the internet-dmz / attacker networks had
+# connectivity, the 30-second wait still blocked alert generation during that window.
+#
+# New behaviour: write the enable.conf first, then launch suricata-update in the
+# background (& disown). Suricata starts immediately with the bundled otforge.rules
+# and the previously-cached suricata.rules. If suricata-update succeeds and produces
+# a new suricata.rules file, Suricata will pick it up on the NEXT restart — live
+# rule reload via SIGUSR2 is intentionally omitted to avoid disrupting running flows.
 
-# Write enable.conf so future suricata-update runs only download selected rulesets.
-# Format: one "source-name" entry per line that suricata-update should keep enabled.
+# Write enable.conf so suricata-update only downloads selected rulesets.
 ENABLE_CONF="/var/lib/suricata/update/enable.conf"
 mkdir -p "$(dirname "$ENABLE_CONF")"
 > "$ENABLE_CONF"
@@ -150,6 +144,18 @@ for rs in $(echo "$RULESETS" | tr ',' ' '); do
     rs_clean=$(echo "$rs" | tr -d '[:space:]')
     [ -n "$rs_clean" ] && echo "$rs_clean" >> "$ENABLE_CONF"
 done
+
+echo "[ics-suricata] Launching suricata-update in background (non-blocking)..."
+(
+    suricata-update \
+        --no-reload \
+        --no-test \
+        --suricata-conf /etc/suricata/otforge.yaml \
+        2>/dev/null \
+    && echo "[ics-suricata] Background rule update complete" \
+    || echo "[ics-suricata] Background rule update failed or offline — bundled rules active"
+) &
+disown $!
 
 # ── Start Suricata ──────────────────────────────────────────────────────────────
 # No --af-packet CLI flags — the af-packet: section appended to otforge.yaml above

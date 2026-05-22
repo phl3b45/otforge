@@ -339,7 +339,7 @@ export function generateCompose(
   //   .1        — bridge gateway (Docker)
   //   .240–.249 — system services (influxdb, loki, grafana, fuxa, promtail)
   //   .250      — attack machine's internet-dmz-net leg
-  //   .252      — zeek
+  //   .252      — zeek (ot-net, internet-dmz-net, attacker-net)
   //   .253      — suricata (ot-net, control-net, internet-dmz-net, attacker-net)
   //   .254      — firewall
   const reservedHosts = new Set([1, 240, 241, 242, 243, 244, 250, 252, 253, 254])
@@ -648,11 +648,20 @@ export function generateCompose(
     environment: suricataEnv,
     cap_add: ['NET_ADMIN', 'NET_RAW'], // AF_PACKET mode requires raw socket access
     volumes: [`${projectName}-suricata-logs:/var/log/suricata`],
-    deploy: { resources: { limits: { memory: '150m', cpus: '0.5' } } }
+    // 512 MB: Suricata with 4 AF_PACKET interfaces + full Emerging Threats ruleset
+    // typically peaks at 300–450 MB RSS. 150 MB caused OOM kills with no alerts generated.
+    deploy: { resources: { limits: { memory: '512m', cpus: '1.0' } } }
   }
 
-  // ── Zeek — passive network analysis tap on OT network ────────────────────
+  // ── Zeek — passive network analysis tap on OT and attacker-facing networks ──
   // Zeek monitors traffic passively; it does not block or modify packets.
+  //
+  // Previously Zeek was only on ot-net (.252), which meant it missed all traffic
+  // between the attack machine and internet-facing services. Zeek is now attached
+  // to three networks so it can observe:
+  //   ot-net          — Modbus/DNP3 protocol traffic between PLCs and controllers
+  //   internet-dmz-net — attack machine ↔ web/DNS server scans and exploits
+  //   attacker-net     — outbound C2 traffic and tool downloads from Kali
   //
   // ZEEK_SCRIPTS — comma-separated script filenames from the Zeek site directory,
   //   selected in the IDSPanel UI (scenario.security.ids.zeekScripts).
@@ -662,16 +671,28 @@ export function generateCompose(
       ? scenario.security.ids.zeekScripts.join(',')
       : 'modbus.zeek,dnp3.zeek'
 
+  const internetDmzZeekBase = effectiveZones['internet-dmz'].subnet.replace('.0/24', '')
+  const attackerZeekBase = effectiveZones.attacker.subnet.replace('.0/24', '')
+
   volumes[`${projectName}-zeek-logs`] = {}
   services['zeek'] = {
     image: 'ghcr.io/iburres/otforge-zeek:latest',
     container_name: `${projectName}-zeek`,
     restart: 'unless-stopped',
-    networks: { 'ot-net': { ipv4_address: `${otBase}.252` } },
+    networks: {
+      // OT zone — ICS protocol traffic (Modbus port 502, DNP3 port 20000)
+      'ot-net': { ipv4_address: `${otBase}.252` },
+      // Internet DMZ — attack machine ↔ web server / DNS server traffic
+      'internet-dmz-net': { ipv4_address: `${internetDmzZeekBase}.252` },
+      // Attacker zone — outbound Kali traffic (C2, tool downloads, recon)
+      'attacker-net': { ipv4_address: `${attackerZeekBase}.252` }
+    },
     environment: [`ZEEK_SCRIPTS=${zeekScripts}`],
     cap_add: ['NET_ADMIN', 'NET_RAW'],
     volumes: [`${projectName}-zeek-logs:/var/log/zeek`],
-    deploy: { resources: { limits: { memory: '150m', cpus: '0.5' } } }
+    // Bumped from 150m: three AF_PACKET interfaces each need ~50m for ring buffers,
+    // and Zeek's conn-table grows with observed flows. 256m prevents OOM on busy labs.
+    deploy: { resources: { limits: { memory: '256m', cpus: '0.5' } } }
   }
 
   // ── InfluxDB 1.8 — time-series process historian ──────────────────────────

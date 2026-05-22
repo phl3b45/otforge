@@ -233,35 +233,18 @@ function SimStatusBadge({ status }: { status: SimStatus }) {
  * @param onOpenBuilder - Opens the MetadataModal to activate builder mode.
  * @param simRunning    - When true, hide the Scenario Builder prompt and button.
  */
-function CanvasViewHint({
-  onOpenBuilder,
-  simRunning
-}: {
-  onOpenBuilder: () => void
-  simRunning?: boolean
-}) {
+function CanvasViewHint({ simRunning }: { simRunning?: boolean }) {
   return (
     <div className="canvas-view-hint">
       <div className="canvas-view-hint-icon">🔒</div>
       <p>
-        You are in <strong>View Mode</strong>.
+        <strong>Student Mode</strong>
       </p>
-      {!simRunning && (
-        <>
-          <p>
-            Click <strong>Scenario Builder</strong> in the toolbar to enable editing and build your
-            scenario.
-          </p>
-          <button
-            className="btn btn-sm btn-ghost"
-            onClick={onOpenBuilder}
-            style={{ marginTop: 8 }}
-            title="Open the Scenario Builder to activate edit mode"
-          >
-            Open Scenario Builder
-          </button>
-        </>
-      )}
+      <p>
+        {simRunning
+          ? 'Simulation is running. Canvas is read-only.'
+          : 'Canvas is read-only. Use New Scenario in the toolbar to enter Author Mode.'}
+      </p>
     </div>
   )
 }
@@ -405,18 +388,20 @@ function PlcIdeModal({
       }}
     >
       <div className="plc-modal">
-        {/* Header: device name, runtime label, close button */}
+        {/* Header: modal title + device name + close button */}
         <div className="plc-modal-header">
           <div className="plc-modal-title">
-            <span className="plc-modal-device-name">{device.nodeId}</span>
-            <span className="plc-modal-runtime">OpenPLC Runtime v3 · IEC 61131-3</span>
+            <span className="plc-modal-device-name">Save Program — {device.nodeId}</span>
+            <span className="plc-modal-runtime">
+              Persists ST source + variable bindings to scenario · Use OpenPLC ↗ to write and deploy
+            </span>
           </div>
-          <button className="plc-modal-close" onClick={onClose} aria-label="Close PLC IDE">
+          <button className="plc-modal-close" onClick={onClose} aria-label="Close Save Program">
             ×
           </button>
         </div>
 
-        {/* Two-column IDE body rendered by PlcIdePanel in modal mode */}
+        {/* Single-column Save Program body rendered by PlcIdePanel in modal mode */}
         <PlcIdePanel
           device={device}
           simRunning={simRunning}
@@ -662,6 +647,12 @@ export default function App() {
         `Start a new scenario? All devices on the current canvas will be lost.`
       )
       if (!ok) return
+      // window.confirm() creates a native OS dialog that steals focus from the
+      // Electron BrowserWindow. After it closes the renderer window is no longer
+      // the foreground window, so keyboard events don't reach inputs. Calling
+      // window.focus() here returns OS focus to the renderer before the
+      // MetadataModal mounts and its auto-focus timer fires.
+      window.focus()
     }
     const now = new Date().toISOString()
     setScenario({
@@ -875,8 +866,56 @@ export default function App() {
     setShowSettings(false)
   }, [])
 
-  /** Opens the Scenario Metadata editor modal. */
+  /** Opens the Scenario Metadata editor modal against the current scenario (edit-in-place). */
   const handleMetadataOpen = useCallback(() => {
+    setShowMetadataModal(true)
+  }, [])
+
+  /**
+   * Scenario Builder button handler.
+   *
+   * Clears the current scenario from memory (no file is deleted from disk) and
+   * immediately opens the MetadataModal for a fresh blank scenario. This guarantees
+   * that the modal always mounts against a brand-new createdAt timestamp so React
+   * re-initialises all form state — no stale tutorial data, no leftover devices.
+   *
+   * The canvas stays in view mode until the user saves the metadata form, which
+   * activates builder mode and unlocks the device palette.
+   */
+  const handleScenarioBuilderClick = useCallback(() => {
+    const now = new Date().toISOString()
+    setScenario({
+      meta: {
+        formatVersion: '1.0' as const,
+        name: 'Untitled Scenario',
+        description: '',
+        sector: 'generic' as const,
+        author: '',
+        createdAt: now,
+        updatedAt: now,
+        appVersion: '0.1.0',
+        locked: false,
+        brief: '',
+        requirements: { estimatedRamMb: 0, estimatedCpuCores: 1, containerCount: 0 }
+      },
+      visual: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      network: { segments: [], routes: [] },
+      devices: { devices: {} },
+      security: {
+        defaultFirewallPolicy: 'deny' as const,
+        firewallRules: [],
+        ids: { enabledRulesets: [], disabledRuleIds: [], zeekScripts: [] },
+        logging: { retentionDays: 30, influxdbEnabled: true, lokiEnabled: true }
+      },
+      registry: [],
+      packLayers: []
+    })
+    setSelectedDevice(null)
+    setSelectedZone(null)
+    setSimError(null)
+    setBuilderModeActive(false)
+    setShowTutorial(false)
+    setCurrentFilePath(null)
     setShowMetadataModal(true)
   }, [])
 
@@ -1126,6 +1165,10 @@ export default function App() {
     await window.electronAPI.simulation.stop()
     setSimStatus('idle')
     setContainerStatuses([])
+    // docker compose down runs native processes that can steal OS focus from the
+    // Electron BrowserWindow. Restoring focus here ensures inputs are immediately
+    // interactive after stopping the simulation (e.g. MetadataModal, Scenario Builder).
+    window.focus()
   }, [])
 
   /** Opens the PLC IDE modal for the given device. Called by PropertiesPanel. */
@@ -1217,9 +1260,6 @@ export default function App() {
     : simDeviceCount === 0
       ? 'Add at least one device'
       : ''
-  // Settings disabled only during sim transitions (network config reads happen at start)
-  const canOpenSettings = !simIsStarting && !simIsStopping
-
   // ── sim-actions-row state (moved from Toolbar so they render below the ribbon) ─
   // Attack machine helpers and tutorial flag — used in the sim-actions-row that
   // sits between the toolbar and the layer-tab bar row.
@@ -1243,7 +1283,7 @@ export default function App() {
        * ── Toolbar: three-row header ────────────────────────────────────────────
        *
        * Row 1 (toolbar-actions-row): three-section layout.
-       *   Left   — file/editor operations: New, Open, Scenario Builder, Export,
+       *   Left   — file/editor operations: New Scenario, Open, Edit Scenario, Export,
        *             Packs, Grid, Settings.
        *   Center — OTForge Home button + scenario name + device count (always centred).
        *   Right  — simulation tools: Tutorial, Attack Machine, Open HMI, Monitor.
@@ -1256,51 +1296,82 @@ export default function App() {
       <header className="toolbar">
         {/* Row 1 — action buttons */}
         <div className="toolbar-actions-row">
+          {/*
+           * Left toolbar buttons — all disabled while the simulation is running,
+           * starting, or stopping so the instructor cannot modify the scenario
+           * mid-simulation. They remain visible (not hidden) so the layout is stable.
+           */}
           <div className="toolbar-actions-left">
-            <button className="btn btn-sm btn-ghost" onClick={handleNew} title="New scenario">
-              New
+            {/* New Scenario — always visible; clears canvas and opens fresh metadata form */}
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={handleScenarioBuilderClick}
+              disabled={!simIsIdle}
+              title={
+                simIsIdle
+                  ? 'Clear the canvas and create a new scenario'
+                  : 'Stop the simulation to create a new scenario'
+              }
+            >
+              New Scenario
             </button>
             <button
               className="btn btn-sm btn-ghost"
               onClick={handleImport}
-              title="Open .otflab file"
+              disabled={!simIsIdle}
+              title={simIsIdle ? 'Open .otflab file' : 'Stop the simulation to open a file'}
             >
               Open
             </button>
             {/*
-             * Scenario Builder — Author mode only. Disabled during simulation so metadata
-             * changes take effect only on the next start.
+             * Edit Scenario — shown whenever a scenario is open.
+             * Grayed in Student Mode (builderModeActive = false) because editing
+             * requires Author Mode — activate it via New Scenario first.
              */}
-            {scenario && appMode === 'author' && (
+            {scenario && (
               <button
                 className="btn btn-sm btn-ghost"
                 onClick={handleMetadataOpen}
-                disabled={simIsRunning || simIsStarting || simIsStopping}
+                disabled={!simIsIdle || !builderModeActive}
                 title={
-                  simIsRunning || simIsStarting || simIsStopping
-                    ? 'Cannot edit scenario while simulation is running'
-                    : 'Edit scenario name, description, and mission brief — activates builder mode'
+                  !simIsIdle
+                    ? 'Stop the simulation to edit scenario metadata'
+                    : !builderModeActive
+                      ? 'Enter Author Mode via New Scenario to edit metadata'
+                      : 'Edit scenario name, description, and mission brief'
                 }
               >
-                Scenario Builder
+                Edit Scenario
               </button>
             )}
-            {/* Export — Author mode, idle only */}
-            {simIsIdle && scenario && appMode === 'author' && (
+            {/* Export — shown when a scenario is open; grayed in Student Mode or during sim */}
+            {scenario && (
               <button
                 className="btn btn-sm btn-ghost"
                 onClick={handleExportOpen}
-                title="Export scenario as Author Copy or Student Copy"
+                disabled={!simIsIdle || !builderModeActive}
+                title={
+                  !simIsIdle
+                    ? 'Stop the simulation to export'
+                    : !builderModeActive
+                      ? 'Enter Author Mode to export the scenario'
+                      : 'Export scenario as Author Copy or Student Copy'
+                }
               >
                 Export
               </button>
             )}
-            {/* Pack Manager — Author mode only */}
+            {/* Pack Manager — Author mode only; grayed while sim is active */}
             {appMode === 'author' && (
               <button
                 className="btn btn-sm btn-ghost btn-packs"
                 onClick={handlePacksOpen}
-                title="Manage community scenario packs (.otfpack files)"
+                disabled={!simIsIdle}
+                title={
+                  simIsIdle
+                    ? 'Manage community scenario packs (.otfpack files)'
+                    : 'Stop the simulation to manage packs'
+                }
               >
                 Packs
                 {installedPacks.length > 0 && (
@@ -1308,22 +1379,35 @@ export default function App() {
                 )}
               </button>
             )}
-            {/* Grid toggle — Author mode, idle only */}
-            {simIsIdle && appMode === 'author' && (
+            {/* Grid toggle — Author mode only; grayed while sim is active */}
+            {appMode === 'author' && (
               <button
                 className={`btn btn-sm ${effectiveShowGrid ? 'btn-secondary' : 'btn-ghost'}`}
                 onClick={handleGridToggle}
-                title={effectiveShowGrid ? 'Hide 25 × 25 snap grid' : 'Show 25 × 25 snap grid'}
+                disabled={!simIsIdle}
+                title={
+                  simIsIdle
+                    ? effectiveShowGrid
+                      ? 'Hide 25 × 25 snap grid'
+                      : 'Show 25 × 25 snap grid'
+                    : 'Stop the simulation to toggle grid'
+                }
               >
                 Grid
               </button>
             )}
-            {/* Settings gear — always available except during sim transitions */}
+            {/* Settings gear — grayed in Student Mode and during sim */}
             <button
               className="btn btn-sm btn-ghost btn-settings-gear"
               onClick={handleSettingsOpen}
-              disabled={!canOpenSettings}
-              title="Network settings — configure Docker subnet addresses"
+              disabled={!simIsIdle || !builderModeActive}
+              title={
+                !simIsIdle
+                  ? 'Stop the simulation to change network settings'
+                  : !builderModeActive
+                    ? 'Enter Author Mode to change network settings'
+                    : 'Network settings — configure Docker subnet addresses'
+              }
               aria-label="Open network settings"
             >
               ⚙
@@ -1456,8 +1540,15 @@ export default function App() {
        */}
       {scenario && (
         <div className="sim-mode-row">
-          <div className={`mode-badge mode-badge-${appMode}`}>
-            {appMode === 'student' ? '🔒 Student Mode' : '✎ Author Mode'}
+          {/*
+           * Two-state mode badge:
+           *   Author Mode  — builderModeActive = true; instructor can drag/drop/edit
+           *   Student Mode — builderModeActive = false; default after any file import
+           */}
+          <div
+            className={`mode-badge ${builderModeActive ? 'mode-badge-author' : 'mode-badge-student'}`}
+          >
+            {builderModeActive ? '✎ Author Mode' : '🔒 Student Mode'}
           </div>
         </div>
       )}
@@ -1491,19 +1582,16 @@ export default function App() {
         {/*
          * Left column — three possible panels:
          *
-         *   Student mode (locked scenario):
+         *   Locked scenario (meta.locked = true):
          *     MissionPanel — read-only mission brief + objectives from scenario.meta.brief
          *
-         *   Author + Builder Mode active:
+         *   Author Mode (builderModeActive = true):
          *     DevicePalette — drag-and-drop device library for building scenarios
          *
-         *   Author + View Mode (default after open/import, or before Scenario Builder is saved):
-         *     CanvasViewHint — placeholder that explains how to activate Builder Mode
-         *
-         * This three-state model prevents accidental edits: the canvas and palette are
-         * locked until the instructor explicitly clicks Scenario Builder and saves metadata.
+         *   Student Mode (builderModeActive = false, default after any file import):
+         *     CanvasViewHint — explains the mode; no edit buttons
          */}
-        {appMode === 'student' && scenario ? (
+        {scenario?.meta.locked ? (
           <MissionPanel
             name={scenario.meta.name}
             author={scenario.meta.author}
@@ -1516,13 +1604,13 @@ export default function App() {
             packDeviceTypes={allPackDeviceTypes}
           />
         ) : (
-          <CanvasViewHint onOpenBuilder={handleMetadataOpen} simRunning={simIsRunning} />
+          <CanvasViewHint simRunning={simIsRunning} />
         )}
         <ScadaCanvas
           scenario={scenario}
           activeLayer={activeLayer}
           showGrid={effectiveShowGrid}
-          readOnly={appMode === 'student' || !builderModeActive}
+          readOnly={!builderModeActive}
           packDeviceTypes={allPackDeviceTypes}
           onSelectDevice={handleSelectDevice}
           onScenarioChange={handleScenarioChange}
@@ -1532,7 +1620,7 @@ export default function App() {
           zone={selectedZone}
           simRunning={simStatus === 'running'}
           security={scenario?.security ?? null}
-          readOnly={appMode === 'student'}
+          readOnly={false}
           onSecurityChange={handleSecurityChange}
           onOpenPlcIde={handleOpenPlcIde}
           onOpenAttackTerminal={handleOpenAttackTerminal}
@@ -1612,6 +1700,10 @@ export default function App() {
        */}
       {showMetadataModal && scenario && (
         <MetadataModal
+          // key forces a full remount (fresh useState) whenever the scenario changes.
+          // Without this, if the modal was already mounted before handleNew ran,
+          // setState(initialValue) would not reinitialize from the new blank meta.
+          key={scenario.meta.createdAt}
           meta={scenario.meta}
           onSave={handleMetadataSave}
           onClose={handleMetadataClose}

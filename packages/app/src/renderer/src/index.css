@@ -38,6 +38,22 @@ body {
   -webkit-user-select: none;
 }
 
+/*
+ * Re-enable text selection inside all form controls.
+ *
+ * Electron propagates -webkit-user-select:none from <body> into <input> and
+ * <textarea> elements, which blocks cursor placement and keyboard input — the
+ * fields visually appear "locked" even though they have no disabled prop.
+ * Explicitly restoring user-select:text here fixes input fields app-wide without
+ * removing the global drag-prevention on the rest of the UI.
+ */
+input,
+textarea,
+select {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 #root {
   height: 100vh;
   width: 100vw;
@@ -1301,13 +1317,25 @@ code.prop-value {
   border-bottom: 1px solid var(--border-muted);
 }
 
-/* Full-width primary button */
-.btn-plc-ide {
-  justify-content: center;
-  width: 100%;
+/*
+ * Two-button row: "Save Program" (secondary) + "Open in OpenPLC ↗" (primary).
+ * Both buttons share the row equally so neither is wider than necessary.
+ */
+.prop-plc-btn-row {
+  display: flex;
+  gap: 0.5rem;
 }
 
-/* Sub-label below the button */
+/* Each button in the row takes equal width; compact sizing to fit the 260px panel */
+.prop-plc-btn-row .btn {
+  flex: 1;
+  justify-content: center;
+  font-size: 0.7rem;
+  padding: 0.3rem 0.4rem;
+  white-space: nowrap;
+}
+
+/* Sub-label below the buttons */
 .prop-plc-ide-hint {
   font-size: 0.675rem;
   color: var(--text-muted);
@@ -1332,15 +1360,16 @@ code.prop-value {
 }
 
 /*
- * The modal panel itself — sized to use most of the viewport but capped at
- * 1200×800 so it looks intentional on large monitors.
+ * The modal panel itself — sized for the Save Program sheet (single column).
+ * Narrower than the old two-column IDE layout; tall enough to show the ST
+ * editor and variable bindings without excessive scrolling.
  */
 .plc-modal {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 10px;
-  width: min(1200px, calc(100vw - 80px));
-  height: min(800px, calc(100vh - 80px));
+  width: min(760px, calc(100vw - 80px));
+  height: min(680px, calc(100vh - 80px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1396,6 +1425,65 @@ code.prop-value {
 .plc-modal-close:hover {
   background: var(--bg-panel-hover);
   color: var(--text-primary);
+}
+
+/* ── Save Program single-column layout (replaces old two-column IDE) ─────────── */
+
+/*
+ * Flex-column container that fills the modal body below the header.
+ * ST editor takes remaining height; variable bindings have a fixed-height
+ * scrollable section; action bar sits at the bottom.
+ */
+.plc-save-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ST editor section — grows to fill available space */
+.plc-save-editor-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/*
+ * ST editor textarea inside the save modal — fills the editor section height.
+ * resize: none prevents the user from breaking the flex layout.
+ */
+.plc-save-editor {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  font-size: 0.875rem;
+  padding: 0.75rem 1rem;
+  border-top: none;
+}
+
+/* Variable bindings section — fixed height, scrollable */
+.plc-save-vars-section {
+  flex-shrink: 0;
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+}
+
+.plc-save-vars-scroll {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Action bar — Save and Import buttons */
+.plc-save-actions {
+  padding: 0.625rem 0.875rem;
+  flex-shrink: 0;
+  justify-content: flex-end;
 }
 
 /* ── PLC IDE two-column layout (inside the modal) ────────────────────────────── */
@@ -3828,11 +3916,19 @@ code.prop-value {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
+/* View Mode — scenario loaded but builder not yet activated (default after Open) */
+.mode-badge-view {
+  background: rgba(139, 148, 158, 0.12);
+  border: 1px solid rgba(139, 148, 158, 0.3);
+  color: #8b949e;
+}
+/* Author Mode — builder mode active; instructor can edit the canvas */
 .mode-badge-author {
   background: rgba(56, 139, 253, 0.15);
   border: 1px solid rgba(56, 139, 253, 0.35);
   color: #58a6ff;
 }
+/* Student Mode — locked scenario; canvas is read-only */
 .mode-badge-student {
   background: rgba(57, 208, 176, 0.12);
   border: 1px solid rgba(57, 208, 176, 0.3);
