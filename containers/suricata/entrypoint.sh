@@ -2,11 +2,11 @@
 # entrypoint.sh — Suricata IDS/IPS startup for the otforge-suricata container.
 #
 # Reads security configuration injected by compose-generator.ts and starts Suricata
-# in AF_PACKET inline mode on the specified interface.
+# in AF_PACKET mode on all detected simulation interfaces.
 #
 # Environment variables:
 #   DEVICE_ID          — Device node ID from the scenario (logged on start)
-#   SURICATA_IFACE     — Network interface to monitor (default: eth0)
+#   SURICATA_IFACE     — Network interface to monitor (default: auto-detect all 10.x ifaces)
 #   IDS_RULESETS       — Comma-separated Emerging Threats ruleset IDs to enable.
 #                         e.g. "emerging-scada,emerging-modbus"
 #                         When empty, defaults to "emerging-scada,emerging-modbus".
@@ -28,15 +28,6 @@ CUSTOM_RULES_B64="${IDS_CUSTOM_RULES_B64:-}"
 # internet-dmz-net, attacker-net). Without promiscuous mode, the Linux kernel only
 # delivers frames addressed to this container's own MAC. Promiscuous mode makes the
 # bridge deliver ALL frames so Suricata can inspect every packet on each segment.
-#
-# IMPORTANT — why CLI --af-packet flags are NOT used here:
-#   Multiple --af-packet=ethX CLI flags all share the same default cluster-id.
-#   The Linux kernel delivers frames to only the LAST socket that registered with
-#   a given cluster-id, so only one interface actually captures. The correct approach
-#   is to write one af-packet YAML entry per interface with a UNIQUE cluster-id into
-#   the config file before starting Suricata, then start without any CLI --af-packet
-#   flags. Suricata then spawns one capture worker per config entry, each receiving
-#   its own frame copy from the kernel.
 
 IFACES=()
 CLUSTER_ID=1
@@ -65,12 +56,22 @@ fi
 
 echo "[ics-suricata] Device=${DEVICE_ID}  interfaces=${IFACES[*]}"
 
-# ── Write af-packet section into config with unique cluster-ids ─────────────────
-# Each interface entry gets its own cluster-id (1, 2, 3…). cluster_flow hashing
-# ensures all packets of a given TCP/UDP flow land on the same worker thread so
-# stream reassembly works correctly across multi-packet sessions.
+# ── Write af-packet config to a separate include file ───────────────────────────
+# Writing to a SEPARATE file (not appending to otforge.yaml) prevents the af-packet
+# block from accumulating on each Docker restart. Docker's restart policy re-uses the
+# same container filesystem, so >> appends would add a duplicate af-packet section on
+# every crash-restart cycle, triggering "Configuration node 'af-packet' redefined"
+# warnings and eventually corrupting the config.
+#
+# Using > (overwrite) on a dedicated file makes the entrypoint idempotent across
+# restarts. Suricata loads it via --include on the CLI.
+#
+# Each interface gets a unique cluster-id so the kernel delivers frame copies to
+# separate AF_PACKET sockets. cluster_flow hashing ensures all packets of a given
+# TCP/UDP flow land on the same worker thread for correct stream reassembly.
+AF_PACKET_CONF="/etc/suricata/af-packet.yaml"
 {
-    printf "\naf-packet:\n"
+    printf "af-packet:\n"
     for iface in "${IFACES[@]}"; do
         printf "  - interface: %s\n"    "$iface"
         printf "    cluster-id: %d\n"   "$CLUSTER_ID"
@@ -78,7 +79,8 @@ echo "[ics-suricata] Device=${DEVICE_ID}  interfaces=${IFACES[*]}"
         printf "    defrag: yes\n"
         CLUSTER_ID=$((CLUSTER_ID + 1))
     done
-} >> /etc/suricata/otforge.yaml
+} > "$AF_PACKET_CONF"
+
 echo "[ics-suricata] Enabled rulesets: ${RULESETS}"
 [ -n "$DISABLED_SIDS" ] && echo "[ics-suricata] Suppressed SIDs: ${DISABLED_SIDS}"
 
@@ -121,20 +123,25 @@ else
     echo "[ics-suricata] No custom rules — ${CUSTOM_RULES_FILE} is empty"
 fi
 
+# ── Ensure suricata.rules placeholder exists ────────────────────────────────────
+# The rule-files list in otforge.yaml includes /var/lib/suricata/rules/suricata.rules,
+# which is populated by suricata-update (run in the background below). On the first
+# start the file does not yet exist, and --init-errors-fatal treats a missing rule file
+# as a fatal init error, killing Suricata immediately before it can capture any traffic.
+# Creating an empty placeholder satisfies the rule-files list so Suricata starts with
+# only our bundled otforge.rules. suricata-update will overwrite this file with the
+# full Emerging Threats ruleset once it completes; the rules take effect on next restart.
+SURICATA_RULES="/var/lib/suricata/rules/suricata.rules"
+if [ ! -f "$SURICATA_RULES" ]; then
+    mkdir -p "$(dirname "$SURICATA_RULES")"
+    touch "$SURICATA_RULES"
+    echo "[ics-suricata] Created empty placeholder: ${SURICATA_RULES}"
+fi
+
 # ── Update rulesets (non-blocking background job) ────────────────────────────────
 # suricata-update downloads and merges Emerging Threats Open rules.
-#
-# Previous behaviour: suricata-update ran synchronously with a 30-second timeout
-# BEFORE Suricata started. On air-gapped or rate-limited networks this always timed
-# out, adding 30 s to every startup with no benefit — Suricata would fall back to
-# the bundled rules anyway. Worse, if the internet-dmz / attacker networks had
-# connectivity, the 30-second wait still blocked alert generation during that window.
-#
-# New behaviour: write the enable.conf first, then launch suricata-update in the
-# background (& disown). Suricata starts immediately with the bundled otforge.rules
-# and the previously-cached suricata.rules. If suricata-update succeeds and produces
-# a new suricata.rules file, Suricata will pick it up on the NEXT restart — live
-# rule reload via SIGUSR2 is intentionally omitted to avoid disrupting running flows.
+# Runs in the background so Suricata starts immediately with the bundled otforge.rules.
+# If suricata-update succeeds, the new suricata.rules takes effect on next restart.
 
 # Write enable.conf so suricata-update only downloads selected rulesets.
 ENABLE_CONF="/var/lib/suricata/update/enable.conf"
@@ -158,14 +165,14 @@ echo "[ics-suricata] Launching suricata-update in background (non-blocking)..."
 disown $!
 
 # ── Start Suricata ──────────────────────────────────────────────────────────────
-# --af-packet (no argument) tells Suricata 8+ to activate AF_PACKET capture mode
-# and read interface definitions from the af-packet: section we appended above.
-# Without this flag Suricata 8 does not know which capture method to use and
-# exits immediately with a usage message. Eve JSON output goes to
-# /var/log/suricata/ (named volume shared with Promtail, consumed by Loki).
+# --af-packet (no argument) activates AF_PACKET capture mode in Suricata 8+.
+# Interface definitions come from the af-packet.yaml include file written above
+# rather than appended to otforge.yaml, so the config stays clean across restarts.
+# Eve JSON output goes to /var/log/suricata/ (named volume shared with Promtail).
 echo "[ics-suricata] Starting Suricata in AF_PACKET mode on ${IFACES[*]}..."
 exec suricata \
     --af-packet \
     -c /etc/suricata/otforge.yaml \
+    --include "$AF_PACKET_CONF" \
     --init-errors-fatal \
     -l /var/log/suricata
