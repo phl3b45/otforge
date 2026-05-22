@@ -15,9 +15,9 @@
 
   Deployment notes:
     Production VPN gateway : vpn.meridian-process.com
-    OT process network     : 172.20.10.0/24  (Modbus TCP port 502)
-    Control center network : 172.20.30.0/24
-    Plant DMZ              : 172.20.50.0/24
+    OT process network     : 10.200.10.0/24  (Modbus TCP port 502)
+    Control center network : 10.200.20.0/24
+    Plant DMZ              : 10.200.30.0/24
 
   Test environment (DO NOT use in production):
     Admin username : admin
@@ -25,9 +25,9 @@
     TODO: rotate before Q3 security audit
 
   ICS protocols accessible after VPN:
-    Modbus TCP  — 172.20.10.x:502   (PLC / RTU slave registers)
-    DNP3        — 172.20.10.x:20000 (outstation polling)
-    OPC-UA      — 172.20.30.x:4840  (historian tag reads)
+    Modbus TCP  — 10.200.10.x:502   (PLC / RTU slave registers)
+    DNP3        — 10.200.10.x:20000 (outstation polling)
+    OPC-UA      — 10.200.20.x:4840  (historian tag reads)
   ================================================================
 -->
 
