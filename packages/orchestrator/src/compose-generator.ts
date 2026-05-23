@@ -57,14 +57,32 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   'iec104-rtu': 'ghcr.io/iburres/otforge-conpot:latest',
   // Phase 11: Physics-simulated process unit (water tank, pipeline, generator, generic)
   'process-unit': 'ghcr.io/iburres/otforge-process:latest',
+  // STUB: Safety PLC / SIS — same OpenPLC runtime until otforge-safety-plc is built.
+  'safety-plc': 'ghcr.io/iburres/otforge-openplc:latest',
+  // STUB: DCS Controller — pymodbus on Alpine until otforge-dcs image is built.
+  'dcs-controller': 'alpine:latest',
+  // STUB: VFD / Motor Drive — Modbus RTU server stub.
+  vfd: 'alpine:latest',
   sensor: 'alpine:latest',
   actuator: 'alpine:latest',
   pump: 'alpine:latest',
   valve: 'alpine:latest',
   'flow-meter': 'alpine:latest',
   'pressure-transmitter': 'alpine:latest',
+  // STUB: Level transmitter — Modbus TCP register server stub.
+  'level-transmitter': 'alpine:latest',
+  // STUB: Analyzer — Modbus TCP register server stub.
+  analyzer: 'alpine:latest',
+  // STUB: PMU — DNP3 / IEC C37.118 stub until otforge-pmu is built.
+  pmu: 'alpine:latest',
+  // STUB: IIoT sensor — MQTT publisher stub until otforge-iiot-sensor is built.
+  'iiot-sensor': 'alpine:latest',
+  // STUB: IoT gateway — MQTT broker/bridge stub until otforge-iot-gateway is built.
+  'iot-gateway': 'alpine:latest',
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: 'frangoteam/fuxa:latest',
+  // STUB: SCADA Server (master polling engine) — nginx stub until otforge-scada-server is built.
+  'scada-server': 'nginx:alpine',
   historian: 'influxdb:1.8-alpine',
   // STUB: nginx:alpine serves HTTP so the container appears "up" on the network.
   // Replace with otforge-appserver once published.
@@ -81,6 +99,12 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   // Replace with otforge-switch / otforge-router once published.
   switch: 'alpine:latest',
   router: 'alpine:latest',
+  // STUB: Jump server — OpenSSH on Alpine until otforge-jump-server is built.
+  'jump-server': 'alpine:latest',
+  // STUB: Data diode — Alpine network container; unidirectional routing enforced by nftables.
+  'data-diode': 'alpine:latest',
+  // STUB: Wireless AP — Alpine stub; real 802.11 simulation requires host Wi-Fi adapter.
+  wap: 'alpine:latest',
   // ── Enterprise Zone (Level 4) ───────────────────────────────────────────────
   // STUB: Replace with otforge-dc (Samba AD domain controller) once published.
   'domain-controller': 'alpine:latest',
@@ -121,14 +145,23 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   'legacy-plc': { memory: 80, cpus: '0.25' }, // pure-Python S7comm on Alpine (Phase 10)
   'iec104-rtu': { memory: 80, cpus: '0.25' }, // pure-Python IEC 104 on Alpine (Phase 10)
   'process-unit': { memory: 96, cpus: '0.25' }, // pymodbus + physics loop on Alpine (Phase 11)
+  'safety-plc': { memory: 128, cpus: '0.5' }, // Safety PLC / SIS — same budget as process PLC
+  'dcs-controller': { memory: 128, cpus: '0.5' }, // DCS Controller — OPC-UA server + loop logic
+  vfd: { memory: 64, cpus: '0.15' }, // VFD / Motor Drive — Modbus RTU register server
   sensor: { memory: 64, cpus: '0.15' },
   actuator: { memory: 64, cpus: '0.15' },
   pump: { memory: 64, cpus: '0.15' },
   valve: { memory: 64, cpus: '0.15' },
   'flow-meter': { memory: 64, cpus: '0.15' },
   'pressure-transmitter': { memory: 64, cpus: '0.15' },
+  'level-transmitter': { memory: 64, cpus: '0.15' }, // Level TX — Modbus register stub
+  analyzer: { memory: 80, cpus: '0.15' }, // Process analyzer — slightly heavier than simple TX
+  pmu: { memory: 80, cpus: '0.2' }, // PMU — DNP3/IEC C37.118 publisher
+  'iiot-sensor': { memory: 64, cpus: '0.1' }, // IIoT sensor — lightweight MQTT publish loop
+  'iot-gateway': { memory: 96, cpus: '0.2' }, // IoT gateway — MQTT broker + protocol bridge
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: { memory: 256, cpus: '0.5' }, // FUXA Node.js HMI
+  'scada-server': { memory: 256, cpus: '0.5' }, // SCADA master polling engine
   historian: { memory: 256, cpus: '0.5' }, // InfluxDB 1.8
   'application-server': { memory: 256, cpus: '0.5' }, // generic app server
   'database-server': { memory: 256, cpus: '0.5' }, // generic database
@@ -138,6 +171,9 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   'ids-ips': { memory: 256, cpus: '0.5' },
   switch: { memory: 32, cpus: '0.1' },
   router: { memory: 32, cpus: '0.1' },
+  'jump-server': { memory: 96, cpus: '0.2' }, // OpenSSH bastion host
+  'data-diode': { memory: 32, cpus: '0.1' }, // Unidirectional gateway — very lightweight
+  wap: { memory: 32, cpus: '0.1' }, // Wireless AP stub
   // ── Enterprise Zone (Level 4) ───────────────────────────────────────────────
   'domain-controller': { memory: 256, cpus: '0.5' }, // Samba AD / directory service
   'web-server': { memory: 128, cpus: '0.25' }, // nginx / web app
