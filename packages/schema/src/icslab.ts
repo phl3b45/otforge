@@ -15,6 +15,7 @@ export type Protocol =
   | 'iec61850'
   | 's7comm' // Siemens S7 Communication (S7-300/400/1200/1500, port 102)
   | 'iec-104' // IEC 60870-5-104 telecontrol protocol (port 2404)
+  | 'mqtt' // Message Queuing Telemetry Transport — IIoT sensors, cloud gateways, broker-based pub/sub
   | 'none'
 
 /**
@@ -69,6 +70,9 @@ export type DeviceCategory =
   | 'plc'
   | 'rtu'
   | 'ied'
+  | 'safety-plc' // Safety Instrumented System / Safety PLC (IEC 61511) — Triconex, Siemens Safety
+  | 'dcs-controller' // Distributed Control System controller — Honeywell, Emerson DeltaV, ABB 800xA
+  | 'vfd' // Variable Frequency Drive / motor drive — AC drives with Modbus/EtherNet/IP
   | 'legacy-plc' // Siemens S7-300/400/1200/1500 via S7comm (Phase 10)
   | 'iec104-rtu' // IEC 60870-5-104 RTU via conpot emulation (Phase 10)
   | 'process-unit' // Physics-simulated process unit: water tank, pipeline, generator (Phase 11)
@@ -78,9 +82,15 @@ export type DeviceCategory =
   | 'valve'
   | 'flow-meter'
   | 'pressure-transmitter'
+  | 'level-transmitter' // Tank/vessel level measurement — ultrasonic, radar, float (4-20 mA / HART)
+  | 'analyzer' // Online process analyzer — chromatograph, pH, TOC, conductivity
+  | 'pmu' // Phasor Measurement Unit — IEEE C37.118 synchrophasor, GPS-timestamped grid telemetry
+  | 'iiot-sensor' // IIoT wireless sensor node — WirelessHART, ISA100.11a, MQTT publisher
+  | 'iot-gateway' // IIoT protocol gateway — Modbus-to-MQTT/REST bridge, edge aggregator
   // ── Control Center (Level 3) ─────────────────────────────────────────────────
   | 'hmi'
   | 'historian'
+  | 'scada-server' // SCADA master station / polling engine — distinct from HMI operator console
   | 'application-server'
   | 'database-server'
   | 'engineering-workstation'
@@ -89,6 +99,9 @@ export type DeviceCategory =
   | 'ids-ips'
   | 'switch'
   | 'router'
+  | 'jump-server' // Bastion host / jump server — hardened remote-access gateway into OT network
+  | 'data-diode' // Unidirectional security gateway (Waterfall, Owl) — OT→IT data-only, no reverse path
+  | 'wap' // Wireless Access Point — industrial 802.11, WirelessHART AP, mobile HMI uplink
   // ── Enterprise Zone (Level 4) ────────────────────────────────────────────────
   | 'domain-controller'
   | 'web-server'

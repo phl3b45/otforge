@@ -534,6 +534,281 @@ function DnsServerSvg() {
 }
 
 /**
+ * Safety PLC / SIS — PLC ladder-logic body with a safety certification badge at top
+ * (circle + checkmark). Colored red in palette to immediately convey safety-critical
+ * function. Targeted by TRITON/TRISIS malware (Schneider Electric Triconex, 2017).
+ */
+function SafetyPlcSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* PLC body (shifted down to make room for badge) */}
+      <rect x="2" y="7" width="20" height="14" rx="1" />
+      <line x1="6" y1="12" x2="18" y2="12" />
+      <line x1="6" y1="15" x2="18" y2="15" />
+      <line x1="6" y1="18" x2="18" y2="18" />
+      {/* Safety badge — circle with checkmark */}
+      <circle cx="12" cy="4" r="3" />
+      <polyline points="10.5,4 11.5,5.2 13.5,2.8" />
+    </svg>
+  )
+}
+
+/**
+ * DCS Controller — distributed I/O card with three channel groups, each with a
+ * status LED. The three-tier grouping represents the distributed I/O bus
+ * architecture common to Honeywell Experion, Emerson DeltaV, and ABB 800xA.
+ */
+function DcsControllerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* Controller card chassis */}
+      <rect x="3" y="2" width="18" height="20" rx="1" />
+      {/* Three distributed I/O channel groups */}
+      <rect x="5" y="5" width="14" height="3.5" rx="0.5" />
+      <rect x="5" y="10.5" width="14" height="3.5" rx="0.5" />
+      <rect x="5" y="16" width="14" height="3.5" rx="0.5" />
+      {/* Status LEDs — filled circles on right of each channel */}
+      <circle cx="17" cy="6.75" r="1" fill="currentColor" stroke="none" />
+      <circle cx="17" cy="12.25" r="1" fill="currentColor" stroke="none" />
+      <circle cx="17" cy="17.75" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+/**
+ * Variable Frequency Drive / Motor Drive — rectangular chassis with a sinusoidal
+ * AC input wave on the left converting to a stepped variable-frequency output on
+ * the right, visually encoding the AC→controlled-AC conversion that drives motors.
+ * Stuxnet's centrifuge attack targeted Siemens VFDs via S7comm.
+ */
+function VfdSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* Drive chassis */}
+      <rect x="2" y="4" width="20" height="16" rx="1" />
+      {/* AC input — sine wave on left side */}
+      <path d="M4 12 Q5.5 9 7 12 Q8.5 15 10 12" />
+      {/* Conversion arrow */}
+      <line x1="11" y1="12" x2="13" y2="12" />
+      <polyline points="12,11 13,12 12,13" />
+      {/* Variable frequency output — stepped wave on right side */}
+      <polyline points="14,14 14,10 16,10 16,14 18,14 18,10 20,10 20,12" />
+    </svg>
+  )
+}
+
+/**
+ * Level Transmitter — ISA-5.1 instrument bubble with a vertical level-bar chart
+ * inside (three bars of different heights) and a process connection nub at the top.
+ * Represents ultrasonic, radar, and differential-pressure level transmitters
+ * used in water tanks, separators, and reactors.
+ */
+function LevelTransmitterSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* ISA instrument bubble */}
+      <circle cx="12" cy="13" r="9" />
+      {/* Process connection nub */}
+      <line x1="12" y1="4" x2="12" y2="7" />
+      {/* Level bar chart inside bubble — three columns at different heights */}
+      <line x1="8" y1="18" x2="8" y2="12" />
+      <line x1="12" y1="18" x2="12" y2="14.5" />
+      <line x1="16" y1="18" x2="16" y2="11" />
+      {/* Baseline */}
+      <line x1="6.5" y1="18" x2="17.5" y2="18" />
+    </svg>
+  )
+}
+
+/**
+ * Process Analyzer — rectangular analyzer body (representing an online chromatograph,
+ * pH analyzer, or TOC monitor) with a sample inlet at the top, an internal
+ * measurement element (circle + crosshairs), and an output signal line on the right.
+ */
+function AnalyzerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* Analyzer housing */}
+      <rect x="3" y="5" width="14" height="14" rx="1" />
+      {/* Sample inlet ports at top */}
+      <line x1="6" y1="3" x2="6" y2="5" />
+      <line x1="10" y1="3" x2="10" y2="5" />
+      {/* Internal measurement element — instrument bubble */}
+      <circle cx="10" cy="12" r="4" />
+      <line x1="7.5" y1="12" x2="12.5" y2="12" />
+      <line x1="10" y1="9.5" x2="10" y2="14.5" />
+      {/* Analog output signal on right */}
+      <path d="M17 9 Q18.5 7.5 20 9 Q21.5 10.5 23 9" />
+      <line x1="17" y1="12" x2="23" y2="12" />
+    </svg>
+  )
+}
+
+/**
+ * Phasor Measurement Unit (PMU) — device body with a sinusoidal reference wave and
+ * a phasor vector arrow, plus a GPS clock circle (representing the GPS-disciplined
+ * timing that gives PMUs their microsecond-accurate timestamps). IEEE C37.118.
+ */
+function PmuSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* PMU chassis */}
+      <rect x="2" y="5" width="20" height="14" rx="1" />
+      {/* Sine wave reference (left half) */}
+      <path d="M4 12 Q5.5 9 7 12 Q8.5 15 10 12" />
+      {/* Phasor arrow (vector at angle, representing phase measurement) */}
+      <line x1="7" y1="16" x2="13" y2="9" />
+      <polyline points="11.5,8.5 13,9 12.5,10.5" />
+      {/* GPS timing clock (right side) */}
+      <circle cx="18" cy="12" r="4" />
+      <line x1="18" y1="10" x2="18" y2="12" />
+      <line x1="18" y1="12" x2="20" y2="12" />
+    </svg>
+  )
+}
+
+/**
+ * IIoT Wireless Sensor Node — ISA instrument bubble (circle) with two wireless
+ * signal arcs radiating upward. Represents WirelessHART (IEC 62591), ISA100.11a,
+ * and Bluetooth/ZigBee sensor nodes that publish MQTT to an IoT gateway.
+ */
+function IiotSensorSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* Wireless arcs emanating upward */}
+      <path d="M9 9 Q12 5.5 15 9" />
+      <path d="M7 6.5 Q12 1.5 17 6.5" />
+      {/* ISA instrument bubble (positioned lower) */}
+      <circle cx="12" cy="16" r="7" />
+      {/* Center measurement dot */}
+      <circle cx="12" cy="16" r="2" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+/**
+ * IoT/IIoT Gateway — rectangular chassis with a wired field port (two vertical
+ * lines = RJ45 / RS-485 port) on the left, an upward antenna, and wireless signal
+ * arcs on the right. Represents Modbus-to-MQTT bridges, protocol translators,
+ * and field-edge aggregators (e.g., Moxa, Advantech, AWS Greengrass nodes).
+ */
+function IotGatewaySvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* Gateway chassis */}
+      <rect x="2" y="7" width="20" height="11" rx="1" />
+      {/* Antenna at top */}
+      <line x1="12" y1="4" x2="12" y2="7" />
+      <polyline points="10.5,5.5 12,4 13.5,5.5" />
+      {/* Wired field port (left) — two RJ45-like pins */}
+      <line x1="5" y1="11" x2="5" y2="14" />
+      <line x1="8" y1="11" x2="8" y2="14" />
+      {/* Wireless cloud arcs (right) */}
+      <path d="M14 12.5 Q16 10.5 18 12.5" />
+      <path d="M13.5 10.5 Q16 8 18.5 10.5" />
+      {/* Protocol bridge arrow */}
+      <line x1="9" y1="12.5" x2="13" y2="12.5" />
+      <polyline points="11.5,11 13,12.5 11.5,14" />
+    </svg>
+  )
+}
+
+/**
+ * SCADA Server / Master Station — horizontal workstation-style chassis with a
+ * mini P&ID display on the front panel (a sensor bubble + pipe + pump circle),
+ * representing the process visualization running on the SCADA backend. Distinct
+ * from the ApplicationServer (generic rack) and HMI (operator terminal).
+ */
+function ScadaServerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* SCADA server chassis */}
+      <rect x="2" y="5" width="20" height="14" rx="1" />
+      {/* Front-panel process display area */}
+      <rect x="4" y="7" width="13" height="10" rx="0.5" />
+      {/* Mini P&ID: sensor bubble → pipe → pump */}
+      <circle cx="7" cy="12" r="2.5" />
+      <line x1="9.5" y1="12" x2="12" y2="12" />
+      <circle cx="14" cy="12" r="2" />
+      {/* Status column on right */}
+      <circle cx="20" cy="9" r="1" fill="currentColor" stroke="none" />
+      <circle cx="20" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="20" cy="15" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+/**
+ * Jump Server / Bastion Host — server chassis (two rack slots with status LEDs)
+ * with a padlock badge above it. The padlock immediately communicates access-control
+ * function: this is the hardened chokepoint for all remote sessions into the OT network.
+ * Compromise of jump servers is MITRE ATT&CK ICS initial-access vector T0822.
+ */
+function JumpServerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* Server chassis */}
+      <rect x="3" y="10" width="18" height="12" rx="1" />
+      <line x1="3" y1="14" x2="21" y2="14" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+      <circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="16" r="1" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="20" r="1" fill="currentColor" stroke="none" />
+      {/* Padlock badge */}
+      <rect x="8" y="3" width="8" height="7" rx="1" />
+      <path d="M10 6 Q10 3 12 3 Q14 3 14 6" />
+      <circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+/**
+ * Data Diode — a left-to-right directional arrow with a solid vertical barrier
+ * through the middle, representing one-way data flow enforced at the hardware
+ * level (Waterfall Security Solutions, Owl Cyber Defense). The blocked reverse
+ * arrow on the left visually teaches that no path exists from IT back into OT.
+ */
+function DataDiodeSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* Forward path: left to right — data flows OT → IT */}
+      <line x1="2" y1="12" x2="9" y2="12" />
+      <polyline points="7,9 10,12 7,15" />
+      {/* Physical barrier / optical isolation layer */}
+      <rect x="10" y="3" width="2" height="18" fill="currentColor" />
+      {/* Blocked reverse path: right side output travels onward */}
+      <line x1="12" y1="12" x2="22" y2="12" />
+      <polyline points="19,9 22,12 19,15" />
+      {/* X mark on left side indicating no reverse path */}
+      <line x1="4" y1="7" x2="8" y2="9" />
+      <line x1="8" y1="7" x2="4" y2="9" />
+    </svg>
+  )
+}
+
+/**
+ * Wireless Access Point — a dome/lens AP head with radiating signal arcs, mounted
+ * on a stem above a wall-plate base. The concentric arcs represent 802.11 wireless
+ * coverage zones. Used in OT networks for mobile HMI tablets, WirelessHART
+ * sensor coverage, and engineering laptop access.
+ */
+function WapSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* AP body (dome shape) */}
+      <path d="M8 14 Q8 10 12 10 Q16 10 16 14 Z" />
+      {/* Wireless signal arcs radiating upward */}
+      <path d="M6 11 Q12 5 18 11" />
+      <path d="M4 8 Q12 1 20 8" />
+      {/* Mounting stem */}
+      <line x1="12" y1="14" x2="12" y2="18" />
+      {/* Ceiling/wall mount base */}
+      <rect x="7" y="18" width="10" height="3" rx="1" />
+    </svg>
+  )
+}
+
+/**
  * Attack Machine — monitor with a crosshair/target overlay, clearly distinguishing
  * this device from the HMI. The red color (set via palette) reinforces that this is
  * a hostile/red-team tool (Kali Linux container).
@@ -563,6 +838,9 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   plc: PlcSvg,
   rtu: RtuSvg,
   ied: IedSvg,
+  'safety-plc': SafetyPlcSvg, // IEC 61511 Safety PLC / SIS — Triconex, Siemens Safety
+  'dcs-controller': DcsControllerSvg, // Distributed Control System — DeltaV, Experion, 800xA
+  vfd: VfdSvg, // Variable Frequency Drive / motor drive
   'legacy-plc': LegacyPlcSvg, // Siemens S7-300/400/1200/1500 via S7comm (Phase 10)
   'iec104-rtu': Iec104RtuSvg, // IEC 60870-5-104 RTU via conpot emulation (Phase 10)
   'process-unit': ProcessUnitSvg, // physics-simulated process unit (Phase 11)
@@ -572,9 +850,15 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   valve: ValveSvg,
   'flow-meter': FlowMeterSvg,
   'pressure-transmitter': PressureTransmitterSvg,
+  'level-transmitter': LevelTransmitterSvg, // tank/vessel level measurement
+  analyzer: AnalyzerSvg, // online process analyzer
+  pmu: PmuSvg, // IEEE C37.118 Phasor Measurement Unit
+  'iiot-sensor': IiotSensorSvg, // IIoT wireless sensor node
+  'iot-gateway': IotGatewaySvg, // IIoT protocol gateway / Modbus-to-MQTT bridge
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: HmiSvg,
   historian: HistorianSvg,
+  'scada-server': ScadaServerSvg, // SCADA master station / polling engine
   'application-server': ApplicationServerSvg,
   'database-server': DatabaseServerSvg,
   'engineering-workstation': EngineeringWorkstationSvg,
@@ -583,6 +867,9 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   'ids-ips': IdsIpsSvg,
   switch: SwitchSvg,
   router: RouterSvg,
+  'jump-server': JumpServerSvg, // bastion host / OT remote-access gateway
+  'data-diode': DataDiodeSvg, // one-way security gateway (OT→IT only)
+  wap: WapSvg, // wireless access point — 802.11 / WirelessHART AP
   // ── Enterprise Zone (Level 4) ───────────────────────────────────────────────
   'domain-controller': DomainControllerSvg,
   'web-server': WebServerSvg,

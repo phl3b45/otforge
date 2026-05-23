@@ -106,6 +106,9 @@ const PROTOCOL_COLORS: Partial<Record<Protocol, string>> = {
   bacnet: '#7ee787',
   'ethernet-ip': '#ce93d8',
   iec61850: '#f48fb1',
+  s7comm: '#79b8ff', // Siemens S7comm — blue (Phase 10)
+  'iec-104': '#e3b341', // IEC 60870-5-104 — gold (Phase 10)
+  mqtt: '#e87040', // MQTT — orange; IIoT broker-based pub/sub
   none: '#484f58'
 }
 

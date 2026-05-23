@@ -43,17 +43,62 @@ interface PaletteSection {
  * Master palette definition — all device categories grouped by Purdue layer and function.
  * The `layers` array restricts which tab each section appears on.
  * Order within each section reflects typical design-order for that layer.
+ *
+ * OT tab sections (Levels 0–2):
+ *   Primary Control   — PLCs, Safety PLC, DCS Controller, RTU, IED
+ *   Field Instruments — sensors, flow/pressure/level transmitters, analyzer
+ *   Actuators & Drives — actuator, pump, valve, VFD
+ *   IIoT / Wireless   — IIoT sensor node, IoT gateway
+ *   Power / Grid      — PMU (power generation / transmission scenarios)
+ *   Legacy / Protocol — Siemens S7 PLC, IEC 104 RTU
+ *   Process Simulation — physics-simulated process unit
  */
 const PALETTE: PaletteSection[] = [
   // ── OT Process (Levels 0–2) ────────────────────────────────────────────────
   {
-    label: 'Control',
+    label: 'Primary Control',
     layers: ['ot'],
     items: [
       { category: 'plc', label: 'PLC' },
+      { category: 'safety-plc', label: 'Safety PLC / SIS' },
+      { category: 'dcs-controller', label: 'DCS Controller' },
       { category: 'rtu', label: 'RTU' },
       { category: 'ied', label: 'IED' }
     ]
+  },
+  {
+    label: 'Field Instruments',
+    layers: ['ot'],
+    items: [
+      { category: 'sensor', label: 'Sensor' },
+      { category: 'flow-meter', label: 'Flow Meter' },
+      { category: 'pressure-transmitter', label: 'Pressure TX' },
+      { category: 'level-transmitter', label: 'Level TX' },
+      { category: 'analyzer', label: 'Analyzer' }
+    ]
+  },
+  {
+    label: 'Actuators & Drives',
+    layers: ['ot'],
+    items: [
+      { category: 'actuator', label: 'Actuator' },
+      { category: 'pump', label: 'Pump' },
+      { category: 'valve', label: 'Valve' },
+      { category: 'vfd', label: 'VFD / Motor Drive' }
+    ]
+  },
+  {
+    label: 'IIoT / Wireless',
+    layers: ['ot'],
+    items: [
+      { category: 'iiot-sensor', label: 'IIoT Sensor' },
+      { category: 'iot-gateway', label: 'IoT Gateway' }
+    ]
+  },
+  {
+    label: 'Power / Grid',
+    layers: ['ot'],
+    items: [{ category: 'pmu', label: 'Phasor Meas. Unit' }]
   },
   {
     // Phase 10: Siemens S7 and IEC 104 legacy devices for fingerprinting labs.
@@ -74,37 +119,38 @@ const PALETTE: PaletteSection[] = [
     layers: ['ot'],
     items: [{ category: 'process-unit', label: 'Process Unit' }]
   },
-  {
-    label: 'Field Devices',
-    layers: ['ot'],
-    items: [
-      { category: 'sensor', label: 'Sensor' },
-      { category: 'actuator', label: 'Actuator' },
-      { category: 'pump', label: 'Pump' },
-      { category: 'valve', label: 'Valve' },
-      { category: 'flow-meter', label: 'Flow Meter' },
-      { category: 'pressure-transmitter', label: 'Pressure TX' }
-    ]
-  },
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   {
     label: 'SCADA / HMI',
     layers: ['control'],
     items: [
       { category: 'hmi', label: 'HMI' },
-      { category: 'historian', label: 'Historian' }
+      { category: 'historian', label: 'Historian' },
+      { category: 'scada-server', label: 'SCADA Server' }
     ]
+  },
+  {
+    label: 'Engineering',
+    layers: ['control'],
+    items: [{ category: 'engineering-workstation', label: 'Eng. Workstation' }]
   },
   {
     label: 'Servers',
     layers: ['control'],
     items: [
       { category: 'application-server', label: 'App Server' },
-      { category: 'database-server', label: 'DB Server' },
-      { category: 'engineering-workstation', label: 'Eng. Workstation' }
+      { category: 'database-server', label: 'DB Server' }
     ]
   },
   // ── Plant DMZ (Level 3.5) ───────────────────────────────────────────────────
+  {
+    label: 'Access Control',
+    layers: ['plant-dmz'],
+    items: [
+      { category: 'jump-server', label: 'Jump Server' },
+      { category: 'data-diode', label: 'Data Diode' }
+    ]
+  },
   {
     label: 'Security',
     layers: ['plant-dmz'],
@@ -118,7 +164,8 @@ const PALETTE: PaletteSection[] = [
     layers: ['plant-dmz'],
     items: [
       { category: 'switch', label: 'Switch' },
-      { category: 'router', label: 'Router' }
+      { category: 'router', label: 'Router' },
+      { category: 'wap', label: 'Wireless AP' }
     ]
   },
   // ── Enterprise Zone (Level 4) ───────────────────────────────────────────────
@@ -162,9 +209,27 @@ const PALETTE: PaletteSection[] = [
 const PALETTE_COLORS: Partial<Record<DeviceCategory, string>> = {
   // Phase 11 process units — green to evoke a running physical process
   'process-unit': '#56d364',
+  // Safety PLC — red to immediately communicate safety-critical function
+  'safety-plc': '#f85149',
+  // DCS Controller — cornflower blue (primary process control)
+  'dcs-controller': '#58a6ff',
+  // VFD — teal/cyan (motor/drive systems)
+  vfd: '#3dc9b0',
+  // Power/grid device — blue (electrical)
+  pmu: '#388bfd',
+  // IIoT devices — mint green (edge/cloud)
+  'iiot-sensor': '#39d0b0',
+  'iot-gateway': '#56d364',
+  // SCADA Server — same blue family as DCS
+  'scada-server': '#388bfd',
   // Legacy / Phase 10 devices — teal to distinguish from standard PLCs and RTUs
   'legacy-plc': '#39d0b0',
   'iec104-rtu': '#39d0b0',
+  // Access control devices — amber (security boundary, same as firewall)
+  'jump-server': '#d29922',
+  'data-diode': '#d29922',
+  // WAP — muted blue (network infrastructure)
+  wap: '#58a6ff',
   // Security boundary devices — amber
   firewall: '#d29922',
   'ids-ips': '#d29922',

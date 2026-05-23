@@ -74,9 +74,13 @@ export const VALID_CONNECTIONS: Partial<
     valve: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     'flow-meter': ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     'pressure-transmitter': ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
+    'level-transmitter': ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
+    analyzer: ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
+    vfd: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'], // PLC drives VFDs via fieldbus
     rtu: ['modbus-tcp', 'modbus-rtu', 'dnp3'],
     ied: ['modbus-tcp', 'iec61850'],
     plc: ['modbus-tcp', 'ethernet-ip'], // peer-to-peer PLC network
+    'safety-plc': ['ethernet-ip', 'modbus-tcp'], // PLC shares data with adjacent SIS
     'legacy-plc': ['s7comm', 'modbus-tcp'], // PLC → Siemens S7 peer (Phase 10)
     'iec104-rtu': ['modbus-tcp', 'modbus-rtu'], // PLC → IEC 104 RTU (Phase 10)
     'process-unit': ['modbus-tcp', 'modbus-rtu'], // PLC polls process simulation (Phase 11)
@@ -96,6 +100,10 @@ export const VALID_CONNECTIONS: Partial<
     valve: ['modbus-rtu', 'modbus-tcp', 'dnp3'],
     'flow-meter': ['modbus-rtu', 'modbus-tcp', 'dnp3'],
     'pressure-transmitter': ['modbus-rtu', 'modbus-tcp', 'dnp3'],
+    'level-transmitter': ['modbus-rtu', 'modbus-tcp', 'dnp3'],
+    analyzer: ['modbus-rtu', 'modbus-tcp'],
+    vfd: ['modbus-rtu', 'modbus-tcp'],
+    pmu: ['dnp3', 'modbus-tcp'], // RTU collects PMU data via DNP3 or Modbus
     plc: ['modbus-tcp', 'modbus-rtu', 'dnp3'],
     'legacy-plc': ['s7comm', 'modbus-tcp'], // RTU → Siemens S7 peer (Phase 10)
     'iec104-rtu': ['iec-104', 'modbus-tcp'], // RTU → IEC 104 RTU peer (Phase 10)
@@ -103,6 +111,7 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['dnp3', 'iec61850'],
     hmi: ['dnp3', 'modbus-tcp'],
     historian: ['dnp3'],
+    'scada-server': ['dnp3', 'modbus-tcp'],
     switch: ['none'],
     router: ['none'],
     firewall: ['none'],
@@ -114,13 +123,81 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['iec61850', 'dnp3'], // GOOSE between peer IEDs
     rtu: ['iec61850', 'dnp3'],
     plc: ['iec61850', 'modbus-tcp'],
+    pmu: ['iec61850', 'dnp3'], // IED receives PMU synchrophasor data
     'legacy-plc': ['s7comm'], // IED → Siemens S7 (S7comm read, Phase 10)
     'iec104-rtu': ['iec-104', 'dnp3'], // IED → IEC 104 RTU (Phase 10)
     hmi: ['dnp3', 'iec61850'],
     historian: ['dnp3', 'iec61850'],
+    'scada-server': ['dnp3', 'iec61850'],
     switch: ['none'],
     router: ['none'],
     firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
+  // ── Safety PLC / SIS (IEC 61511 safety instrumented system) ─────────────────
+  // The SIS is architecturally ISOLATED from the basic process control system
+  // (BPCS/PLC). It only accepts read connections upward (HMI/historian view its
+  // status) and controls field safety elements (shutdown valves, ESD actuators).
+  // SIS → standard PLC data sharing is intentionally restricted to Ethernet only —
+  // serial cross-connections violate ISA-84 separation requirements.
+  'safety-plc': {
+    sensor: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
+    actuator: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'], // final element ESD valve/relay
+    pump: ['modbus-tcp', 'modbus-rtu'],
+    valve: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
+    'flow-meter': ['modbus-tcp', 'modbus-rtu'],
+    'pressure-transmitter': ['modbus-tcp', 'modbus-rtu'],
+    'level-transmitter': ['modbus-tcp', 'modbus-rtu'],
+    plc: ['ethernet-ip', 'modbus-tcp'], // read-only status sharing with BPCS
+    hmi: ['modbus-tcp', 'opc-ua'], // operator visibility (read-only view of SIS status)
+    historian: ['opc-ua'], // safety event logging
+    'engineering-workstation': ['none'], // SIS programming and configuration access
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
+  // ── DCS Controller (Distributed Control System — process industry workhorse) ──
+  // DCS controllers are the primary control layer in oil/gas, chemical, and power
+  // generation plants. Unlike PLCs (scan-cycle), DCS controllers are event-driven
+  // and tightly integrated with their I/O subsystems via a proprietary backplane.
+  // Outward-facing communication follows OPC-UA (upward to historian/HMI) and
+  // Modbus/serial (downward to legacy field instruments).
+  'dcs-controller': {
+    sensor: ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
+    actuator: ['modbus-tcp', 'modbus-rtu'],
+    pump: ['modbus-tcp', 'modbus-rtu'],
+    valve: ['modbus-tcp', 'modbus-rtu'],
+    'flow-meter': ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
+    'pressure-transmitter': ['modbus-tcp', 'modbus-rtu'],
+    'level-transmitter': ['modbus-tcp', 'modbus-rtu'],
+    analyzer: ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
+    vfd: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
+    rtu: ['modbus-tcp'],
+    plc: ['opc-ua', 'modbus-tcp'], // data exchange with adjacent PLC system
+    hmi: ['opc-ua', 'modbus-tcp'],
+    historian: ['opc-ua', 'modbus-tcp'],
+    'scada-server': ['opc-ua', 'modbus-tcp'],
+    'engineering-workstation': ['none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
+  // ── VFD / Motor Drive (polled by PLC, RTU, or DCS; passive Modbus slave) ─────
+  // Variable Frequency Drives are AC motor controllers. They accept speed/torque
+  // setpoints from a master PLC or DCS via Modbus or EtherNet/IP and report
+  // speed, current, fault status. The Stuxnet worm manipulated Siemens VFDs by
+  // intercepting and replaying Modbus write commands to the drive frequency register.
+  vfd: {
+    plc: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
+    rtu: ['modbus-rtu', 'modbus-tcp'],
+    'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
+    switch: ['none'],
+    router: ['none'],
     'ids-ips': ['none']
   },
 
@@ -129,9 +206,12 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['modbus-tcp', 'opc-ua'],
     rtu: ['dnp3', 'modbus-tcp'],
     ied: ['dnp3', 'iec61850'],
+    'safety-plc': ['modbus-tcp', 'opc-ua'], // HMI shows SIS status (read-only)
+    'dcs-controller': ['opc-ua', 'modbus-tcp'],
     'legacy-plc': ['s7comm', 'opc-ua'], // HMI reads Siemens S7 via S7comm or OPC-UA (Phase 10)
     'iec104-rtu': ['iec-104'], // HMI reads IEC 104 RTU (Phase 10)
     'process-unit': ['modbus-tcp'], // HMI reads process simulation PVs (Phase 11)
+    'scada-server': ['opc-ua', 'none'], // HMI pulls display data from SCADA server
     historian: ['opc-ua', 'none'],
     switch: ['none'],
     router: ['none'],
@@ -144,10 +224,39 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['opc-ua', 'modbus-tcp'],
     rtu: ['dnp3'],
     ied: ['dnp3', 'iec61850'],
+    'safety-plc': ['opc-ua'], // logs safety system events
+    'dcs-controller': ['opc-ua', 'modbus-tcp'],
+    analyzer: ['opc-ua', 'modbus-tcp'], // analyzers often connect directly to historian
+    pmu: ['dnp3', 'opc-ua'],
+    'iot-gateway': ['mqtt', 'opc-ua'], // IIoT time-series data
     'legacy-plc': ['s7comm', 'opc-ua'], // Historian archives Siemens S7 data (Phase 10)
     'iec104-rtu': ['iec-104'], // Historian archives IEC 104 RTU data (Phase 10)
     'process-unit': ['modbus-tcp'], // Historian archives process simulation data (Phase 11)
     hmi: ['opc-ua', 'none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
+  // ── SCADA Server / Master Station ────────────────────────────────────────────
+  // The SCADA server is the polling engine and data concentrator: it dispatches
+  // FC03/FC04 reads to PLCs and RTUs on the WAN, stores current-value data, and
+  // serves displays to HMI clients. It is architecturally distinct from the HMI
+  // (operator console). Compromise of the SCADA server gives an attacker live
+  // visibility into all polled RTUs before they move laterally into the OT network.
+  'scada-server': {
+    plc: ['modbus-tcp', 'opc-ua', 'dnp3'],
+    rtu: ['dnp3', 'modbus-tcp'],
+    ied: ['iec61850', 'dnp3'],
+    'dcs-controller': ['opc-ua', 'modbus-tcp'],
+    'safety-plc': ['opc-ua', 'modbus-tcp'],
+    pmu: ['dnp3', 'opc-ua'],
+    'iot-gateway': ['opc-ua', 'mqtt'],
+    'legacy-plc': ['s7comm', 'opc-ua'], // Phase 10
+    'iec104-rtu': ['iec-104'], // Phase 10
+    hmi: ['opc-ua', 'none'],
+    historian: ['opc-ua', 'none'],
     switch: ['none'],
     router: ['none'],
     firewall: ['none'],
@@ -217,20 +326,25 @@ export const VALID_CONNECTIONS: Partial<
     'ids-ips': ['none']
   },
 
-  // ── Field devices — Modbus slaves, polled by PLC or RTU master ─────────────
+  // ── Field devices — Modbus slaves, polled by PLC, RTU, DCS, or SIS master ───
   // Note: field devices do NOT connect to HMI/Historian directly; all process
-  // data must flow through a PLC or RTU (a common student misconception).
+  // data must flow through a PLC, RTU, or DCS controller (a common student error).
   sensor: {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp', 'dnp3'],
     ied: ['dnp3'],
+    'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
+    'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
     'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // polled by S7 master (Phase 10)
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // polled by IEC 104 RTU (Phase 10)
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'], // polled by IEC 104 RTU (Phase 10)
+    'iot-gateway': ['mqtt', 'modbus-tcp'] // wireless sensors may connect via gateway
   },
   actuator: {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp'],
     ied: ['dnp3'],
+    'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
+    'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
     'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // controlled by S7 master (Phase 10)
     'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // controlled by IEC 104 RTU (Phase 10)
   },
@@ -238,6 +352,8 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp'],
     ied: ['dnp3'],
+    'safety-plc': ['modbus-tcp', 'modbus-rtu'],
+    'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
     'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
     'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
   },
@@ -245,6 +361,8 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp'],
     ied: ['dnp3'],
+    'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'], // shutdown valves (ESD)
+    'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
     'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
     'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
   },
@@ -252,6 +370,8 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp'],
     ied: ['dnp3'],
+    'safety-plc': ['modbus-tcp', 'modbus-rtu'],
+    'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
     'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
     'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
   },
@@ -259,8 +379,70 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp'],
     ied: ['dnp3'],
+    'safety-plc': ['modbus-tcp', 'modbus-rtu'],
+    'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
     'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
     'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
+  },
+
+  // ── Level Transmitter (ISA instrument — polled like a sensor, but specifically level) ──
+  'level-transmitter': {
+    plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
+    rtu: ['modbus-rtu', 'modbus-tcp', 'dnp3'],
+    ied: ['dnp3'],
+    'safety-plc': ['modbus-tcp', 'modbus-rtu'],
+    'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
+  },
+
+  // ── Process Analyzer (online chromatograph, pH, TOC, conductivity) ───────────
+  // Analyzers are slower-cycling instruments (0.5–2 min sample cycle) but use the
+  // same Modbus/OPC-UA transport. High-value sabotage targets in oil/gas and water.
+  analyzer: {
+    plc: ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
+    rtu: ['modbus-rtu', 'modbus-tcp'],
+    'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
+    historian: ['opc-ua', 'modbus-tcp'], // analyzers often connect directly to historian
+    'iot-gateway': ['mqtt', 'modbus-tcp'] // some analyzers publish MQTT in IIoT deployments
+  },
+
+  // ── PMU — Phasor Measurement Unit (IEEE C37.118, synchrophasor, GPS-timed) ───
+  // PMUs measure voltage/current phasors at 30–60 samples/sec with GPS-synchronized
+  // timestamps. Essential for grid stability monitoring. DNP3 and IEC 61850 are the
+  // two primary transport protocols used by SCADA/WAMS (Wide Area Monitoring Systems).
+  pmu: {
+    rtu: ['dnp3', 'modbus-tcp'],
+    ied: ['iec61850', 'dnp3'],
+    historian: ['dnp3', 'opc-ua'],
+    'scada-server': ['dnp3', 'opc-ua'],
+    switch: ['none'],
+    router: ['none']
+  },
+
+  // ── IIoT Wireless Sensor Node ────────────────────────────────────────────────
+  // Battery- or loop-powered wireless sensor that publishes process values to an
+  // IoT gateway via WirelessHART, ISA100.11a, or generic MQTT over 802.11.
+  // Does NOT connect directly to PLCs/historians — the gateway aggregates traffic.
+  'iiot-sensor': {
+    'iot-gateway': ['mqtt'], // primary path: wireless publish to gateway
+    wap: ['none'] // wireless association with the access point
+  },
+
+  // ── IoT / IIoT Gateway ────────────────────────────────────────────────────────
+  // Receives MQTT/Modbus from wireless sensors and field devices, re-publishes
+  // upward to historian or SCADA server via OPC-UA or MQTT. Acts as a protocol
+  // bridge at the L2/L3 boundary. A compromise here exposes all connected wireless
+  // field devices to the IT network and is an excellent lateral-movement scenario.
+  'iot-gateway': {
+    'iiot-sensor': ['mqtt'], // collects from wireless sensor nodes
+    sensor: ['modbus-tcp', 'modbus-rtu'], // also polls wired Modbus sensors
+    analyzer: ['mqtt', 'modbus-tcp'],
+    historian: ['mqtt', 'opc-ua'], // pushes time-series upward
+    'scada-server': ['mqtt', 'opc-ua'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none']
   },
 
   // ── DNS server — authoritative resolver for meridian-process.com ─────────────
@@ -275,6 +457,51 @@ export const VALID_CONNECTIONS: Partial<
     'ids-ips': ['none']
   },
 
+  // ── Jump Server / Bastion Host ────────────────────────────────────────────────
+  // The jump server is the single hardened entry point for all remote sessions into
+  // the OT network. All traffic is 'none' (untagged Ethernet) — the jump server is
+  // an access-control device, not an ICS protocol endpoint. MITRE ATT&CK ICS T0822
+  // (Exploitation of Remote Services) typically targets this device first.
+  'jump-server': {
+    plc: ['none'],
+    rtu: ['none'],
+    ied: ['none'],
+    hmi: ['none'],
+    'engineering-workstation': ['none'],
+    'scada-server': ['none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
+  // ── Data Diode (unidirectional security gateway) ──────────────────────────────
+  // A data diode enforces one-way information flow from OT to IT at the hardware
+  // level (fiber optic with transmit-only laser). The IT side (historian) receives
+  // data but cannot send replies back into OT. Represented on the canvas as a
+  // connection that can only carry data from source to target.
+  'data-diode': {
+    historian: ['none'], // OT data → historian; no reverse path
+    'application-server': ['none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none']
+  },
+
+  // ── Wireless Access Point (industrial 802.11 / WirelessHART AP) ───────────────
+  // WAPs in OT networks provide wireless coverage for WirelessHART sensor arrays,
+  // mobile HMI tablets, and engineering laptops. All connections use 'none' (Layer 2
+  // Ethernet bridging) — the WAP is transparent at the application layer.
+  wap: {
+    'iiot-sensor': ['none'], // wireless association
+    hmi: ['none'], // mobile/tablet HMI
+    'engineering-workstation': ['none'], // wireless laptop
+    'enterprise-desktop': ['none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none']
+  },
+
   // ── Engineering Workstation — programs and configures PLCs / RTUs / IEDs ─────
   // Sits on the control-center LAN (Level 3). Uses Ethernet to PLCs for web IDE
   // access; RS-232 console cable for serial programming ports on legacy devices.
@@ -282,8 +509,11 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['none'], // Ethernet to OpenPLC web / EtherNet/IP config
     rtu: ['none'], // Ethernet to RTU management interface
     ied: ['none'], // Ethernet to IED configuration tool
+    'safety-plc': ['none'], // SIS engineering console (TriStation, Safety Builder)
+    'dcs-controller': ['none'], // DCS engineering workstation (DeltaV Explorer, Experion)
     'legacy-plc': ['none'], // Ethernet to Siemens TIA Portal / Step 7
     'iec104-rtu': ['none'], // Ethernet to IEC 104 RTU configuration
+    'iot-gateway': ['none'], // IoT gateway management web UI
     hmi: ['none'],
     historian: ['opc-ua', 'none'],
     'application-server': ['none'],
@@ -367,11 +597,15 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['none'],
     rtu: ['none'],
     ied: ['none'],
+    'safety-plc': ['none'],
+    'dcs-controller': ['none'],
+    vfd: ['none'],
     'legacy-plc': ['none'], // Phase 10
     'iec104-rtu': ['none'], // Phase 10
     'process-unit': ['none'], // Phase 11
     hmi: ['none'],
     historian: ['none'],
+    'scada-server': ['none'],
     'application-server': ['none'],
     'database-server': ['none'],
     'engineering-workstation': ['none'],
@@ -381,6 +615,14 @@ export const VALID_CONNECTIONS: Partial<
     valve: ['none'],
     'flow-meter': ['none'],
     'pressure-transmitter': ['none'],
+    'level-transmitter': ['none'],
+    analyzer: ['none'],
+    pmu: ['none'],
+    'iiot-sensor': ['none'],
+    'iot-gateway': ['none'],
+    'jump-server': ['none'],
+    'data-diode': ['none'],
+    wap: ['none'],
     firewall: ['none'],
     'ids-ips': ['none'],
     switch: ['none'],
@@ -398,11 +640,15 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['none'],
     rtu: ['none'],
     ied: ['none'],
+    'safety-plc': ['none'],
+    'dcs-controller': ['none'],
+    vfd: ['none'],
     'legacy-plc': ['none'], // Phase 10
     'iec104-rtu': ['none'], // Phase 10
     'process-unit': ['none'], // Phase 11
     hmi: ['none'],
     historian: ['none'],
+    'scada-server': ['none'],
     'application-server': ['none'],
     'database-server': ['none'],
     'engineering-workstation': ['none'],
@@ -412,6 +658,14 @@ export const VALID_CONNECTIONS: Partial<
     valve: ['none'],
     'flow-meter': ['none'],
     'pressure-transmitter': ['none'],
+    'level-transmitter': ['none'],
+    analyzer: ['none'],
+    pmu: ['none'],
+    'iiot-sensor': ['none'],
+    'iot-gateway': ['none'],
+    'jump-server': ['none'],
+    'data-diode': ['none'],
+    wap: ['none'],
     firewall: ['none'],
     'ids-ips': ['none'],
     switch: ['none'],
@@ -429,11 +683,15 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['none'],
     rtu: ['none'],
     ied: ['none'],
+    'safety-plc': ['none'],
+    'dcs-controller': ['none'],
+    vfd: ['none'],
     'legacy-plc': ['none'], // Phase 10
     'iec104-rtu': ['none'], // Phase 10
     'process-unit': ['none'], // Phase 11
     hmi: ['none'],
     historian: ['none'],
+    'scada-server': ['none'],
     'application-server': ['none'],
     'database-server': ['none'],
     'engineering-workstation': ['none'],
@@ -443,6 +701,14 @@ export const VALID_CONNECTIONS: Partial<
     valve: ['none'],
     'flow-meter': ['none'],
     'pressure-transmitter': ['none'],
+    'level-transmitter': ['none'],
+    analyzer: ['none'],
+    pmu: ['none'],
+    'iiot-sensor': ['none'],
+    'iot-gateway': ['none'],
+    'jump-server': ['none'],
+    'data-diode': ['none'],
+    wap: ['none'],
     firewall: ['none'],
     'ids-ips': ['none'],
     switch: ['none'],
@@ -460,11 +726,15 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['none'],
     rtu: ['none'],
     ied: ['none'],
+    'safety-plc': ['none'],
+    'dcs-controller': ['none'],
+    vfd: ['none'],
     'legacy-plc': ['none'], // Phase 10
     'iec104-rtu': ['none'], // Phase 10
     'process-unit': ['none'], // Phase 11
     hmi: ['none'],
     historian: ['none'],
+    'scada-server': ['none'],
     'application-server': ['none'],
     'database-server': ['none'],
     'engineering-workstation': ['none'],
@@ -474,6 +744,14 @@ export const VALID_CONNECTIONS: Partial<
     valve: ['none'],
     'flow-meter': ['none'],
     'pressure-transmitter': ['none'],
+    'level-transmitter': ['none'],
+    analyzer: ['none'],
+    pmu: ['none'],
+    'iiot-sensor': ['none'],
+    'iot-gateway': ['none'],
+    'jump-server': ['none'],
+    'data-diode': ['none'],
+    wap: ['none'],
     firewall: ['none'],
     'ids-ips': ['none'],
     switch: ['none'],
@@ -523,6 +801,12 @@ export const VALID_CONNECTIONS: Partial<
       'iec61850',
       'none'
     ],
+    // TRITON/TRISIS attack vector: TriStation protocol injection into SIS — Schneider Triconex, 2017
+    'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip', 'opc-ua', 'none'],
+    // DCS attacks: OPC-UA credential attacks, Modbus setpoint manipulation
+    'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'opc-ua', 'none'],
+    // Stuxnet attack vector: Modbus/EtherNet/IP frequency manipulation on Siemens VFDs
+    vfd: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip', 'none'],
     // Siemens S7 attack surface: s7-enumerate (Nmap), siemens_simatic_manager (Metasploit)
     'legacy-plc': [
       's7comm',
@@ -548,7 +832,6 @@ export const VALID_CONNECTIONS: Partial<
       'none'
     ],
     // Process unit attack surface: Modbus coil injection (CO3=ESD), setpoint tampering
-    // PUMP_CMD=1 + INLET_VALVE_CMD=1 at max speed → tank overflow scenario
     'process-unit': [
       'modbus-tcp',
       'modbus-rtu',
@@ -579,6 +862,8 @@ export const VALID_CONNECTIONS: Partial<
       'iec61850',
       'none'
     ],
+    // SCADA server: highest-value target — poll manipulation, display spoofing
+    'scada-server': ['modbus-tcp', 'modbus-rtu', 'dnp3', 'opc-ua', 'iec61850', 'none'],
     sensor: [
       'modbus-tcp',
       'modbus-rtu',
@@ -639,6 +924,16 @@ export const VALID_CONNECTIONS: Partial<
       'iec61850',
       'none'
     ],
+    'level-transmitter': ['modbus-tcp', 'modbus-rtu', 'dnp3', 'opc-ua', 'none'],
+    analyzer: ['modbus-tcp', 'modbus-rtu', 'opc-ua', 'none'],
+    pmu: ['dnp3', 'iec61850', 'none'], // GPS spoofing + DNP3 injection attacks
+    // IIoT attack surface: MQTT broker compromise, spoofed sensor readings
+    'iiot-sensor': ['mqtt', 'none'],
+    'iot-gateway': ['mqtt', 'opc-ua', 'modbus-tcp', 'none'],
+    // Plant DMZ attack surface: jump server exploitation, data diode bypass attempt
+    'jump-server': ['none'],
+    'data-diode': ['none'],
+    wap: ['none'],
     // Control center targets — lateral movement from enterprise into OT
     'engineering-workstation': ['none'],
     'application-server': ['none'],
@@ -709,6 +1004,9 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
   plc: 'PLC',
   rtu: 'RTU',
   ied: 'IED',
+  'safety-plc': 'Safety PLC / SIS',
+  'dcs-controller': 'DCS Controller',
+  vfd: 'VFD / Motor Drive',
   'legacy-plc': 'Siemens S7 PLC', // Phase 10
   'iec104-rtu': 'IEC 104 RTU', // Phase 10
   'process-unit': 'Process Unit', // Phase 11
@@ -718,8 +1016,14 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
   valve: 'Valve',
   'flow-meter': 'Flow Meter',
   'pressure-transmitter': 'Pressure Transmitter',
+  'level-transmitter': 'Level Transmitter',
+  analyzer: 'Process Analyzer',
+  pmu: 'Phasor Measurement Unit',
+  'iiot-sensor': 'IIoT Sensor',
+  'iot-gateway': 'IoT Gateway',
   hmi: 'HMI',
   historian: 'Historian',
+  'scada-server': 'SCADA Server',
   'application-server': 'Application Server',
   'database-server': 'Database Server',
   'engineering-workstation': 'Engineering Workstation',
@@ -727,6 +1031,9 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
   'ids-ips': 'IDS/IPS',
   switch: 'Switch',
   router: 'Router',
+  'jump-server': 'Jump Server',
+  'data-diode': 'Data Diode',
+  wap: 'Wireless AP',
   'domain-controller': 'Domain Controller',
   'web-server': 'Web Server',
   'business-server': 'Business Server',
@@ -772,6 +1079,12 @@ const DEVICE_CABLE_CAPABILITIES: Record<DeviceCategory, Set<CableType>> = {
   rtu: new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']),
   // IEDs: Ethernet only (IEC 61850 GOOSE runs on Cat5e/fiber, no serial field bus)
   ied: new Set(['cat5e', 'cat6', 'mmf', 'smf', 'ac']),
+  // Safety PLC: same port set as PLC; isolated physical network segment per ISA-84
+  'safety-plc': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']),
+  // DCS Controller: larger system, fiber uplinks to DCS node bus are common
+  'dcs-controller': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'mmf', 'smf', 'ac']),
+  // VFD: RS-485 serial (Modbus RTU) + Cat5e Ethernet (EtherNet/IP) + AC power input
+  vfd: new Set(['rs485', 'cat5e', 'ac']),
   'legacy-plc': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']), // Siemens S7 — same ports
   'iec104-rtu': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']), // IEC 104 RTU — same ports
   'process-unit': new Set(['cat5e', 'cat6', 'ac']), // process sim panel — Ethernet + mains
@@ -785,23 +1098,36 @@ const DEVICE_CABLE_CAPABILITIES: Record<DeviceCategory, Set<CableType>> = {
   valve: new Set(['rs485', 'cat5e', 'wifi', 'dc']),
   'flow-meter': new Set(['rs485', 'cat5e', 'wifi', 'dc']),
   'pressure-transmitter': new Set(['rs485', 'cat5e', 'wifi', 'dc']),
+  'level-transmitter': new Set(['rs485', 'cat5e', 'wifi', 'dc']), // same as pressure-transmitter family
+  analyzer: new Set(['rs485', 'cat5e', 'wifi', 'ac']), // AC powered; RS-485 or Ethernet fieldbus
+  pmu: new Set(['cat5e', 'cat6', 'mmf', 'smf', 'ac']), // Ethernet/fiber; GPS antenna not modeled
+  'iiot-sensor': new Set(['wifi', 'dc']), // wireless only; battery/loop powered
+  'iot-gateway': new Set(['rs485', 'cat5e', 'cat6', 'wifi', 'ac']), // bridges serial→Ethernet
 
   // ── Control center (L3) — Ethernet; EWS also has RS-232 console port ─────────────
   // HMI: Cat5e/Cat6 wired; modern panel PCs may also have Wi-Fi for roaming tablets.
   hmi: new Set(['cat5e', 'cat6', 'wifi', 'ac']),
   // Historian: Ethernet + SATA for direct-attached storage (time-series data volumes).
   historian: new Set(['cat5e', 'cat6', 'cat6a', 'sata', 'ac']),
+  // SCADA Server: server-class hardware; fiber uplinks to OT network
+  'scada-server': new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'sata', 'ac']),
   'application-server': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'sata', 'ac']),
   'database-server': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'sata', 'ac']),
   // Engineering workstation: RS-232 for PLC serial console; Wi-Fi for wireless laptop
   'engineering-workstation': new Set(['rs232', 'cat5e', 'cat6', 'wifi', 'ac']),
 
-  // ── Infrastructure — all Ethernet and fiber speeds; switches may be WAPs ─────────
+  // ── Plant DMZ (L3.5) — all Ethernet and fiber speeds ─────────────────────────────
   firewall: new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'ac']),
   'ids-ips': new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'ac']),
   // Switch: includes Wi-Fi for wireless access point / controller functionality
   switch: new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'wifi', 'ac']),
   router: new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'wifi', 'ac']),
+  // Jump server: hardened server hardware — Ethernet + fiber + SATA
+  'jump-server': new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'sata', 'ac']),
+  // Data diode: fiber preferred (optical isolation), Cat6 also supported
+  'data-diode': new Set(['cat5e', 'cat6', 'mmf', 'smf', 'ac']),
+  // WAP: wired Ethernet uplink + WiFi radio antenna
+  wap: new Set(['cat5e', 'cat6', 'wifi', 'ac']),
 
   // ── Enterprise (L4) — Gbps Ethernet; fiber uplinks; SATA storage ─────────────────
   'domain-controller': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'sata', 'ac']),
@@ -863,6 +1189,8 @@ const PROTOCOL_VALID_CABLES: Partial<Record<Protocol, ReadonlySet<CableType>>> =
   s7comm: new Set<CableType>(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf']),
   // IEC 104 is TCP/IP transport for IEC 101 telecontrol; WAN links may use fiber or WiFi
   'iec-104': new Set<CableType>(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'wifi']),
+  // MQTT is TCP/IP — runs over Ethernet and WiFi; not on RS-485/RS-232 serial
+  mqtt: new Set<CableType>(['wifi', 'cat5e', 'cat6', 'cat6a', 'smf', 'mmf']),
   // 'none' = raw Ethernet / untagged — compatible with any medium
   none: undefined
 }

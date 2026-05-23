@@ -82,6 +82,7 @@ const CONNECTION_OPTIONS: { protocol: Protocol; label: string; color: string }[]
   { protocol: 'bacnet', label: 'BACnet', color: '#d29922' },
   { protocol: 'ethernet-ip', label: 'EtherNet/IP', color: '#f85149' },
   { protocol: 'iec61850', label: 'IEC 61850', color: '#a371f7' },
+  { protocol: 'mqtt', label: 'MQTT', color: '#e87040' },
   { protocol: 'none', label: 'Unspecified / Ethernet', color: '#484f58' }
 ]
 
@@ -252,6 +253,9 @@ const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
   plc: ['modbus-tcp'],
   rtu: ['modbus-rtu'],
   ied: ['dnp3'],
+  'safety-plc': ['modbus-tcp'], // SIS — same Modbus transport as standard PLC
+  'dcs-controller': ['opc-ua'], // DCS prefers OPC-UA upward by convention
+  vfd: ['modbus-rtu'], // most VFDs ship with Modbus RTU by default
   'legacy-plc': ['s7comm'], // Siemens S7 — S7comm primary protocol (Phase 10)
   'iec104-rtu': ['iec-104'], // IEC 60870-5-104 RTU (Phase 10)
   'process-unit': ['modbus-tcp'], // physics process sim — Modbus TCP server (Phase 11)
@@ -261,9 +265,15 @@ const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
   valve: ['modbus-tcp'],
   'flow-meter': ['modbus-tcp'],
   'pressure-transmitter': ['modbus-tcp'],
+  'level-transmitter': ['modbus-tcp'],
+  analyzer: ['modbus-tcp'],
+  pmu: ['dnp3'], // PMUs report via DNP3 by default; IEC 61850 in substation deployments
+  'iiot-sensor': ['mqtt'], // wireless IIoT sensor publishes MQTT
+  'iot-gateway': ['mqtt'], // gateway bridges MQTT ↔ OPC-UA/historian
   // ── Control Center (L3) ─────────────────────────────────────────────────────
   hmi: ['none'],
   historian: ['none'],
+  'scada-server': ['none'],
   'application-server': ['none'],
   'database-server': ['none'],
   'engineering-workstation': ['none'],
@@ -272,6 +282,9 @@ const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
   'ids-ips': ['none'],
   switch: ['none'],
   router: ['none'],
+  'jump-server': ['none'],
+  'data-diode': ['none'],
+  wap: ['none'],
   // ── Enterprise (L4) ─────────────────────────────────────────────────────────
   'domain-controller': ['none'],
   'web-server': ['none'],
@@ -287,9 +300,13 @@ const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
 
 /** Short display labels for device nodes on the canvas. */
 const CATEGORY_LABELS: Record<DeviceCategory, string> = {
+  // ── OT Process (L0–L2) ──────────────────────────────────────────────────────
   plc: 'PLC',
   rtu: 'RTU',
   ied: 'IED',
+  'safety-plc': 'Safety PLC',
+  'dcs-controller': 'DCS Ctrl',
+  vfd: 'VFD',
   'legacy-plc': 'S7 PLC', // Phase 10
   'iec104-rtu': 'IEC 104', // Phase 10
   'process-unit': 'Process Unit', // Phase 11
@@ -299,22 +316,36 @@ const CATEGORY_LABELS: Record<DeviceCategory, string> = {
   valve: 'Valve',
   'flow-meter': 'Flow Meter',
   'pressure-transmitter': 'Pressure TX',
+  'level-transmitter': 'Level TX',
+  analyzer: 'Analyzer',
+  pmu: 'PMU',
+  'iiot-sensor': 'IIoT Sensor',
+  'iot-gateway': 'IoT GW',
+  // ── Control Center (L3) ─────────────────────────────────────────────────────
   hmi: 'HMI',
   historian: 'Historian',
+  'scada-server': 'SCADA Srv',
   'application-server': 'App Server',
   'database-server': 'DB Server',
   'engineering-workstation': 'Eng. WS',
+  // ── Plant DMZ (L3.5) ────────────────────────────────────────────────────────
   firewall: 'Firewall',
   'ids-ips': 'IDS/IPS',
   switch: 'Switch',
   router: 'Router',
+  'jump-server': 'Jump Server',
+  'data-diode': 'Data Diode',
+  wap: 'Wireless AP',
+  // ── Enterprise (L4) ─────────────────────────────────────────────────────────
   'domain-controller': 'Domain Ctrl',
   'web-server': 'Web Server',
   'business-server': 'Biz Server',
   'enterprise-desktop': 'Desktop',
+  // ── Internet DMZ (L5) ───────────────────────────────────────────────────────
   'email-server': 'Email Server',
   'internet-server': 'Internet Srv',
   'dns-server': 'DNS Server', // Phase 12
+  // ── Red Team ────────────────────────────────────────────────────────────────
   'attack-machine': 'Attack Machine'
 }
 
@@ -333,14 +364,15 @@ function categoryToZone(category: DeviceCategory): NetworkZone {
     return 'enterprise'
   // Level 5 Internet DMZ
   if (['email-server', 'internet-server', 'dns-server'].includes(category)) return 'internet-dmz'
-  // Level 3.5 Plant DMZ (firewall and IDS/IPS go here; switch/router can appear in multiple zones
-  // but default to plant-dmz as the primary network boundary layer)
-  if (category === 'firewall' || category === 'ids-ips') return 'plant-dmz'
+  // Level 3.5 Plant DMZ — security boundary devices and access control
+  if (['firewall', 'ids-ips', 'jump-server', 'data-diode', 'wap'].includes(category))
+    return 'plant-dmz'
   // Level 3 Control Center
   if (
     [
       'hmi',
       'historian',
+      'scada-server',
       'application-server',
       'database-server',
       'engineering-workstation'

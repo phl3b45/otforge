@@ -75,6 +75,7 @@ const PIPE_COLORS: Record<Protocol, string> = {
   iec61850: '#f48fb1',
   s7comm: '#79b8ff', // Siemens S7comm — blue (Phase 10)
   'iec-104': '#e3b341', // IEC 60870-5-104 — gold (Phase 10)
+  mqtt: '#e87040', // MQTT — orange; IIoT sensor/gateway pub/sub
   none: '#484f58'
 }
 
@@ -89,7 +90,8 @@ const PROTOCOL_LABELS: Partial<Record<Protocol, string>> = {
   'ethernet-ip': 'EtherNet/IP',
   iec61850: 'IEC 61850',
   s7comm: 'S7comm', // Phase 10
-  'iec-104': 'IEC 104' // Phase 10
+  'iec-104': 'IEC 104', // Phase 10
+  mqtt: 'MQTT' // IIoT pub/sub
 }
 
 /** Bright green used when a coil-driven flow is active. */
