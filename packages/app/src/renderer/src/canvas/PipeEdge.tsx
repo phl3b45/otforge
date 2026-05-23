@@ -165,8 +165,13 @@ export function PipeEdge({
     borderRadius: 6 // Slight radius on corners to soften the right angles
   })
 
-  // Unique marker ID so multiple edges don't share the same arrowhead color
+  // Unique marker IDs so multiple edges don't share the same arrowhead definition.
+  // Two markers per edge:
+  //   markerId      — target-end arrowhead (flow arrives at destination)
+  //   markerIdStart — source-end arrowhead (flow leaves source)
+  // Both use orient="auto" so both tips point in the direction of flow.
   const markerId = `pipe-arrow-${id}`
+  const markerIdStart = `pipe-arrow-start-${id}`
 
   const strokeWidth = 3
   const opacity = isNone ? 0.3 : selected ? 1 : 0.85
@@ -174,8 +179,25 @@ export function PipeEdge({
 
   return (
     <>
-      {/* SVG defs: arrowhead marker in the pipe color */}
+      {/* SVG defs: arrowhead markers in the pipe color.
+          Both triangles use the same geometry (M0,0 L0,6 L8,3) so tips point in
+          the path direction. refX="6" for target end places the tip just past the
+          endpoint to account for stroke width; refX="2" for source end anchors
+          the base near the connection handle so the tip shoots forward into the pipe. */}
       <defs>
+        {/* Source-end arrowhead — shows flow leaving the source node */}
+        <marker
+          id={markerIdStart}
+          markerWidth="8"
+          markerHeight="8"
+          refX="2"
+          refY="3"
+          orient="auto"
+          markerUnits="strokeWidth"
+        >
+          <path d="M0,0 L0,6 L8,3 z" fill={strokeColor} opacity={opacity} />
+        </marker>
+        {/* Target-end arrowhead — shows flow entering the destination node */}
         <marker
           id={markerId}
           markerWidth="8"
@@ -197,6 +219,7 @@ export function PipeEdge({
           stroke: strokeColor,
           strokeWidth,
           opacity,
+          markerStart: `url(#${markerIdStart})`,
           markerEnd: `url(#${markerId})`,
           strokeDasharray
         }}

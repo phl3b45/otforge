@@ -386,9 +386,133 @@ PYEOF
 chmod +x /root/Desktop/Attack_Scripts/read_coils.py
 chmod +x /root/Desktop/Attack_Scripts/write_coil.py
 
+# ── plc_init.py ────────────────────────────────────────────────────────────────
+# Writes the safe operating baseline to the PLC via Modbus TCP at simulation
+# start. Required because OpenPLC zeros ALL AT-mapped outputs (%QX) and memory
+# words (%MW) at container startup, ignoring any initial values declared in the
+# IEC 61131-3 Structured Text program (e.g. := TRUE). This script is invoked
+# automatically in the background below; it is also exposed on the Desktop so
+# students can re-seed the PLC manually if needed.
+#
+# Baseline state written:
+#   Coil 0 (pump_run)   → TRUE  — inlet pump ON
+#   Coil 1 (valve_open) → TRUE  — outlet valve OPEN
+#   HR 0   (tank_level) → 500   — 50% capacity (5.00 m), balanced inflow/outflow
+cat > /root/Desktop/Attack_Scripts/plc_init.py << 'PYEOF'
+#!/usr/bin/env python3
+"""
+plc_init.py — Seed the PLC Modbus registers to their safe operating baseline.
+
+Called automatically at container start; also available for manual re-seeding.
+Writes Coil 0 (pump ON), Coil 1 (valve OPEN), and HR 0 (tank_level = 500 cm).
+
+Environment variables (set automatically by the simulation):
+    PLC_IP    IP address of the target PLC  (default: 10.200.10.10)
+    PLC_PORT  Modbus TCP port               (default: 502)
+"""
+
+import os
+import sys
+
+try:
+    from pymodbus.client import ModbusTcpClient
+    from pymodbus.exceptions import ModbusException
+except ImportError:
+    print("[plc-init] pymodbus not installed — skipping baseline seed")
+    sys.exit(0)
+
+PLC_IP   = os.environ.get('PLC_IP',   '10.200.10.10')
+PLC_PORT = int(os.environ.get('PLC_PORT', '502'))
+
+client = ModbusTcpClient(PLC_IP, port=PLC_PORT)
+
+try:
+    connected = client.connect()
+except Exception as e:
+    print(f"[plc-init] connect exception: {e}")
+    sys.exit(1)
+
+if not connected:
+    print(f"[plc-init] could not connect to {PLC_IP}:{PLC_PORT}")
+    sys.exit(1)
+
+success = True
+
+# ── Coil 0: pump_run → TRUE (inlet pump ON) ───────────────────────────────────
+try:
+    r = client.write_coil(address=0, value=True, device_id=1)
+    if hasattr(r, 'isError') and r.isError():
+        print(f"[plc-init] write_coil(0) error: {r}")
+        success = False
+    else:
+        print("[plc-init] Coil 0 (pump_run)   → TRUE  (pump ON)")
+except (ModbusException, Exception) as e:
+    print(f"[plc-init] write_coil(0) exception: {e}")
+    success = False
+
+# ── Coil 1: valve_open → TRUE (outlet valve OPEN) ────────────────────────────
+try:
+    r = client.write_coil(address=1, value=True, device_id=1)
+    if hasattr(r, 'isError') and r.isError():
+        print(f"[plc-init] write_coil(1) error: {r}")
+        success = False
+    else:
+        print("[plc-init] Coil 1 (valve_open) → TRUE  (valve OPEN)")
+except (ModbusException, Exception) as e:
+    print(f"[plc-init] write_coil(1) exception: {e}")
+    success = False
+
+# ── HR 0: tank_level → 500 (5.00 m, 50% capacity) ────────────────────────────
+try:
+    r = client.write_register(address=0, value=500, device_id=1)
+    if hasattr(r, 'isError') and r.isError():
+        print(f"[plc-init] write_register(HR0) error: {r}")
+        success = False
+    else:
+        print("[plc-init] HR 0  (tank_level)  → 500   (5.00 m, 50% capacity)")
+except (ModbusException, Exception) as e:
+    print(f"[plc-init] write_register(HR0) exception: {e}")
+    success = False
+
+client.close()
+
+if success:
+    print("[plc-init] PLC baseline state seeded successfully.")
+    sys.exit(0)
+else:
+    print("[plc-init] One or more writes failed — baseline may be incomplete.")
+    sys.exit(1)
+PYEOF
+
+chmod +x /root/Desktop/Attack_Scripts/plc_init.py
+
 echo "[otforge-attack] Attack_Scripts created:"
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/read_coils.py  — read coil + register state"
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/write_coil.py  — coil write attack (--restore to undo)"
+echo "[otforge-attack]   /root/Desktop/Attack_Scripts/plc_init.py    — re-seed PLC baseline (pump=ON, valve=OPEN, level=500)"
+
+# ── PLC Modbus baseline initialization ────────────────────────────────────────
+# Runs in the background so VNC/noVNC startup is not delayed.
+# Polls PLC_IP:PLC_PORT every 2 s for up to 30 s, then writes the baseline
+# state once the PLC's Modbus listener is accepting connections.
+# This is necessary because OpenPLC zeros all AT-mapped I/O at container start,
+# overriding any initial values in the ST program.
+(
+    _PLC_IP="${PLC_IP:-10.200.10.10}"
+    _PLC_PORT="${PLC_PORT:-502}"
+    echo "[otforge-attack] [plc-init] Waiting for PLC at ${_PLC_IP}:${_PLC_PORT}..."
+    for i in $(seq 1 15); do
+        if nc -z -w1 "${_PLC_IP}" "${_PLC_PORT}" 2>/dev/null; then
+            echo "[otforge-attack] [plc-init] PLC reachable (attempt ${i}) — seeding baseline..."
+            python3 /root/Desktop/Attack_Scripts/plc_init.py
+            exit $?
+        fi
+        echo "[otforge-attack] [plc-init] Not reachable yet (attempt ${i}/15) — waiting 2 s..."
+        sleep 2
+    done
+    echo "[otforge-attack] [plc-init] PLC did not become reachable within 30 s — skipping baseline seed."
+    exit 1
+) &
 
 # ── Keep container alive ──────────────────────────────────────────────────────
 # The Electron xterm.js terminal attaches via `docker exec -i <name> /bin/bash`.
