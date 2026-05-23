@@ -1,0 +1,244 @@
+{
+  "meta": {
+    "formatVersion": "1.0",
+    "name": "Learning to Navigate OTForge",
+    "description": "A comprehensive hands-on tour of every major feature in OTForge. Starting from a single PLC and process unit, students build a complete multi-layer ICS scenario from scratch — exploring the full device palette (Safety PLC, DCS Controller, VFD, PMU, IIoT Sensor, and more), drawing protocol connections with physical cable types, configuring firewall rules, and running their first simulation. Developed for ICS/SCADA security courses at UTSA.",
+    "sector": "water-treatment",
+    "author": "Ian Burres — UTSA",
+    "createdAt": "2026-05-23T00:00:00.000Z",
+    "updatedAt": "2026-05-23T00:00:00.000Z",
+    "appVersion": "0.14.0",
+    "locked": false,
+    "brief": "## Learning to Navigate OTForge\n\nThis scenario starts with a single PLC and process unit already placed on the OT canvas. Follow the tutorial steps to explore every layer and feature of OTForge — adding devices across all five Purdue Reference Model zones, connecting them with industry-accurate ICS protocols, configuring firewall segmentation, and starting your first simulation.\n\n**By the end of this tutorial you will have:**\n- Navigated all five Purdue model layers (OT, Control, Plant DMZ, Enterprise, Internet DMZ)\n- Placed every major device category including Safety PLC, DCS Controller, VFD, IIoT Sensor, IoT Gateway, SCADA Server, Jump Server, and Data Diode\n- Drawn protocol connections (Modbus TCP/RTU, OPC-UA, MQTT, DNP3) with physical cable types (RS-485, Wi-Fi, Cat6, Fiber)\n- Experienced the protocol-cable enforcement system — OTForge rejects physically impossible connections\n- Configured a real nftables firewall with zone-based rules\n- Launched a simulation and explored the Monitor panel (Suricata + Zeek + Grafana)\n\n**Tip:** Save your work frequently using **Export → Author Copy** in the toolbar.",
+    "requirements": {
+      "estimatedRamMb": 2048,
+      "estimatedCpuCores": 2,
+      "containerCount": 6
+    },
+    "tutorialSteps": [
+      {
+        "id": "step-01-welcome",
+        "title": "Step 1 — Welcome: The OTForge Interface",
+        "body": "## Welcome to OTForge\n\nOTForge is an open-source ICS/SCADA training platform that lets you design, simulate, and attack industrial control system topologies — entirely in Docker containers on your local machine. No cloud account, no real hardware, no risk.\n\n## The Three-Column Layout\n\nThe main workspace has three panels:\n\n- **Left — Device Palette:** All available devices organised by Purdue layer. Drag devices from here onto the canvas to add them to your scenario. The palette re-filters automatically when you switch layer tabs.\n- **Center — SCADA Canvas:** Your topology diagram. Devices are nodes; protocol connections are edges. The canvas uses a 25×25 grid (80 px cells) with snap-to-grid enabled.\n- **Right — Properties Panel:** Clicking any node opens its configuration here: IP address, protocols, Modbus registers, firewall rules, and more.\n\n## The Toolbar\n\nThe toolbar at the top is divided into three zones:\n- **Left** — File operations: New, Open, Scenario Builder (name/sector/brief), Export, Packs, Grid toggle, Settings (⚙)\n- **Center** — Current scenario name (click Scenario Builder to change it)\n- **Right** — Simulation tools: Run (▶), Stop (■), Tutorial toggle, + Attack Machine, Open HMI, Monitor\n\nBelow the toolbar, the **status badge** shows the current simulation state (Idle / Starting / Running / Stopping) and the **container health bar** tracks each container as it comes up.\n\n## What Is Already on the Canvas?\n\nTwo devices have been pre-placed on the OT Process layer to orient you:\n- **OpenPLC Controller** (`10.200.10.10`) — a PLC running Modbus TCP on port 502\n- **Water Tank** (`10.200.10.20`) — a physics-simulated process unit (water-tank model)\n\nThey are connected by a **Modbus TCP** protocol edge — the PLC reads tank level from holding registers and writes coils to control the inlet pump and outlet valve.\n\nClick each node now to see its configuration in the Properties Panel.",
+        "successCheck": "The Properties panel on the right shows the PLC at IP 10.200.10.10 with protocol Modbus TCP. The Process Unit (Water Tank) appears next to it with a Modbus TCP edge connecting them. You can see the pre-placed edge labeled 'Modbus TCP' between the two nodes."
+      },
+      {
+        "id": "step-02-purdue-tabs",
+        "title": "Step 2 — The Purdue Reference Model and Layer Tabs",
+        "body": "## The Purdue Reference Model\n\nThe Purdue Reference Model (originally ISA-95/IEC 62264) is the standard framework for describing network zones in industrial environments. OTForge organises every device into one of six zones:\n\n| Tab | Zone | Purdue Level | What Lives Here |\n|---|---|---|---|\n| **OT** | OT Process | 0–2 | PLCs, RTUs, IEDs, sensors, actuators, process units |\n| **Control** | Control Center | 3 | HMI, SCADA server, historian, engineering workstation |\n| **Plant DMZ** | Plant DMZ | 3.5 | Firewall, IDS/IPS, jump server, data diode |\n| **Enterprise** | Enterprise | 4 | Domain controller, web server, business server, desktops |\n| **Internet DMZ** | Internet DMZ | 5 | Email server, internet server, DNS server |\n| *(no tab)* | Attacker | — | Kali Linux red team machine (added via toolbar button) |\n\n## Why the Layers Matter for Security\n\nThe Purdue model is a **defense-in-depth** architecture. Each layer boundary is a security control point. Legitimate traffic flows upward (OT → Control → Enterprise); OT devices should **never** communicate directly with the internet. When this model is violated — as in most real ICS breaches — attackers gain the ability to pivot laterally from corporate IT down to safety-critical OT systems.\n\nIn ICS Lab 01, the attack succeeds because the attack machine can reach the OT subnet directly — a Purdue layer violation. You will see how OTForge's firewall engine enforces or relaxes these boundaries.\n\n## Exploring the Tabs\n\nClick through each layer tab now:\n1. Click **Control** — the canvas switches to the Control Center zone (currently empty)\n2. Click **Plant DMZ** — Plant DMZ zone\n3. Click **Enterprise** — Enterprise zone\n4. Click **Internet DMZ** — Internet DMZ zone\n5. Click **OT** to return to the OT Process layer\n\nThe Device Palette on the left re-filters automatically each time you switch — it only shows devices appropriate for the active zone.",
+        "successCheck": "You have clicked through all five layer tabs and returned to OT. The palette changes content each time you switch tabs. You understand that each tab represents a separate Docker bridge network with its own subnet."
+      },
+      {
+        "id": "step-03-palette-deep-dive",
+        "title": "Step 3 — Device Palette Deep Dive",
+        "body": "## OTForge Device Palette — All Sections\n\nThe OT layer palette is organised into seven functional sections. This structure mirrors how ICS engineers actually think about their process architecture. Each section is described below.\n\n### Primary Control\n- **PLC** — Programmable Logic Controller. The most common OT device; runs IEC 61131-3 programs. Emulated by OpenPLC.\n- **Safety PLC / SIS** — Safety Instrumented System controller (IEC 61511, IEC 61508). Physically separate from the process PLC. Target of the TRITON/TRISIS malware (2017 Petro Rabigh attack). Displayed in **red** to signal safety-critical function.\n- **DCS Controller** — Distributed Control System. Used for continuous-process industries (refining, chemical, pulp/paper). Think Honeywell DeltaV, Emerson DeltaV, ABB 800xA. Prefers OPC-UA rather than Modbus.\n- **RTU** — Remote Terminal Unit. Older field controller common in electric utilities and pipelines.\n- **IED** — Intelligent Electronic Device. Substation protection relay; uses DNP3 or IEC 61850.\n\n### Field Instruments\nPassive measurement devices that report analog process variables as 4-20 mA (wired) or HART (digital over the same two wires), then converted to Modbus holding registers:\n- **Sensor** — Generic field sensor\n- **Flow Meter** — Volumetric or mass flow\n- **Pressure TX** — Pressure transmitter\n- **Level TX** — Tank/vessel level (ultrasonic, radar, float)\n- **Analyzer** — Online process analyzer: chromatograph, pH, TOC, conductivity\n\n### Actuators & Drives\nDevices that act on the physical process:\n- **Actuator** — Generic actuator (solenoid, pneumatic positioner)\n- **Pump** — Centrifugal or positive-displacement pump\n- **Valve** — Control valve or on/off valve\n- **VFD / Motor Drive** — Variable Frequency Drive. Controls AC motor speed by varying output frequency. Stuxnet targeted Siemens and Vacon VFDs running at specific RPM ranges. Communicates via Modbus RTU over RS-485.\n\n### IIoT / Wireless\n- **IIoT Sensor** — WirelessHART / ISA100.11a sensor node. Publishes readings to an MQTT broker. Does NOT use Modbus — communicates via Wi-Fi or a wireless mesh network.\n- **IoT Gateway** — Edge aggregator that bridges MQTT (from IIoT sensors) to OPC-UA or REST for the historian. A common target for supply-chain attacks.\n\n### Power / Grid\n- **PMU** — Phasor Measurement Unit. Measures voltage/current phasors with GPS-synchronized timestamps (IEEE C37.118). Used in transmission substations. Vulnerable to GPS spoofing attacks that inject false timing data.\n\n### Legacy / Protocol\n- **Siemens S7 PLC** — Emulated by Conpot; responds to real Nmap/Metasploit S7comm probes for fingerprinting labs.\n- **IEC 104 RTU** — IEC 60870-5-104 RTU; also Conpot-emulated.\n\n### Process Simulation\n- **Process Unit** — Physics-simulated process: water-tank, pipeline, generator, or generic. The PLC reads sensor values from Modbus holding registers and writes coils to drive the animation.\n\n## Color Coding\n\nDevice icons use accent colors to communicate function at a glance:\n- **Red** (`#f85149`) — Safety-critical (Safety PLC)\n- **Teal** (`#3dc9b0`) — Drives and motor systems (VFD, IIoT)\n- **Amber** (`#d29922`) — Security boundary devices (Firewall, IDS/IPS, Jump Server, Data Diode)\n- **Purple** (`#a371f7`) — Enterprise IT devices\n- **Orange** (`#f78166`) — Internet DMZ devices\n- **Blue** (`#58a6ff`) — Network infrastructure (Switch, Router, WAP)\n- **Green** (`#56d364`) — Process simulation units\n- **Muted gray** (`#8b949e`) — Standard field devices",
+        "successCheck": "You can identify at least five of the seven OT palette sections and name the device in each that was added specifically for ICS security training (Safety PLC, DCS Controller, VFD, IIoT Sensor, PMU). You understand the difference between a PLC and a Safety PLC in the context of SIS architecture."
+      },
+      {
+        "id": "step-04-primary-control",
+        "title": "Step 4 — OT Layer: Add Primary Control Devices",
+        "body": "Now add two more primary control devices alongside the existing PLC.\n\n## Add a Safety PLC\n\nIn a real water treatment facility, a Safety Instrumented System (SIS) runs independently of the process PLC. If the PLC fails or is compromised, the SIS trips the process to a safe state (emergency shutdown). The SIS has its own sensors, logic, and actuators — **ISA-84 / IEC 61511 requires architectural independence between the SIS and the BPCS (Basic Process Control System).**\n\n**Action:**\n1. On the OT layer canvas, drag a **Safety PLC / SIS** from the Primary Control section of the palette\n2. Place it below the existing PLC\n3. Click it to select, then in the Properties panel set:\n   - **Label:** `Emergency SIS`\n   - **IP Address:** `10.200.10.12`\n   - **Protocol:** Modbus TCP (default)\n4. Note the red color and safety badge icon — this visual cue is intentional\n\n## Add a DCS Controller\n\nDCS Controllers manage continuous processes with many analog loops. Unlike PLCs (which excel at discrete logic), a DCS Controller runs PID controllers, setpoint management, and batch sequencing.\n\n**Action:**\n1. Drag a **DCS Controller** from the Primary Control section\n2. Place it to the right of the Safety PLC\n3. Set:\n   - **Label:** `DCS Unit`\n   - **IP Address:** `10.200.10.13`\n   - **Protocol:** OPC-UA (this is the default — DCS systems use OPC-UA for historian integration, not Modbus)\n\n## Key Security Context: SIS Isolation\n\nThe TRITON/TRISIS malware (Dragos, 2017) specifically targeted Schneider Electric Triconex Safety PLCs at a Middle Eastern petrochemical facility. The attackers crossed the architectural boundary between the process control network and the SIS network — a violation of ISA-84 that should have been impossible with proper segmentation. This is why the Safety PLC lives on a separate IP and the connection rules in OTForge enforce ISA-84 isolation by default.",
+        "successCheck": "The OT canvas shows three control devices: the original PLC at 10.200.10.10, a Safety PLC labeled 'Emergency SIS' at 10.200.10.12, and a DCS Controller labeled 'DCS Unit' at 10.200.10.13. The Safety PLC icon is red."
+      },
+      {
+        "id": "step-05-field-instruments",
+        "title": "Step 5 — OT Layer: Add Field Instruments",
+        "body": "Field instruments are the sensory organs of a process plant. They measure physical variables (level, pressure, flow, temperature, composition) and transmit those measurements to the PLC or DCS.\n\n## Add a Level Transmitter\n\nThe water tank already has a physics model, but in real plants a dedicated level transmitter (LT) measures the tank independently and wires back to the PLC via 4-20 mA or HART.\n\n**Action:**\n1. Drag a **Level TX** from the Field Instruments section\n2. Place it near the Water Tank process unit\n3. Set:\n   - **Label:** `LT-101 Tank Level`\n   - **IP Address:** `10.200.10.30`\n   - **Protocol:** Modbus TCP\n\n## Add a Pressure Transmitter\n\n**Action:**\n1. Drag a **Pressure TX** and place it on the canvas\n2. Set:\n   - **Label:** `PT-101 Inlet Pressure`\n   - **IP Address:** `10.200.10.31`\n   - **Protocol:** Modbus TCP\n\n## Add an Analyzer\n\nWater treatment plants monitor chemical quality continuously. An online analyzer measures pH, turbidity, chlorine residual, or total organic carbon (TOC).\n\n**Action:**\n1. Drag an **Analyzer** and place it on the canvas\n2. Set:\n   - **Label:** `AT-101 Water Quality`\n   - **IP Address:** `10.200.10.32`\n   - **Protocol:** Modbus TCP\n\n## 4-20 mA and HART\n\nMost field instruments transmit their measurement as a **4-20 mA analog current loop** — 4 mA = 0% of range, 20 mA = 100% of range. The loop is powered by the PLC I/O card. HART (Highway Addressable Remote Transducer) overlays a digital signal on top of the 4-20 mA current, allowing configuration and diagnostics without a separate cable. In OTForge, these analog signals appear as Modbus holding registers once they reach the PLC.",
+        "successCheck": "Three field instruments appear on the OT canvas: LT-101 Tank Level at 10.200.10.30, PT-101 Inlet Pressure at 10.200.10.31, and AT-101 Water Quality at 10.200.10.32. All use Modbus TCP protocol."
+      },
+      {
+        "id": "step-06-actuators-vfd",
+        "title": "Step 6 — OT Layer: Actuators and the VFD",
+        "body": "Actuators are the effectors — they convert PLC coil outputs into physical actions.\n\n## Add a Variable Frequency Drive (VFD)\n\nA VFD controls AC motor speed by varying the output frequency. Water treatment facilities use VFDs on pumps to modulate flow rate instead of throttling valves (more energy-efficient). In manufacturing, VFDs on conveyor motors, centrifuges, and compressors are ubiquitous.\n\n**Action:**\n1. Drag a **VFD / Motor Drive** from the Actuators & Drives section\n2. Place it below the DCS Controller\n3. Set:\n   - **Label:** `VFD-101 Pump Drive`\n   - **IP Address:** `10.200.10.40`\n   - **Protocol:** Modbus RTU (VFDs use RS-485 serial field bus — Modbus RTU, not TCP)\n\n## Add a Pump and a Valve\n\nPumps and valves are visual-only nodes — they represent physical process equipment that receives commands from the PLC coils. They don't run their own containers.\n\n**Action:**\n1. Drag a **Pump** and place it between the VFD and the Water Tank\n   - **Label:** `P-101 Inlet Pump`\n2. Drag a **Valve** and place it below the Water Tank\n   - **Label:** `XV-101 Outlet Valve`\n\n## Security Context: Stuxnet and VFDs\n\nStuxnet (2010) specifically targeted Siemens S7-315 and S7-417 PLCs that were connected to Siemens and Vacon Variable Frequency Drives running **within a specific RPM band** (807–1210 Hz output). It would periodically command the VFDs to run at extreme speeds, stressing the uranium centrifuge rotors while reporting normal operation to the HMI operator. This is why OTForge encodes VFDs as legitimate attack targets in its connection rules — your attack machine can connect to VFDs and send malicious frequency commands.",
+        "successCheck": "The OT canvas now has: VFD-101 at 10.200.10.40 (teal icon, Modbus RTU), P-101 Inlet Pump, and XV-101 Outlet Valve. The palette section label 'Actuators & Drives' is visible and the VFD is visually distinct (teal color) from the other actuators."
+      },
+      {
+        "id": "step-07-iiot-devices",
+        "title": "Step 7 — OT Layer: IIoT Sensor and IoT Gateway",
+        "body": "Industrial IoT (IIoT) devices represent the newest addition to OT networks — and one of the fastest-growing attack surfaces.\n\n## Add an IIoT Sensor\n\n**Action:**\n1. Drag an **IIoT Sensor** from the IIoT / Wireless section\n2. Place it in an open area of the OT canvas\n3. Set:\n   - **Label:** `WIIO-101 Wireless Sensor`\n   - **IP Address:** `10.200.10.50`\n   - **Protocol:** MQTT\n\nNote the **mint green** color and antenna icon. IIoT sensors do not use Modbus — they publish readings to an MQTT broker over Wi-Fi or WirelessHART.\n\n## Add an IoT Gateway\n\n**Action:**\n1. Drag an **IoT Gateway** from the IIoT / Wireless section\n2. Place it between the IIoT Sensor and the historian area\n3. Set:\n   - **Label:** `GW-101 MQTT Gateway`\n   - **IP Address:** `10.200.10.51`\n   - **Protocol:** MQTT\n\n## MQTT vs Modbus — Two Different Architectures\n\n| Feature | Modbus TCP/RTU | MQTT |\n|---|---|---|\n| Model | Master polls slaves | Pub/sub broker |\n| Direction | Master initiates every read | Sensor publishes, broker distributes |\n| Authentication | None (by design) | Optional (username/password or TLS) |\n| Port | 502 | 1883 (plain), 8883 (TLS) |\n| Latency | Low (deterministic) | Low–medium (broker dependent) |\n| Common attack | Write coil without auth | Malicious topic publish, broker compromise |\n\nIn a real ICS environment, the IoT Gateway acts as a **protocol bridge**: it subscribes to MQTT topics from the sensors and re-publishes the data as OPC-UA nodes that the historian can read. This bridge function is a common lateral movement path — an attacker who compromises the gateway can poison data flowing from the OT process into the historian and HMI.",
+        "successCheck": "Two IIoT devices appear on the OT canvas: WIIO-101 Wireless Sensor at 10.200.10.50 and GW-101 MQTT Gateway at 10.200.10.51, both showing MQTT as their protocol. The IIoT sensor icon has the antenna symbol."
+      },
+      {
+        "id": "step-08-protocol-connections",
+        "title": "Step 8 — Drawing Protocol Connections and Physical Cable Types",
+        "body": "Protocol edges represent communication links. OTForge enforces two levels of validation:\n1. **Logical validity** — is this protocol pair sensible for these two device types?\n2. **Physical compatibility** — can this protocol physically run on the chosen cable medium?\n\n## How to Draw a Connection\n\n1. **Right-click** on the source device node — a connection menu appears\n2. (Optional) Select a **Physical Cable** first from the top section of the menu — this pre-stages the cable type\n3. Click a **Protocol** from the bottom section — this creates the edge\n\nThe edge appears with a colored protocol chip at its midpoint. If a cable was also selected, a smaller cable chip appears above the protocol chip.\n\n## Connect the IIoT Sensor to the Gateway — MQTT over Wi-Fi\n\n**Action:**\n1. Right-click the **IIoT Sensor** node\n2. In the Physical Cable section, click **Wi-Fi 802.11 / WirelessHART**\n3. Then click **MQTT** in the protocol section\n4. Click the **IoT Gateway** as the target\n\nAn orange MQTT edge with a teal Wi-Fi cable chip appears.\n\n## Connect the PLC to the Level Transmitter — Modbus TCP over Cat6\n\n**Action:**\n1. Right-click the **PLC** node\n2. Select cable: **Cat6 Ethernet (1G)**\n3. Select protocol: **Modbus TCP**\n4. Click the **LT-101 Tank Level** node as the target\n\n## Connect the VFD — Modbus RTU over RS-485\n\n**Action:**\n1. Right-click the **VFD-101** node\n2. Select cable: **Serial RS-485 (field bus)**\n3. Select protocol: **Modbus RTU**\n4. Click the **PLC** as the target\n\n## Protocol-Cable Enforcement\n\nOTForge enforces physical compatibility. Try these deliberately invalid combinations to see the enforcement:\n\n- Right-click the **PLC**, select cable **Wi-Fi**, then pick **Modbus TCP** — you will see a warning: *Modbus TCP is not compatible with Wi-Fi*. Industrial Modbus TCP requires a wired Ethernet connection; running it over Wi-Fi violates ICS network design rules.\n- Right-click the **Safety PLC**, then try to connect to the **Process PLC** using **S7comm** — rejected because the SIS is architecturally isolated from the BPCS (ISA-84 requirement).\n\nThese enforcement rules are not arbitrary — they reflect real-world constraints and common misconfiguration vulnerabilities that ICS security professionals look for during assessments.",
+        "successCheck": "You have drawn at least three protocol edges: MQTT over Wi-Fi (IIoT Sensor → Gateway), Modbus TCP over Cat6 (PLC → Level TX), and Modbus RTU over RS-485 (VFD → PLC). You triggered at least one protocol-cable enforcement rejection and read the rejection message."
+      },
+      {
+        "id": "step-09-control-center",
+        "title": "Step 9 — Control Center Layer (Level 3)",
+        "body": "The Control Center hosts the operator-facing systems. Click the **Control** layer tab to switch to the Control Center zone.\n\n## Add a SCADA Server\n\nThe SCADA Server is the master polling engine — it continuously reads register values from every field device and maintains a real-time database of the process state. This is distinct from the HMI (which presents that data to operators).\n\n**Action:**\n1. Drag a **SCADA Server** from the SCADA / HMI section\n2. Set:\n   - **Label:** `SCADA Master`\n   - **IP Address:** `10.200.20.10`\n   - **Protocol:** OPC-UA (SCADA servers prefer OPC-UA for unified data access)\n\n## Add an HMI\n\nThe HMI (Human-Machine Interface) is the operator console — the screen the control room operator watches. In OTForge the HMI runs **FUXA**, an open-source SCADA/HMI application.\n\n**Action:**\n1. Drag an **HMI** from the SCADA / HMI section\n2. Set:\n   - **Label:** `Operator HMI`\n   - **IP Address:** `10.200.20.11`\n   - **Protocol:** Modbus TCP\n3. While the simulation is running, click **Open HMI ↗** in the toolbar to open the FUXA interface in a browser tab\n\n## Add a Historian\n\nThe Historian is the time-series database for process data. OTForge uses **InfluxDB 1.8** — the same database used in real ICS deployments. All PLC register readings are timestamped and stored every few seconds.\n\n**Action:**\n1. Drag a **Historian** from the SCADA / HMI section\n2. Set:\n   - **Label:** `Process Historian`\n   - **IP Address:** `10.200.20.12`\n\n## Add an Engineering Workstation\n\nEngineering Workstations have direct access to PLCs for programming, firmware updates, and maintenance. They are one of the most common pivot targets in ICS intrusions — if an attacker compromises an engineering workstation, they gain full read/write access to every PLC it manages.\n\n**Action:**\n1. Drag an **Eng. Workstation** from the Engineering section\n2. Set:\n   - **Label:** `Engineering WS`\n   - **IP Address:** `10.200.20.13`",
+        "successCheck": "The Control layer canvas shows four devices: SCADA Master (10.200.20.10), Operator HMI (10.200.20.11), Process Historian (10.200.20.12), and Engineering WS (10.200.20.13)."
+      },
+      {
+        "id": "step-10-plant-dmz",
+        "title": "Step 10 — Plant DMZ Layer (Level 3.5)",
+        "body": "The Plant DMZ is the security boundary between OT and the rest of the network. Click the **Plant DMZ** layer tab.\n\n## Add a Firewall\n\nIn OTForge, the Firewall device compiles to a real **nftables** container at simulation start. Rules you configure here become actual Linux firewall rules enforced on every packet crossing the zone boundary.\n\n**Action:**\n1. Drag a **Firewall** from the Security section\n2. Set:\n   - **Label:** `OT-IT Firewall`\n   - **IP Address:** `10.200.30.10`\n3. With the Firewall selected, click **Edit Firewall Rules** in the Properties panel\n4. The default policy is **deny all**. Add these rules:\n   - `control → ot · tcp · port 502 · ALLOW` — HMI and SCADA server poll PLCs via Modbus\n   - `ot → control · any · any · ALLOW` — PLCs report to historian\n   - `plant-dmz → ot · tcp · any · ALLOW` — allows engineering workstation remote access via jump server\n\n## Add an IDS/IPS\n\nThe IDS/IPS device runs **Suricata** in IDS mode, monitoring all traffic on the OT network for ICS-specific attack signatures. You see its output in the Monitor panel Live Logs tab.\n\n**Action:**\n1. Drag an **IDS/IPS** from the Security section\n2. Set:\n   - **Label:** `Suricata IDS`\n   - **IP Address:** `10.200.30.11`\n\n## Add a Jump Server\n\nA Jump Server (bastion host) is the only authorized remote-access path into the OT network. Engineers connecting from home or the enterprise network must VPN to the jump server first, then RDP or SSH from there into OT devices. This creates a single choke point that can be audited.\n\n**Action:**\n1. Drag a **Jump Server** from the Access Control section\n2. Set:\n   - **Label:** `OT Jump Server`\n   - **IP Address:** `10.200.30.12`\n\n## Add a Data Diode\n\nA Data Diode (Waterfall Security, Owl Cyber Defense) is a hardware-enforced **unidirectional gateway** — data can only flow one way (typically OT→IT) because there is no physical return path. It is the strongest possible isolation control short of an air gap, and is used in nuclear, defense, and critical infrastructure environments.\n\n**Action:**\n1. Drag a **Data Diode** from the Access Control section\n2. Set:\n   - **Label:** `Data Diode`\n   - **IP Address:** `10.200.30.13`",
+        "successCheck": "The Plant DMZ canvas shows: OT-IT Firewall (10.200.30.10) with at least two allow rules configured, Suricata IDS (10.200.30.11), OT Jump Server (10.200.30.12), and Data Diode (10.200.30.13). All four have the amber/gold security-boundary icon color."
+      },
+      {
+        "id": "step-11-enterprise-internet-dmz",
+        "title": "Step 11 — Enterprise and Internet DMZ Layers",
+        "body": "These upper layers represent the corporate IT network and public-facing services. They are relevant to ICS security because real attacks (BlackEnergy, NotPetya, Colonial Pipeline) entered through these layers before pivoting down to OT.\n\n## Enterprise Layer (Level 4)\n\nClick the **Enterprise** layer tab.\n\n**Action:**\n1. Drag a **Domain Controller** from the Directory & Servers section\n   - **Label:** `Corp AD DC`\n   - **IP Address:** `10.200.40.10`\n2. Drag an **Enterprise Desktop** from the Endpoints section\n   - **Label:** `IT Desktop`\n   - **IP Address:** `10.200.40.11`\n\nThe Domain Controller runs Active Directory — it authenticates all Windows users in the corporate environment. In the Colonial Pipeline breach (2021), attackers stole credentials from an old VPN account that was connected to Active Directory. This shows how enterprise IT compromise directly enables OT access.\n\n## Internet DMZ Layer (Level 5)\n\nClick the **Internet DMZ** layer tab.\n\n**Action:**\n1. Drag a **DNS Server** from the Internet-Facing section\n   - **Label:** `DNS Server`\n   - **IP Address:** `10.200.50.10`\n2. (Optional) Drag an **Internet Server** for a simulated company website\n   - **Label:** `Company Website`\n   - **IP Address:** `10.200.50.11`\n\n## Why DNS in Internet DMZ Matters\n\nIn ICS Lab 01 (Modbus Coil Write), the DNS server is authoritative for the simulated company domain. The attack begins with OSINT — using `dig` to enumerate DNS records and map the network before scanning. This mirrors real-world attacker methodology: DNS enumeration is passive, leaves no IDS fingerprint, and often reveals the full network topology through subdomains like `ot.company.com` or `scada.company.com`.",
+        "successCheck": "The Enterprise layer shows Corp AD DC (10.200.40.10) and IT Desktop (10.200.40.11). The Internet DMZ layer shows at least a DNS Server (10.200.50.10). You understand why these upper layers are relevant to OT security."
+      },
+      {
+        "id": "step-12-attack-machine",
+        "title": "Step 12 — The Attack Machine (Attacker Zone)",
+        "body": "The attack machine is a full **Kali Linux** installation with a complete ICS offensive toolkit. It is the only device in the Attacker zone — a separate Docker network that is isolated from all other zones by default.\n\n## Adding the Attack Machine\n\n**Action:**\n1. Make sure the simulation is **not running** (Stop button if needed)\n2. Find the **+ Attack Machine** button in the right side of the toolbar\n3. Click it — a Kali Linux device is added to the Attacker zone\n4. Confirm it appears in the Properties panel with zone: attacker and IP 10.200.60.10\n\nThe attack machine is not accessible via any layer tab — it is managed only through the toolbar buttons.\n\n## Two Ways to Access the Attack Machine\n\n| Button | What Opens | Best For |\n|---|---|---|\n| **⚔ Kali Terminal** | A floating terminal window with CLI access | Running commands, pasting tutorial commands via Ctrl+V |\n| **🖥 Kali Desktop** | Kali Xfce4 desktop via noVNC in a browser tab | GUI tools: Wireshark, Armitage (Metasploit GUI), Firefox |\n\n**Note:** Clipboard paste (Ctrl+V) does NOT work in the noVNC desktop view. Use the Terminal button when you need to paste commands.\n\n## Extra Networks\n\nBy default the attack machine only has access to the attacker subnet (`10.200.60.0/24`). To reach other zones, add **extra networks** in the Properties panel (e.g., add `ot` to let the Kali machine route to `10.200.10.0/24`). This models a compromised pivot host that can reach multiple zones — or a red team machine intentionally bridged for a lab exercise.\n\n## ICS Attack Toolkit Pre-Installed\n\nThe attack machine includes: `nmap`, `metasploit-framework`, `pymodbus`, `dnpwn` (DNP3 fuzzer), `isf` (Industrial Security Framework), `wireshark`, `tcpdump`, `scapy`, `hydra`, `gobuster`, and the Lab 01 Python attack scripts in `/root/Desktop/Attack_Scripts/`.",
+        "successCheck": "The toolbar shows the attack machine status (⚔ Attack Ready). The Properties panel confirms zone: attacker and IP 10.200.60.10. You understand the difference between the Terminal and Desktop access modes."
+      },
+      {
+        "id": "step-13-firewall-rules",
+        "title": "Step 13 — Firewall Rules and Zone Segmentation",
+        "body": "Firewall rules are the core of the Purdue Model's defense-in-depth. In OTForge, every rule you add here compiles to real **nftables** filter rules enforced in the firewall container.\n\n## Opening the Firewall Rule Editor\n\n1. Switch to the **Plant DMZ** layer tab\n2. Click the **OT-IT Firewall** node\n3. In the Properties panel, click **Edit Firewall Rules**\n\n## Rule Structure\n\nEach rule has five fields:\n- **Source Zone** — traffic coming from\n- **Destination Zone** — traffic going to\n- **Protocol** — `tcp`, `udp`, or `any`\n- **Destination Port** — specific port number or `any`\n- **Action** — `allow` or `deny`\n\n## Recommended Rules for This Scenario\n\nAdd the following rules to allow legitimate ICS traffic while blocking unauthorized cross-zone access:\n\n| Source | Destination | Protocol | Port | Action | Purpose |\n|---|---|---|---|---|---|\n| control | ot | tcp | 502 | allow | HMI/SCADA polls PLCs via Modbus |\n| control | ot | tcp | 4840 | allow | OPC-UA from SCADA Server to DCS |\n| ot | control | any | any | allow | PLC reports to historian |\n| plant-dmz | ot | tcp | any | allow | Jump server to engineering workstation RDP |\n| enterprise | plant-dmz | tcp | 22 | allow | IT engineers SSH to jump server |\n\n## The Default Deny Policy\n\nThe firewall default policy is **deny**. Any traffic not explicitly allowed is dropped. This is the IEC 62443 zone/conduit model — all inter-zone communication must be explicitly authorized.\n\n## Challenge: Block the Attack Machine\n\nIn ICS Lab 01, the attack machine can reach the OT subnet because there is no deny rule between `attacker` and `ot`. Confirm this by NOT adding an allow rule for the attacker zone. After running the simulation in the next step, you can verify the attacker cannot reach port 502 on the PLC (connection refused). Then temporarily add `attacker → ot tcp 502 allow` and try again — the coil write will succeed, replicating the Lab 01 attack.",
+        "successCheck": "The Firewall rule editor shows at least three allow rules: control→ot Modbus TCP :502, ot→control any, and at least one more. The default policy is deny. You understand the zone/conduit model and why the attacker zone must not have unrestricted access to OT."
+      },
+      {
+        "id": "step-14-run-monitor-export",
+        "title": "Step 14 — Run the Simulation, Monitor, and Export",
+        "body": "Your scenario is complete. Time to bring it to life.\n\n## Starting the Simulation\n\nClick the green **▶ Run** button in the toolbar. Behind the scenes:\n1. The compose generator reads your scenario JSON and produces a `docker-compose.yml`\n2. Six Docker bridge networks are created (`ot-net`, `control-net`, `plant-dmz-net`, `enterprise-net`, `internet-dmz-net`, `attacker-net`)\n3. One container per device is started, plus infrastructure: Suricata IDS, Zeek traffic analyser, InfluxDB historian, Loki log aggregator, and FUXA HMI\n4. The **status badge** below the toolbar progresses: Idle → Starting → Running\n5. The **container health bar** shows green ticks as each container passes its health check\n\n**First-run note:** Docker will pull images (~1–3 GB). An overlay shows pull progress. Subsequent runs use cached images and start in under 30 seconds.\n\n## The Monitor Panel\n\nOnce running, click **Monitor** in the toolbar. The Monitor panel slides open on the right:\n\n- **Live Logs tab** — Real-time IDS and network alerts\n  - Use the **All / Suricata / Zeek** filter buttons to isolate sources\n  - Suricata alerts (red labels) are signature-based — look for ICS protocol rule matches\n  - Zeek entries (blue labels) are protocol-analysis records — every Modbus connection logged\n- **Open Grafana ↗** — Opens the ICS Lab Overview Grafana dashboard in a browser tab\n  - Total Alert Count, Alerts by Category (donut), Alert Timeline, Top Source IPs\n  - This is the dashboard a real SOC analyst would watch during a blue team exercise\n\n## Opening the HMI\n\nWhile the simulation is running, click **Open HMI ↗** in the toolbar. FUXA opens in a browser tab and automatically discovers the PLCs from your scenario's Modbus configuration. You can see live register values updating in real time.\n\n## Export and Share\n\nWhen you are done, stop the simulation (**■ Stop**) and then click **Export**:\n\n- **Author Copy** — Full `.otflab` JSON with all device configs, IPs, and firewall rules. Keep as your master file.\n- **Student Copy** — Sets `locked: true`, hides the topology and device IPs. Students see only the **Mission Brief** text and cannot inspect your design. This is how you turn your scenario into a student lab assignment.\n\n## What to Explore Next\n\nNow that you know the full interface, open **ICS Lab 01 — Modbus Coil Write Attack** to see a fully built scenario that uses this same water treatment architecture as the foundation for a complete guided attack lab.",
+        "successCheck": "The simulation is running (status badge shows Running, container health bar shows green). The Monitor panel is open and showing live Suricata/Zeek logs. You have opened Grafana and/or the FUXA HMI in a browser tab. You have exported at least one copy of your scenario. You are ready to proceed to ICS Lab 01."
+      }
+    ]
+  },
+  "visual": {
+    "nodes": [
+      {
+        "id": "plc-main",
+        "type": "plc",
+        "position": { "x": 240, "y": 200 },
+        "data": { "label": "OpenPLC Controller", "zone": "ot" }
+      },
+      {
+        "id": "process-unit-1",
+        "type": "process-unit",
+        "position": { "x": 480, "y": 200 },
+        "data": { "label": "Water Tank", "zone": "ot" }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-plc-tank",
+        "source": "plc-main",
+        "target": "process-unit-1",
+        "type": "pipeEdge",
+        "data": {
+          "protocol": "modbus-tcp",
+          "label": "Modbus TCP",
+          "cableType": "cat6"
+        }
+      }
+    ],
+    "viewport": { "x": 0, "y": 0, "zoom": 1.0 }
+  },
+  "network": {
+    "segments": [
+      {
+        "zone": "ot",
+        "subnet": "10.200.10.0/24",
+        "gateway": "10.200.10.1",
+        "dockerNetwork": "ics-sim-ot-net"
+      },
+      {
+        "zone": "control",
+        "subnet": "10.200.20.0/24",
+        "gateway": "10.200.20.1",
+        "dockerNetwork": "ics-sim-control-net"
+      },
+      {
+        "zone": "plant-dmz",
+        "subnet": "10.200.30.0/24",
+        "gateway": "10.200.30.1",
+        "dockerNetwork": "ics-sim-plant-dmz-net"
+      },
+      {
+        "zone": "enterprise",
+        "subnet": "10.200.40.0/24",
+        "gateway": "10.200.40.1",
+        "dockerNetwork": "ics-sim-enterprise-net"
+      },
+      {
+        "zone": "internet-dmz",
+        "subnet": "10.200.50.0/24",
+        "gateway": "10.200.50.1",
+        "dockerNetwork": "ics-sim-internet-dmz-net"
+      },
+      {
+        "zone": "attacker",
+        "subnet": "10.200.60.0/24",
+        "gateway": "10.200.60.1",
+        "dockerNetwork": "ics-sim-attacker-net"
+      }
+    ],
+    "routes": []
+  },
+  "devices": {
+    "devices": {
+      "plc-main": {
+        "nodeId": "plc-main",
+        "category": "plc",
+        "ipAddress": "10.200.10.10",
+        "protocols": ["modbus-tcp"],
+        "modbus": {
+          "mode": "tcp",
+          "port": 502,
+          "unitId": 1,
+          "registers": {
+            "coils": { "0": 1, "1": 1, "2": 0 },
+            "holdingRegisters": { "0": 500, "1": 120, "2": 120 }
+          }
+        }
+      },
+      "process-unit-1": {
+        "nodeId": "process-unit-1",
+        "category": "process-unit",
+        "ipAddress": "10.200.10.20",
+        "protocols": ["modbus-tcp"],
+        "processUnit": {
+          "processType": "water-tank",
+          "tankVolumeL": 1000,
+          "tankAreaM2": 1.0,
+          "pumpFlowMaxLpm": 200,
+          "valveFlowMaxLpm": 200,
+          "initialLevelPct": 50
+        }
+      }
+    }
+  },
+  "security": {
+    "defaultFirewallPolicy": "deny",
+    "firewallRules": [
+      {
+        "id": "rule-allow-control-ot-modbus",
+        "sourceZone": "control",
+        "destinationZone": "ot",
+        "protocol": "tcp",
+        "destinationPort": 502,
+        "action": "allow",
+        "comment": "HMI and SCADA server poll PLCs via Modbus TCP"
+      },
+      {
+        "id": "rule-allow-ot-control-any",
+        "sourceZone": "ot",
+        "destinationZone": "control",
+        "protocol": "any",
+        "destinationPort": "any",
+        "action": "allow",
+        "comment": "PLCs report to historian"
+      }
+    ],
+    "ids": {
+      "enabledRulesets": ["emerging-scada", "emerging-modbus"],
+      "disabledRuleIds": [],
+      "zeekScripts": ["modbus.zeek", "dnp3.zeek"]
+    },
+    "logging": {
+      "retentionDays": 7,
+      "influxdbEnabled": true,
+      "lokiEnabled": true
+    }
+  },
+  "registry": [],
+  "packLayers": []
+}
