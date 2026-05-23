@@ -275,6 +275,93 @@ export const VALID_CONNECTIONS: Partial<
     'ids-ips': ['none']
   },
 
+  // ── Engineering Workstation — programs and configures PLCs / RTUs / IEDs ─────
+  // Sits on the control-center LAN (Level 3). Uses Ethernet to PLCs for web IDE
+  // access; RS-232 console cable for serial programming ports on legacy devices.
+  'engineering-workstation': {
+    plc: ['none'], // Ethernet to OpenPLC web / EtherNet/IP config
+    rtu: ['none'], // Ethernet to RTU management interface
+    ied: ['none'], // Ethernet to IED configuration tool
+    'legacy-plc': ['none'], // Ethernet to Siemens TIA Portal / Step 7
+    'iec104-rtu': ['none'], // Ethernet to IEC 104 RTU configuration
+    hmi: ['none'],
+    historian: ['opc-ua', 'none'],
+    'application-server': ['none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
+  // ── Application Server — SCADA / MES middleware (Level 3) ────────────────────
+  'application-server': {
+    historian: ['opc-ua', 'none'],
+    'database-server': ['none'],
+    hmi: ['none'],
+    'engineering-workstation': ['none'],
+    'domain-controller': ['none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
+  // ── Database Server — process / relational DB (Level 3/4) ────────────────────
+  'database-server': {
+    'application-server': ['none'],
+    historian: ['none'],
+    'domain-controller': ['none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
+  // ── Enterprise IT (Level 4) — Ethernet only; no ICS protocols ───────────────
+  'domain-controller': {
+    'enterprise-desktop': ['none'],
+    'engineering-workstation': ['none'],
+    'application-server': ['none'],
+    'database-server': ['none'],
+    'business-server': ['none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none']
+  },
+  'enterprise-desktop': {
+    'domain-controller': ['none'],
+    'application-server': ['none'],
+    'business-server': ['none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none']
+  },
+  'web-server': {
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+  'business-server': {
+    'domain-controller': ['none'],
+    'database-server': ['none'],
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none']
+  },
+  'email-server': {
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+  'internet-server': {
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
   // ── Infrastructure: Ethernet pass-through — no ICS application protocols ───
   firewall: {
     plc: ['none'],
@@ -552,6 +639,10 @@ export const VALID_CONNECTIONS: Partial<
       'iec61850',
       'none'
     ],
+    // Control center targets — lateral movement from enterprise into OT
+    'engineering-workstation': ['none'],
+    'application-server': ['none'],
+    'database-server': ['none'],
     // Enterprise zone targets — lateral movement and credential attacks
     'domain-controller': ['none'],
     'web-server': ['none'],
@@ -652,66 +743,128 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
 // declares the set of cable types it can physically terminate. A cable is valid
 // between two devices only if BOTH appear in that cable's supported set.
 //
-// Educational rationale:
-//   RS-485  — multi-drop serial field bus; only field instruments and PLC/RTU serial ports
+// Additionally, PROTOCOL_VALID_CABLES below enforces protocol-medium consistency
+// so students cannot assign Modbus TCP (an Ethernet protocol) to an RS-485 cable.
+//
+// Educational rationale per medium:
+//   RS-485  — multi-drop serial field bus; PLC/RTU serial ports and field instruments
 //   RS-232  — point-to-point console port; engineering workstations and PLC/RTU console jacks
 //   Cat5e   — 100 Mbps Ethernet; OT field networks, entry-level IT
 //   Cat6    — 1 Gbps Ethernet; control center, enterprise desktop
 //   Cat6a   — 10 Gbps Ethernet; data center spine links, high-throughput servers
 //   MMF     — multi-mode fiber; in-building backbone where copper won't do
 //   SMF     — single-mode fiber; inter-building and inter-zone long runs
+//   Wi-Fi   — 802.11 a/b/g/n/ac/ax; WirelessHART (ISA100.11a); mobile HMI, wireless field devices
+//   SATA    — Serial ATA; direct-attached storage for historians, servers, database devices
 //   AC      — mains power; any device that plugs into the wall
 //   DC      — 24 VDC loop power; field instruments sourced from PLC/RTU DIN rail PSU
 //
-// Sources: TIA-568 (structured cabling), IEC 61158 (field bus), ISA-12 (hazardous area wiring)
+// Sources: TIA-568 (structured cabling), IEC 61158 (field bus), ISA-12 (hazardous area wiring),
+//          IEC 62591 (WirelessHART), ISA-100.11a (wireless industrial)
 
 /**
  * Cable media types physically supportable by each device category.
  * Intersection of two devices' capability sets gives valid cables between them.
  */
 const DEVICE_CABLE_CAPABILITIES: Record<DeviceCategory, Set<CableType>> = {
-  // ── PLCs and RTUs — serial field bus port + Ethernet management port + DC rail PSU ──
+  // ── PLCs and RTUs — serial field bus port + Ethernet management + DIN rail PSU ──────
   plc: new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']),
   rtu: new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']),
-  ied: new Set(['cat5e', 'cat6', 'mmf', 'ac']), // IEDs: Ethernet only (IEC 61850 over fiber common)
+  // IEDs: Ethernet only (IEC 61850 GOOSE runs on Cat5e/fiber, no serial field bus)
+  ied: new Set(['cat5e', 'cat6', 'mmf', 'smf', 'ac']),
   'legacy-plc': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']), // Siemens S7 — same ports
   'iec104-rtu': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']), // IEC 104 RTU — same ports
   'process-unit': new Set(['cat5e', 'cat6', 'ac']), // process sim panel — Ethernet + mains
 
-  // ── Field instruments — RS-485 (serial) or Cat5e (Ethernet-capable), DC loop power ──
-  sensor: new Set(['rs485', 'cat5e', 'dc']),
-  actuator: new Set(['rs485', 'cat5e', 'dc']),
-  pump: new Set(['rs485', 'cat5e', 'ac']), // pumps draw AC from motor control center
-  valve: new Set(['rs485', 'cat5e', 'dc']),
-  'flow-meter': new Set(['rs485', 'cat5e', 'dc']),
-  'pressure-transmitter': new Set(['rs485', 'cat5e', 'dc']),
+  // ── Field instruments — RS-485 (serial Modbus RTU) or Cat5e (Ethernet Modbus TCP) ──
+  // Smart sensors with WirelessHART/ISA100 also support Wi-Fi for wireless polling.
+  // DC loop power (4-20 mA / HART) is the standard 24 VDC two-wire instrument supply.
+  sensor: new Set(['rs485', 'cat5e', 'wifi', 'dc']),
+  actuator: new Set(['rs485', 'cat5e', 'wifi', 'dc']),
+  pump: new Set(['rs485', 'cat5e', 'ac']), // pumps draw AC from MCC
+  valve: new Set(['rs485', 'cat5e', 'wifi', 'dc']),
+  'flow-meter': new Set(['rs485', 'cat5e', 'wifi', 'dc']),
+  'pressure-transmitter': new Set(['rs485', 'cat5e', 'wifi', 'dc']),
 
-  // ── Control center (L3) — Ethernet only; no serial field bus ──────────────────────
-  hmi: new Set(['cat5e', 'cat6', 'ac']),
-  historian: new Set(['cat5e', 'cat6', 'cat6a', 'ac']),
-  'application-server': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'ac']),
-  'database-server': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'ac']),
-  'engineering-workstation': new Set(['rs232', 'cat5e', 'cat6', 'ac']), // RS-232 for PLC console
+  // ── Control center (L3) — Ethernet; EWS also has RS-232 console port ─────────────
+  // HMI: Cat5e/Cat6 wired; modern panel PCs may also have Wi-Fi for roaming tablets.
+  hmi: new Set(['cat5e', 'cat6', 'wifi', 'ac']),
+  // Historian: Ethernet + SATA for direct-attached storage (time-series data volumes).
+  historian: new Set(['cat5e', 'cat6', 'cat6a', 'sata', 'ac']),
+  'application-server': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'sata', 'ac']),
+  'database-server': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'sata', 'ac']),
+  // Engineering workstation: RS-232 for PLC serial console; Wi-Fi for wireless laptop
+  'engineering-workstation': new Set(['rs232', 'cat5e', 'cat6', 'wifi', 'ac']),
 
-  // ── Infrastructure — all Ethernet and fiber speeds; no serial field bus ────────────
+  // ── Infrastructure — all Ethernet and fiber speeds; switches may be WAPs ─────────
   firewall: new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'ac']),
   'ids-ips': new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'ac']),
-  switch: new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'ac']),
-  router: new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'ac']),
+  // Switch: includes Wi-Fi for wireless access point / controller functionality
+  switch: new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'wifi', 'ac']),
+  router: new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'wifi', 'ac']),
 
-  // ── Enterprise (L4) — Gbps Ethernet; fiber uplinks ───────────────────────────────
-  'domain-controller': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'ac']),
-  'web-server': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'ac']),
-  'business-server': new Set(['cat6', 'cat6a', 'ac']),
-  'enterprise-desktop': new Set(['cat6', 'cat6a', 'ac']),
+  // ── Enterprise (L4) — Gbps Ethernet; fiber uplinks; SATA storage ─────────────────
+  'domain-controller': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'sata', 'ac']),
+  'web-server': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'sata', 'ac']),
+  'business-server': new Set(['cat6', 'cat6a', 'sata', 'ac']),
+  'enterprise-desktop': new Set(['cat6', 'cat6a', 'wifi', 'ac']),
 
-  // ── Internet DMZ (L5) — Gbps Ethernet; long-haul fiber uplinks ───────────────────
-  'email-server': new Set(['cat6', 'cat6a', 'smf', 'ac']),
-  'internet-server': new Set(['cat6', 'cat6a', 'smf', 'ac']),
-  'dns-server': new Set(['cat6', 'cat6a', 'smf', 'ac']),
+  // ── Internet DMZ (L5) — Gbps Ethernet; long-haul fiber; SATA storage ─────────────
+  'email-server': new Set(['cat6', 'cat6a', 'smf', 'sata', 'ac']),
+  'internet-server': new Set(['cat6', 'cat6a', 'smf', 'sata', 'ac']),
+  'dns-server': new Set(['cat6', 'cat6a', 'smf', 'sata', 'ac']),
 
   // ── Attack machine — all cable types (adversary simulates any physical access) ─────
-  'attack-machine': new Set(['rs232', 'rs485', 'cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'ac', 'dc'])
+  'attack-machine': new Set([
+    'rs232',
+    'rs485',
+    'cat5e',
+    'cat6',
+    'cat6a',
+    'smf',
+    'mmf',
+    'wifi',
+    'sata',
+    'ac',
+    'dc'
+  ])
+}
+
+// ── Protocol ↔ Cable medium compatibility ────────────────────────────────────
+//
+// Not every cable can carry every protocol. This map enforces physical-layer
+// consistency so students cannot, for example, assign Modbus TCP (an Ethernet
+// application protocol) to an RS-485 cable (a serial field-bus medium).
+//
+// Key rules:
+//   Modbus TCP / OPC-UA / EtherNet/IP / IEC 61850 / S7comm / IEC-104 / BACnet
+//     → Ethernet (Cat5e/6/6a), Fiber (SMF/MMF), or Wi-Fi only
+//   Modbus RTU / Modbus ASCII
+//     → RS-485 or RS-232 only (serial byte-stream protocols)
+//   DNP3
+//     → serial (RS-485/RS-232) OR Ethernet/Fiber/Wi-Fi (DNP3 runs on both)
+//   'none' (raw Ethernet / unspecified)
+//     → any medium (represents an L2 Ethernet frame with no application-layer tag)
+//
+// Sources: Modbus spec v1.1b3, DNP3 Subset Definition, IEC 62443-3-3
+const PROTOCOL_VALID_CABLES: Partial<Record<Protocol, ReadonlySet<CableType>>> = {
+  'modbus-tcp': new Set<CableType>(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'wifi']),
+  'modbus-rtu': new Set<CableType>(['rs485', 'rs232']),
+  'modbus-ascii': new Set<CableType>(['rs485', 'rs232']),
+  // DNP3 runs on serial AND IP transport (DNP3 over TCP/UDP in SCADA WAN links)
+  dnp3: new Set<CableType>(['rs485', 'rs232', 'cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'wifi']),
+  'opc-ua': new Set<CableType>(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'wifi']),
+  bacnet: new Set<CableType>(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'wifi']),
+  // EtherNet/IP uses standard Ethernet frames; wireless EtherNet/IP not common in OT
+  'ethernet-ip': new Set<CableType>(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf']),
+  // IEC 61850 GOOSE/MMS is Ethernet only — time-critical GOOSE requires deterministic L2
+  iec61850: new Set<CableType>(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf']),
+  // S7comm is ISO-on-TCP (port 102); runs on Ethernet only
+  s7comm: new Set<CableType>(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf']),
+  // IEC 104 is TCP/IP transport for IEC 101 telecontrol; WAN links may use fiber or WiFi
+  'iec-104': new Set<CableType>(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'wifi']),
+  // 'none' = raw Ethernet / untagged — compatible with any medium
+  none: undefined
 }
 
 /**
@@ -762,6 +915,23 @@ export function isCableValid(
 }
 
 /**
+ * Returns true when the selected protocol can physically run over the chosen cable medium.
+ *
+ * For example, Modbus TCP (an Ethernet application protocol) cannot run over RS-485 —
+ * that pairing is rejected even if both devices support RS-485. When `protocol` is 'none'
+ * (untagged Ethernet), any cable is accepted because 'none' represents a raw L2 frame.
+ *
+ * @param protocol - Application protocol selected from the connection context menu.
+ * @param cable    - Physical cable type selected from the same menu.
+ */
+export function isProtocolCableCompatible(protocol: Protocol, cable: CableType): boolean {
+  const validCables = PROTOCOL_VALID_CABLES[protocol]
+  // 'none' (undefined entry) accepts every medium
+  if (validCables === undefined) return true
+  return validCables.has(cable)
+}
+
+/**
  * Human-readable cable type names for rejection messages.
  */
 const CABLE_TYPE_NAMES: Record<CableType, string> = {
@@ -770,24 +940,38 @@ const CABLE_TYPE_NAMES: Record<CableType, string> = {
   cat6a: 'Cat6a Ethernet (10G)',
   smf: 'Single-Mode Fiber',
   mmf: 'Multi-Mode Fiber',
+  wifi: 'Wi-Fi 802.11',
   rs232: 'RS-232 Serial',
   rs485: 'RS-485 Serial',
+  sata: 'SATA Storage',
   ac: 'AC Power',
   dc: 'DC Power'
 }
 
 /**
  * Returns an educational rejection message explaining why the selected cable type
- * is incompatible with the given device pair.
+ * is incompatible with the given device pair, or why the selected cable cannot carry
+ * the chosen application protocol.
  *
- * @param source - Category of the initiating device.
- * @param target - Category of the destination device.
- * @param cable  - Cable type that was rejected.
+ * Four rejection cases (checked in order):
+ *   1. Source device has no port for this cable medium.
+ *   2. Target device has no port for this cable medium.
+ *   3. The two devices share no compatible cable at all.
+ *   4. The cable is a valid medium between these devices, but the protocol
+ *      selected elsewhere in the connection menu cannot run over it (e.g.,
+ *      Modbus TCP over RS-485, or EtherNet/IP over Wi-Fi).
+ *
+ * @param source   - Category of the initiating device.
+ * @param target   - Category of the destination device.
+ * @param cable    - Cable type that was rejected.
+ * @param protocol - Optional: the protocol chosen for this connection. When
+ *                   provided, a fifth check verifies protocol-medium compatibility.
  */
 export function getCableRejectionReason(
   source: DeviceCategory,
   target: DeviceCategory,
-  cable: CableType
+  cable: CableType,
+  protocol?: Protocol
 ): string {
   const validCables = getValidCables(source, target)
   const src = CATEGORY_NAMES[source]
@@ -810,6 +994,17 @@ export function getCableRejectionReason(
   }
   if (validCables.length === 0) {
     return `${src} and ${tgt} share no compatible cable types.`
+  }
+  // Protocol-medium mismatch: cable is physically valid between the two devices,
+  // but the chosen application protocol cannot run over this physical layer.
+  if (protocol && protocol !== 'none' && !isProtocolCableCompatible(protocol, cable)) {
+    const allowedCables = PROTOCOL_VALID_CABLES[protocol]
+    const allowedNames = allowedCables
+      ? Array.from(allowedCables)
+          .map(c => CABLE_TYPE_NAMES[c])
+          .join(', ')
+      : 'any'
+    return `${protocol} cannot run over ${cableName}. This is an Ethernet/IP protocol — valid media: ${allowedNames}.`
   }
   return `${src} → ${tgt}: ${cableName} is not compatible. Valid cables: ${validCables
     .map(c => CABLE_TYPE_NAMES[c])

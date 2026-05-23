@@ -65,7 +65,8 @@ import {
   getRejectionReason,
   getSourceCables,
   isCableValid,
-  getCableRejectionReason
+  getCableRejectionReason,
+  isProtocolCableCompatible
 } from './connectionRules'
 
 /**
@@ -98,6 +99,8 @@ const CABLE_OPTIONS: { cable: CableType; label: string; color: string }[] = [
   { cable: 'mmf', label: 'Fiber — MMF (in-building)', color: '#e3b341' },
   { cable: 'rs232', label: 'Serial RS-232 (console)', color: '#c9a227' },
   { cable: 'rs485', label: 'Serial RS-485 (field bus)', color: '#c9a227' },
+  { cable: 'wifi', label: 'Wi-Fi 802.11 / WirelessHART', color: '#3dc9b0' },
+  { cable: 'sata', label: 'SATA Storage Interface', color: '#8b5cf6' },
   { cable: 'ac', label: 'AC Power', color: '#ff7b72' },
   { cable: 'dc', label: 'DC Power (24 VDC)', color: '#ff7b72' }
 ]
@@ -1085,6 +1088,24 @@ export function ScadaCanvas({
             sourceCategory,
             targetCategory,
             pendingConnection.cableType
+          )
+          if (tooltipTimerRef.current !== null) clearTimeout(tooltipTimerRef.current)
+          setInvalidTooltip({ message, x: event.clientX, y: event.clientY })
+          tooltipTimerRef.current = setTimeout(() => setInvalidTooltip(null), 3000)
+          return
+        }
+
+        // ── Protocol-cable medium compatibility check ───────────────────────
+        // Blocks mismatches like Modbus TCP over RS-485 or EtherNet/IP over Wi-Fi.
+        if (
+          pendingConnection.cableType !== undefined &&
+          !isProtocolCableCompatible(pendingConnection.protocol, pendingConnection.cableType)
+        ) {
+          const message = getCableRejectionReason(
+            sourceCategory,
+            targetCategory,
+            pendingConnection.cableType,
+            pendingConnection.protocol
           )
           if (tooltipTimerRef.current !== null) clearTimeout(tooltipTimerRef.current)
           setInvalidTooltip({ message, x: event.clientX, y: event.clientY })

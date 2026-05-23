@@ -23,12 +23,16 @@ export type Protocol =
  * Organized by media family:
  *   Ethernet twisted-pair — cat5e (100 Mbps), cat6 (1 Gbps), cat6a (10 Gbps)
  *   Fiber optic            — smf (single-mode, long-haul), mmf (multi-mode, in-building)
+ *   Wireless               — wifi (802.11 a/b/g/n/ac/ax; WirelessHART; ISA100)
  *   Serial                 — rs232 (point-to-point console), rs485 (multi-drop field bus)
+ *   Storage                — sata (Serial ATA; direct-attached storage, server disk buses)
  *   Power                  — ac (mains power), dc (24 VDC instrument power)
  *
  * Cable type is OPTIONAL on canvas edges; omitting it means the physical medium
- * is not specified. When present, connectionRules enforces that the selected cable
- * is appropriate for both device endpoints (e.g., RS-485 only valid to field devices).
+ * is not specified. When present, connectionRules enforces that:
+ *   1. Both endpoint device categories can physically terminate that medium.
+ *   2. The chosen application protocol is compatible with that medium
+ *      (e.g., Modbus RTU only runs on RS-232/RS-485; Modbus TCP requires Ethernet/WiFi).
  */
 export type CableType =
   | 'cat5e' // Ethernet Cat5e — 100 Mbps, twisted pair, typical OT field network
@@ -36,8 +40,10 @@ export type CableType =
   | 'cat6a' // Ethernet Cat6a — 10 Gbps, twisted pair, data center / spine links
   | 'smf' // Single-Mode Fiber — long-distance backbone (inter-building, inter-zone)
   | 'mmf' // Multi-Mode Fiber  — short-distance fiber (within substation / building)
+  | 'wifi' // Wireless 802.11 / WirelessHART / ISA100 — mobile HMI, wireless field devices
   | 'rs232' // Serial RS-232 — point-to-point console / programming cable
   | 'rs485' // Serial RS-485 — multi-drop field bus, Modbus RTU / serial instruments
+  | 'sata' // Serial ATA — direct-attached storage, server/historian disk interface
   | 'ac' // AC mains power cable
   | 'dc' // DC instrument power (24 VDC, loop-powered sensors and actuators)
 

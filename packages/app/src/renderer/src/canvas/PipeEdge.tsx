@@ -40,8 +40,10 @@ const CABLE_LABELS: Record<CableType, string> = {
   cat6a: 'Cat6a',
   smf: 'SMF Fiber',
   mmf: 'MMF Fiber',
+  wifi: 'Wi-Fi',
   rs232: 'RS-232',
   rs485: 'RS-485',
+  sata: 'SATA',
   ac: 'AC Pwr',
   dc: 'DC Pwr'
 }
@@ -53,8 +55,10 @@ const CABLE_COLORS: Record<CableType, string> = {
   cat6a: '#79c0ff',
   smf: '#e3b341',
   mmf: '#e3b341',
+  wifi: '#3dc9b0',
   rs232: '#c9a227',
   rs485: '#c9a227',
+  sata: '#8b5cf6',
   ac: '#ff7b72',
   dc: '#ff7b72'
 }

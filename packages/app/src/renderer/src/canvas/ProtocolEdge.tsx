@@ -58,8 +58,10 @@ const CABLE_LABELS: Record<CableType, string> = {
   cat6a: 'Cat6a',
   smf: 'SMF Fiber',
   mmf: 'MMF Fiber',
+  wifi: 'Wi-Fi',
   rs232: 'RS-232',
   rs485: 'RS-485',
+  sata: 'SATA',
   ac: 'AC Pwr',
   dc: 'DC Pwr'
 }
@@ -68,7 +70,9 @@ const CABLE_LABELS: Record<CableType, string> = {
  * Accent colors for cable type chips — visually distinct from protocol colors.
  *   Ethernet (cat5e/6/6a)  → cornflower blue   (#58a6ff)
  *   Fiber   (smf/mmf)      → golden yellow     (#e3b341)
+ *   Wi-Fi                  → teal              (#3dc9b0)
  *   Serial  (rs232/rs485)  → amber             (#c9a227)
+ *   SATA                   → purple            (#8b5cf6)
  *   Power   (ac/dc)        → coral red         (#ff7b72)
  */
 const CABLE_COLORS: Record<CableType, string> = {
@@ -77,8 +81,10 @@ const CABLE_COLORS: Record<CableType, string> = {
   cat6a: '#79c0ff',
   smf: '#e3b341',
   mmf: '#e3b341',
+  wifi: '#3dc9b0',
   rs232: '#c9a227',
   rs485: '#c9a227',
+  sata: '#8b5cf6',
   ac: '#ff7b72',
   dc: '#ff7b72'
 }
