@@ -36,6 +36,8 @@ interface ParsedService {
   container_name: string
   restart: string
   networks: Record<string, { ipv4_address: string }>
+  /** Host/bridge/none network mode. Set instead of networks for Suricata (AF_PACKET). */
+  network_mode?: string
   environment?: string[]
   cap_add?: string[]
   ports?: string[]
