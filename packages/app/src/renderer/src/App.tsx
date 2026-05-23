@@ -1615,6 +1615,7 @@ export default function App() {
           simRunning={simStatus === 'running'}
           onSelectDevice={handleSelectDevice}
           onScenarioChange={handleScenarioChange}
+          onLayerChange={setActiveLayer}
         />
         <PropertiesPanel
           device={selectedDevice}

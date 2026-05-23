@@ -31,7 +31,7 @@ import {
   type EdgeProps,
   type Edge
 } from '@xyflow/react'
-import type { Protocol } from '@otforge/schema'
+import type { Protocol, CableType } from '@otforge/schema'
 
 /**
  * Data payload carried by each ProtocolEdge in the React Flow edge graph.
@@ -42,6 +42,45 @@ export type ProtocolEdgeData = {
   protocol: Protocol
   /** Optional override label (e.g., "Control Loop 1"). Defaults to protocol name. */
   label?: string
+  /**
+   * Optional physical cable / media type for this connection.
+   * When set, a second smaller chip is rendered above the protocol chip showing
+   * the cable type so students can identify both the application protocol and
+   * the physical medium at a glance.
+   */
+  cableType?: CableType
+}
+
+/** Short display labels for each cable type — shown in the cable chip. */
+const CABLE_LABELS: Record<CableType, string> = {
+  cat5e: 'Cat5e',
+  cat6: 'Cat6',
+  cat6a: 'Cat6a',
+  smf: 'SMF Fiber',
+  mmf: 'MMF Fiber',
+  rs232: 'RS-232',
+  rs485: 'RS-485',
+  ac: 'AC Pwr',
+  dc: 'DC Pwr'
+}
+
+/**
+ * Accent colors for cable type chips — visually distinct from protocol colors.
+ *   Ethernet (cat5e/6/6a)  → cornflower blue   (#58a6ff)
+ *   Fiber   (smf/mmf)      → golden yellow     (#e3b341)
+ *   Serial  (rs232/rs485)  → amber             (#c9a227)
+ *   Power   (ac/dc)        → coral red         (#ff7b72)
+ */
+const CABLE_COLORS: Record<CableType, string> = {
+  cat5e: '#58a6ff',
+  cat6: '#58a6ff',
+  cat6a: '#79c0ff',
+  smf: '#e3b341',
+  mmf: '#e3b341',
+  rs232: '#c9a227',
+  rs485: '#c9a227',
+  ac: '#ff7b72',
+  dc: '#ff7b72'
 }
 
 /** Typed React Flow edge shape for use with useEdgesState and EdgeTypes. */
@@ -97,8 +136,15 @@ export function ProtocolEdge({
 
   const protocol = data?.protocol ?? 'none'
   const color = PROTOCOL_COLORS[protocol] ?? '#484f58'
-  // Show custom label if provided; otherwise show the protocol name as the label
   const displayLabel = data?.label ?? protocol
+  const cableType = data?.cableType
+  const cableColor = cableType ? (CABLE_COLORS[cableType] ?? '#58a6ff') : undefined
+  const cableLabel = cableType ? (CABLE_LABELS[cableType] ?? cableType) : undefined
+
+  // When a cable chip is shown, offset the protocol chip slightly downward so
+  // the two chips sit in a compact vertical stack centered on the edge midpoint.
+  const protocolOffsetY = cableType ? 10 : 0
+  const cableOffsetY = -12
 
   return (
     <>
@@ -106,27 +152,33 @@ export function ProtocolEdge({
         id={id}
         path={edgePath}
         style={{
-          // White stroke when selected so the edge is visible against any background
           stroke: selected ? '#e6edf3' : color,
           strokeWidth: selected ? 2 : 1.5,
-          // Dim unlabeled/none connections so they don't compete with protocol-labeled edges
           opacity: protocol === 'none' ? 0.4 : 1
         }}
       />
-      {/* Only show the label chip for edges with a meaningful protocol */}
       {protocol !== 'none' && (
         <EdgeLabelRenderer>
-          {/*
-           * CSS transform positions the label at the edge midpoint (labelX, labelY).
-           * translate(-50%, -50%) centers the div on that point, then the translate(Xpx, Ypx)
-           * moves it to the computed position. This is the standard React Flow pattern
-           * for HTML edge labels.
-           */}
+          {/* Cable type chip — shown above the protocol chip when a cable is set */}
+          {cableType && cableLabel && cableColor && (
+            <div
+              className="cable-type-chip"
+              style={{
+                position: 'absolute',
+                transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + cableOffsetY}px)`,
+                borderColor: cableColor,
+                color: cableColor
+              }}
+            >
+              {cableLabel}
+            </div>
+          )}
+          {/* Protocol chip — centered on the edge midpoint (or shifted slightly down when stacked) */}
           <div
             className="protocol-edge-label"
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + protocolOffsetY}px)`,
               borderColor: color,
               color
             }}

@@ -47,7 +47,7 @@
  *   OPC Unified Architecture Part 1 (OPC Foundation)
  */
 
-import type { DeviceCategory, Protocol } from '@otforge/schema'
+import type { DeviceCategory, Protocol, CableType } from '@otforge/schema'
 
 /**
  * The ICS device category compatibility matrix.
@@ -644,6 +644,176 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
   'internet-server': 'Internet Server',
   'dns-server': 'DNS Server', // Phase 12
   'attack-machine': 'Attack Machine'
+}
+
+// ── Cable type validation ─────────────────────────────────────────────────────
+//
+// Physical cable validation uses a symmetric capability model: each device category
+// declares the set of cable types it can physically terminate. A cable is valid
+// between two devices only if BOTH appear in that cable's supported set.
+//
+// Educational rationale:
+//   RS-485  — multi-drop serial field bus; only field instruments and PLC/RTU serial ports
+//   RS-232  — point-to-point console port; engineering workstations and PLC/RTU console jacks
+//   Cat5e   — 100 Mbps Ethernet; OT field networks, entry-level IT
+//   Cat6    — 1 Gbps Ethernet; control center, enterprise desktop
+//   Cat6a   — 10 Gbps Ethernet; data center spine links, high-throughput servers
+//   MMF     — multi-mode fiber; in-building backbone where copper won't do
+//   SMF     — single-mode fiber; inter-building and inter-zone long runs
+//   AC      — mains power; any device that plugs into the wall
+//   DC      — 24 VDC loop power; field instruments sourced from PLC/RTU DIN rail PSU
+//
+// Sources: TIA-568 (structured cabling), IEC 61158 (field bus), ISA-12 (hazardous area wiring)
+
+/**
+ * Cable media types physically supportable by each device category.
+ * Intersection of two devices' capability sets gives valid cables between them.
+ */
+const DEVICE_CABLE_CAPABILITIES: Record<DeviceCategory, Set<CableType>> = {
+  // ── PLCs and RTUs — serial field bus port + Ethernet management port + DC rail PSU ──
+  plc: new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']),
+  rtu: new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']),
+  ied: new Set(['cat5e', 'cat6', 'mmf', 'ac']), // IEDs: Ethernet only (IEC 61850 over fiber common)
+  'legacy-plc': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']), // Siemens S7 — same ports
+  'iec104-rtu': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']), // IEC 104 RTU — same ports
+  'process-unit': new Set(['cat5e', 'cat6', 'ac']), // process sim panel — Ethernet + mains
+
+  // ── Field instruments — RS-485 (serial) or Cat5e (Ethernet-capable), DC loop power ──
+  sensor: new Set(['rs485', 'cat5e', 'dc']),
+  actuator: new Set(['rs485', 'cat5e', 'dc']),
+  pump: new Set(['rs485', 'cat5e', 'ac']), // pumps draw AC from motor control center
+  valve: new Set(['rs485', 'cat5e', 'dc']),
+  'flow-meter': new Set(['rs485', 'cat5e', 'dc']),
+  'pressure-transmitter': new Set(['rs485', 'cat5e', 'dc']),
+
+  // ── Control center (L3) — Ethernet only; no serial field bus ──────────────────────
+  hmi: new Set(['cat5e', 'cat6', 'ac']),
+  historian: new Set(['cat5e', 'cat6', 'cat6a', 'ac']),
+  'application-server': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'ac']),
+  'database-server': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'ac']),
+  'engineering-workstation': new Set(['rs232', 'cat5e', 'cat6', 'ac']), // RS-232 for PLC console
+
+  // ── Infrastructure — all Ethernet and fiber speeds; no serial field bus ────────────
+  firewall: new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'ac']),
+  'ids-ips': new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'ac']),
+  switch: new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'ac']),
+  router: new Set(['cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'ac']),
+
+  // ── Enterprise (L4) — Gbps Ethernet; fiber uplinks ───────────────────────────────
+  'domain-controller': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'ac']),
+  'web-server': new Set(['cat6', 'cat6a', 'smf', 'mmf', 'ac']),
+  'business-server': new Set(['cat6', 'cat6a', 'ac']),
+  'enterprise-desktop': new Set(['cat6', 'cat6a', 'ac']),
+
+  // ── Internet DMZ (L5) — Gbps Ethernet; long-haul fiber uplinks ───────────────────
+  'email-server': new Set(['cat6', 'cat6a', 'smf', 'ac']),
+  'internet-server': new Set(['cat6', 'cat6a', 'smf', 'ac']),
+  'dns-server': new Set(['cat6', 'cat6a', 'smf', 'ac']),
+
+  // ── Attack machine — all cable types (adversary simulates any physical access) ─────
+  'attack-machine': new Set(['rs232', 'rs485', 'cat5e', 'cat6', 'cat6a', 'smf', 'mmf', 'ac', 'dc'])
+}
+
+/**
+ * Returns the set of cable types the given device category can physically terminate.
+ * Used to filter the cable section of the connection context menu.
+ *
+ * @example
+ * getSourceCables('sensor')
+ * // → Set { 'rs485', 'cat5e', 'dc' }
+ */
+export function getSourceCables(source: DeviceCategory): Set<CableType> {
+  return DEVICE_CABLE_CAPABILITIES[source] ?? new Set()
+}
+
+/**
+ * Returns the list of cable types valid for a specific source→target device pair.
+ * A cable is valid only when BOTH device categories can terminate that media type.
+ * Returns an empty array when no compatible cable exists.
+ *
+ * @param source - Category of the initiating device.
+ * @param target - Category of the destination device.
+ */
+export function getValidCables(source: DeviceCategory, target: DeviceCategory): CableType[] {
+  const sCables = DEVICE_CABLE_CAPABILITIES[source] ?? new Set<CableType>()
+  const tCables = DEVICE_CABLE_CAPABILITIES[target] ?? new Set<CableType>()
+  const result: CableType[] = []
+  for (const cable of sCables) {
+    if (tCables.has(cable)) result.push(cable)
+  }
+  return result
+}
+
+/**
+ * Returns true if `cable` is a valid physical medium for the given source→target pair.
+ *
+ * @param source - Category of the initiating device.
+ * @param target - Category of the destination device.
+ * @param cable  - Cable type selected from the connection context menu.
+ */
+export function isCableValid(
+  source: DeviceCategory,
+  target: DeviceCategory,
+  cable: CableType
+): boolean {
+  const sCables = DEVICE_CABLE_CAPABILITIES[source] ?? new Set<CableType>()
+  const tCables = DEVICE_CABLE_CAPABILITIES[target] ?? new Set<CableType>()
+  return sCables.has(cable) && tCables.has(cable)
+}
+
+/**
+ * Human-readable cable type names for rejection messages.
+ */
+const CABLE_TYPE_NAMES: Record<CableType, string> = {
+  cat5e: 'Cat5e Ethernet',
+  cat6: 'Cat6 Ethernet',
+  cat6a: 'Cat6a Ethernet (10G)',
+  smf: 'Single-Mode Fiber',
+  mmf: 'Multi-Mode Fiber',
+  rs232: 'RS-232 Serial',
+  rs485: 'RS-485 Serial',
+  ac: 'AC Power',
+  dc: 'DC Power'
+}
+
+/**
+ * Returns an educational rejection message explaining why the selected cable type
+ * is incompatible with the given device pair.
+ *
+ * @param source - Category of the initiating device.
+ * @param target - Category of the destination device.
+ * @param cable  - Cable type that was rejected.
+ */
+export function getCableRejectionReason(
+  source: DeviceCategory,
+  target: DeviceCategory,
+  cable: CableType
+): string {
+  const validCables = getValidCables(source, target)
+  const src = CATEGORY_NAMES[source]
+  const tgt = CATEGORY_NAMES[target]
+  const cableName = CABLE_TYPE_NAMES[cable]
+
+  if (!DEVICE_CABLE_CAPABILITIES[source]?.has(cable)) {
+    return `${src} has no ${cableName} port. Valid cables for this device: ${
+      Array.from(DEVICE_CABLE_CAPABILITIES[source] ?? [])
+        .map(c => CABLE_TYPE_NAMES[c])
+        .join(', ') || 'none'
+    }`
+  }
+  if (!DEVICE_CABLE_CAPABILITIES[target]?.has(cable)) {
+    return `${tgt} has no ${cableName} port. Valid cables for this device: ${
+      Array.from(DEVICE_CABLE_CAPABILITIES[target] ?? [])
+        .map(c => CABLE_TYPE_NAMES[c])
+        .join(', ') || 'none'
+    }`
+  }
+  if (validCables.length === 0) {
+    return `${src} and ${tgt} share no compatible cable types.`
+  }
+  return `${src} → ${tgt}: ${cableName} is not compatible. Valid cables: ${validCables
+    .map(c => CABLE_TYPE_NAMES[c])
+    .join(', ')}`
 }
 
 /**

@@ -47,17 +47,30 @@ import type {
   DeviceCategory,
   NetworkZone,
   DeviceConfig,
-  Protocol
+  Protocol,
+  CableType
 } from '@otforge/schema'
-import { DeviceNode, type DeviceNodeData, type DeviceNodeType, ZONE_COLORS } from './DeviceNode'
+import {
+  DeviceNode,
+  type DeviceNodeData,
+  type DeviceNodeType,
+  type CrossLayerLink,
+  ZONE_COLORS
+} from './DeviceNode'
 import { ProtocolEdge, type ProtocolEdgeType } from './ProtocolEdge'
 import { PipeEdge, type PipeEdgeType } from './PipeEdge'
-import { getSourceProtocols, isConnectionValid, getRejectionReason } from './connectionRules'
+import {
+  getSourceProtocols,
+  isConnectionValid,
+  getRejectionReason,
+  getSourceCables,
+  isCableValid,
+  getCableRejectionReason
+} from './connectionRules'
 
 /**
- * Protocol / cable options shown in the right-click connection context menu.
- * Each entry maps a schema Protocol value to a human-readable label and an
- * accent color matching the Purdue-zone palette (teal = OT, blue = DNP3, etc.).
+ * Protocol options shown in the "Application Protocol" section of the connection menu.
+ * Each entry maps a schema Protocol value to a human-readable label and accent color.
  */
 const CONNECTION_OPTIONS: { protocol: Protocol; label: string; color: string }[] = [
   { protocol: 'modbus-tcp', label: 'Modbus TCP', color: '#39d0b0' },
@@ -68,8 +81,39 @@ const CONNECTION_OPTIONS: { protocol: Protocol; label: string; color: string }[]
   { protocol: 'bacnet', label: 'BACnet', color: '#d29922' },
   { protocol: 'ethernet-ip', label: 'EtherNet/IP', color: '#f85149' },
   { protocol: 'iec61850', label: 'IEC 61850', color: '#a371f7' },
-  { protocol: 'none', label: 'Ethernet Cable', color: '#484f58' }
+  { protocol: 'none', label: 'Unspecified / Ethernet', color: '#484f58' }
 ]
+
+/**
+ * Physical cable options shown in the "Physical Cable" section of the connection menu.
+ * Selecting a cable type is OPTIONAL — the connection proceeds even if no cable is chosen.
+ * When a cable is pre-selected and the user then clicks a protocol, both are stored on
+ * the new edge and rendered as two stacked label chips.
+ */
+const CABLE_OPTIONS: { cable: CableType; label: string; color: string }[] = [
+  { cable: 'cat5e', label: 'Cat5e Ethernet (100M)', color: '#58a6ff' },
+  { cable: 'cat6', label: 'Cat6 Ethernet (1G)', color: '#58a6ff' },
+  { cable: 'cat6a', label: 'Cat6a Ethernet (10G)', color: '#79c0ff' },
+  { cable: 'smf', label: 'Fiber — SMF (long run)', color: '#e3b341' },
+  { cable: 'mmf', label: 'Fiber — MMF (in-building)', color: '#e3b341' },
+  { cable: 'rs232', label: 'Serial RS-232 (console)', color: '#c9a227' },
+  { cable: 'rs485', label: 'Serial RS-485 (field bus)', color: '#c9a227' },
+  { cable: 'ac', label: 'AC Power', color: '#ff7b72' },
+  { cable: 'dc', label: 'DC Power (24 VDC)', color: '#ff7b72' }
+]
+
+/**
+ * Short abbreviations for each Purdue zone — used on cross-layer stub badges.
+ * Kept to ≤ 5 characters so they fit in the compact badge without wrapping.
+ */
+const ZONE_ABBREVS: Record<NetworkZone, string> = {
+  ot: 'OT',
+  control: 'CTRL',
+  'plant-dmz': 'DMZ',
+  enterprise: 'ENT',
+  'internet-dmz': 'iDMZ',
+  attacker: 'ATK'
+}
 
 /** State shape for the right-click connection context menu. */
 interface ContextMenuState {
@@ -79,6 +123,12 @@ interface ContextMenuState {
   x: number
   /** Viewport Y coordinate for menu placement (used with position: fixed). */
   y: number
+  /**
+   * Cable type pre-selected from the Physical Cable section of the menu.
+   * Set by clicking a cable item (which toggles selection and keeps the menu open).
+   * Carried into PendingConnectionState when the user then clicks a protocol item.
+   */
+  pendingCable?: CableType
 }
 
 /**
@@ -91,6 +141,11 @@ interface PendingConnectionState {
   sourceId: string
   /** Protocol selected from the menu — written into the new edge's data. */
   protocol: Protocol
+  /**
+   * Physical cable type pre-selected before the protocol was clicked (optional).
+   * Undefined when the user only selected a protocol without choosing a cable.
+   */
+  cableType?: CableType
 }
 
 /** Registration map: React Flow node type key → component. */
@@ -383,9 +438,10 @@ function scenarioToEdges(
       data: {
         protocol: ce.data.protocol,
         ...(ce.data.label !== undefined ? { label: ce.data.label } : {}),
+        // Pass optional cable type through to the edge component for chip rendering.
+        ...(ce.data.cableType !== undefined ? { cableType: ce.data.cableType } : {}),
         // Pass coilSource through to PipeEdge so the ScadaCanvas polling loop
         // knows which PLC coil drives this edge's flow-state animation.
-        // Only present on OT-layer edges that have a coilSource in the scenario.
         ...(activeLayer === 'ot' && ce.data.coilSource !== undefined
           ? { coilSource: ce.data.coilSource }
           : {})
@@ -425,6 +481,13 @@ interface ScadaCanvasProps {
   simRunning?: boolean
   onSelectDevice: (nodeId: string | null, device: DeviceConfig | null) => void
   onScenarioChange: (updater: (s: OTForgeScenario | null) => OTForgeScenario | null) => void
+  /**
+   * Called when the user clicks a cross-layer stub badge on a device node.
+   * Switches the active Purdue layer tab to the destination zone so the student
+   * can follow the connection chain across layers. Optional — stubs are hidden
+   * when this callback is not provided.
+   */
+  onLayerChange?: (zone: NetworkZone) => void
 }
 
 /**
@@ -442,7 +505,8 @@ export function ScadaCanvas({
   packDeviceTypes = [],
   simRunning = false,
   onSelectDevice,
-  onScenarioChange
+  onScenarioChange,
+  onLayerChange
 }: ScadaCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -617,6 +681,20 @@ export function ScadaCanvas({
   }, [contextMenu, nodes])
 
   /**
+   * Context-menu cable options filtered to those the source device can physically terminate.
+   * Sensors only show RS-485/Cat5e/DC; servers show Cat6/Cat6a/Fiber, etc.
+   * Cable selection is optional — the user may click a protocol without picking a cable.
+   */
+  const filteredCableOptions = useMemo(() => {
+    if (!contextMenu) return CABLE_OPTIONS
+    const sourceNode = nodes.find(n => n.id === contextMenu.nodeId)
+    if (!sourceNode) return CABLE_OPTIONS
+    const sourceCategory = (sourceNode.data as DeviceNodeData).device.category
+    const validCables = getSourceCables(sourceCategory)
+    return CABLE_OPTIONS.filter(opt => validCables.has(opt.cable))
+  }, [contextMenu, nodes])
+
+  /**
    * Nodes augmented with two kinds of live data, merged into a single memoised array:
    *
    * 1. Connection-state CSS classes (when a pending connection is active):
@@ -683,8 +761,54 @@ export function ScadaCanvas({
       })
     }
 
+    // Step 3 — inject cross-layer links so device nodes can render zone-navigation stubs.
+    // Scan ALL scenario edges (not just the current-layer subset) for edges where one
+    // endpoint is in the current layer and the other is in a different zone.
+    if (scenario && onLayerChange) {
+      // Build nodeId → zone lookup from scenario.visual.nodes (all zones)
+      const nodeZoneMap = new Map<string, NetworkZone>()
+      for (const cn of scenario.visual.nodes) {
+        nodeZoneMap.set(cn.id, cn.data.zone as NetworkZone)
+      }
+
+      // Accumulate destination zones for each current-layer node
+      const crossLayerMap = new Map<string, Set<NetworkZone>>()
+      for (const edge of scenario.visual.edges) {
+        const sourceZone = nodeZoneMap.get(edge.source)
+        const targetZone = nodeZoneMap.get(edge.target)
+        if (!sourceZone || !targetZone || sourceZone === targetZone) continue
+
+        // Mark the endpoint that lives in the current layer with the foreign zone
+        if (sourceZone === activeLayer) {
+          if (!crossLayerMap.has(edge.source)) crossLayerMap.set(edge.source, new Set())
+          crossLayerMap.get(edge.source)!.add(targetZone)
+        }
+        if (targetZone === activeLayer) {
+          if (!crossLayerMap.has(edge.target)) crossLayerMap.set(edge.target, new Set())
+          crossLayerMap.get(edge.target)!.add(sourceZone)
+        }
+      }
+
+      if (crossLayerMap.size > 0) {
+        result = result.map(n => {
+          const foreignZones = crossLayerMap.get(n.id)
+          if (!foreignZones || foreignZones.size === 0) return n
+          const nodeData = n.data as DeviceNodeData
+          const crossLayerLinks: CrossLayerLink[] = Array.from(foreignZones).map(zone => ({
+            zone,
+            label: ZONE_ABBREVS[zone],
+            color: ZONE_COLORS[zone]
+          }))
+          // Pass onLayerChange through node data so DeviceNode can call it on click.
+          // Using a stable reference from props avoids re-creating the entire node array
+          // every render — callers (App.tsx) should provide a stable setActiveLayer ref.
+          return { ...n, data: { ...nodeData, crossLayerLinks, onLayerNavigate: onLayerChange } }
+        })
+      }
+    }
+
     return result
-  }, [nodes, pendingConnection, levelStates, edges])
+  }, [nodes, pendingConnection, levelStates, edges, scenario, activeLayer, onLayerChange])
 
   // Sync canvas state when the scenario or active layer changes
   useEffect(() => {
@@ -876,18 +1000,34 @@ export function ScadaCanvas({
 
   /**
    * Called when the user picks a protocol from the right-click context menu.
-   * Transitions from "menu open" to "awaiting target click" mode.
+   * Transitions from "menu open" to "awaiting target click" mode, carrying the
+   * optional pre-selected cable type into the pending connection state.
    * The canvas cursor changes to a crosshair (via .connecting CSS class) to
    * signal that the next node click will complete the connection.
    */
   const startConnection = useCallback(
     (protocol: Protocol) => {
       if (!contextMenu) return
-      setPendingConnection({ sourceId: contextMenu.nodeId, protocol })
+      setPendingConnection({
+        sourceId: contextMenu.nodeId,
+        protocol,
+        cableType: contextMenu.pendingCable
+      })
       setContextMenu(null)
     },
     [contextMenu]
   )
+
+  /**
+   * Toggles the pre-selected cable type in the open context menu.
+   * Clicking an already-selected cable deselects it (undefined = no cable).
+   * The menu stays open so the user can select a cable AND THEN click a protocol.
+   */
+  const selectCable = useCallback((cable: CableType) => {
+    setContextMenu(prev =>
+      prev ? { ...prev, pendingCable: prev.pendingCable === cable ? undefined : cable } : null
+    )
+  }, [])
 
   /**
    * Click on a canvas device node.
@@ -923,8 +1063,6 @@ export function ScadaCanvas({
         const targetCategory = (node.data as DeviceNodeData).device.category
 
         if (!isConnectionValid(sourceCategory, targetCategory, pendingConnection.protocol)) {
-          // Block the connection and show a short educational tooltip at the cursor.
-          // The pending connection stays active — student can pick a valid target.
           const message = getRejectionReason(
             sourceCategory,
             targetCategory,
@@ -932,7 +1070,22 @@ export function ScadaCanvas({
           )
           if (tooltipTimerRef.current !== null) clearTimeout(tooltipTimerRef.current)
           setInvalidTooltip({ message, x: event.clientX, y: event.clientY })
-          // Auto-dismiss after 3 seconds so the tooltip doesn't stay forever
+          tooltipTimerRef.current = setTimeout(() => setInvalidTooltip(null), 3000)
+          return
+        }
+
+        // ── Cable type validation (only when a cable was pre-selected) ──────
+        if (
+          pendingConnection.cableType !== undefined &&
+          !isCableValid(sourceCategory, targetCategory, pendingConnection.cableType)
+        ) {
+          const message = getCableRejectionReason(
+            sourceCategory,
+            targetCategory,
+            pendingConnection.cableType
+          )
+          if (tooltipTimerRef.current !== null) clearTimeout(tooltipTimerRef.current)
+          setInvalidTooltip({ message, x: event.clientX, y: event.clientY })
           tooltipTimerRef.current = setTimeout(() => setInvalidTooltip(null), 3000)
           return
         }
@@ -940,12 +1093,16 @@ export function ScadaCanvas({
 
       // ── Valid connection — create the edge ────────────────────────────────
       const edgeType = activeLayer === 'ot' ? 'pipeEdge' : 'protocolEdge'
+      const edgeData: { protocol: Protocol; cableType?: CableType } = {
+        protocol: pendingConnection.protocol,
+        ...(pendingConnection.cableType ? { cableType: pendingConnection.cableType } : {})
+      }
       const newEdge: Edge = {
         id: `${pendingConnection.sourceId}-${node.id}-${Date.now()}`,
         source: pendingConnection.sourceId,
         target: node.id,
         type: edgeType,
-        data: { protocol: pendingConnection.protocol }
+        data: edgeData
       }
 
       setEdges(eds => addEdge(newEdge, eds))
@@ -956,7 +1113,7 @@ export function ScadaCanvas({
           id: newEdge.id,
           source: pendingConnection.sourceId,
           target: node.id,
-          data: { protocol: pendingConnection.protocol }
+          data: edgeData
         }
         return { ...prev, visual: { ...prev.visual, edges: [...prev.visual.edges, ce] } }
       })
@@ -1184,9 +1341,13 @@ export function ScadaCanvas({
         />
       </ReactFlow>
 
-      {/* ── Right-click protocol selection menu ─────────────────────────────── */}
+      {/* ── Right-click protocol + cable selection menu ─────────────────────── */}
       {/* Rendered outside ReactFlow so it sits above the canvas SVG layer.
-          Uses position:fixed so clientX/clientY coordinates work directly. */}
+          Uses position:fixed so clientX/clientY coordinates work directly.
+          Two sections:
+            • Application Protocol — clicking immediately starts the pending connection.
+            • Physical Cable       — clicking toggles a pre-selection; the menu stays open
+              so the user can then click a protocol to start the connection with both set. */}
       {contextMenu && (
         <div
           className="connection-context-menu"
@@ -1194,6 +1355,9 @@ export function ScadaCanvas({
           onContextMenu={e => e.preventDefault()}
         >
           <div className="connection-context-menu-title">Connect via…</div>
+
+          {/* ── Section 1: Application Protocol ── */}
+          <div className="connection-context-menu-section-title">Application Protocol</div>
           <div className="connection-context-menu-sep" />
           {filteredConnectionOptions.map(opt => (
             <button
@@ -1201,11 +1365,45 @@ export function ScadaCanvas({
               className="connection-context-menu-item"
               onClick={() => startConnection(opt.protocol)}
             >
-              {/* Color dot matches the protocol accent (teal = Modbus, blue = DNP3, etc.) */}
               <span className="connection-context-menu-dot" style={{ background: opt.color }} />
               {opt.label}
             </button>
           ))}
+
+          {/* ── Section 2: Physical Cable (optional pre-selection) ── */}
+          {filteredCableOptions.length > 0 && (
+            <>
+              <div className="connection-context-menu-sep" style={{ marginTop: 6 }} />
+              <div className="connection-context-menu-section-title">
+                Physical Cable
+                {contextMenu.pendingCable && (
+                  <span className="connection-context-menu-cable-hint"> — then click protocol</span>
+                )}
+              </div>
+              <div className="connection-context-menu-sep" />
+              {filteredCableOptions.map(opt => {
+                const isSelected = contextMenu.pendingCable === opt.cable
+                return (
+                  <button
+                    key={opt.cable}
+                    className={`connection-context-menu-item${isSelected ? ' connection-context-menu-item--selected' : ''}`}
+                    onClick={() => selectCable(opt.cable)}
+                  >
+                    <span
+                      className="connection-context-menu-dot"
+                      style={{
+                        background: isSelected ? opt.color : 'transparent',
+                        borderColor: opt.color
+                      }}
+                    />
+                    {opt.label}
+                    {isSelected && <span className="connection-context-menu-check">✓</span>}
+                  </button>
+                )
+              })}
+            </>
+          )}
+
           <div className="connection-context-menu-sep" />
           <button
             className="connection-context-menu-item connection-context-menu-cancel"

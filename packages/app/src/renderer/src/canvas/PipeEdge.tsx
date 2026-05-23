@@ -31,7 +31,33 @@
  */
 
 import { type EdgeProps, getSmoothStepPath, EdgeLabelRenderer, BaseEdge } from '@xyflow/react'
-import type { Protocol } from '@otforge/schema'
+import type { Protocol, CableType } from '@otforge/schema'
+
+/** Short display labels for each cable type — same table as ProtocolEdge.tsx. */
+const CABLE_LABELS: Record<CableType, string> = {
+  cat5e: 'Cat5e',
+  cat6: 'Cat6',
+  cat6a: 'Cat6a',
+  smf: 'SMF Fiber',
+  mmf: 'MMF Fiber',
+  rs232: 'RS-232',
+  rs485: 'RS-485',
+  ac: 'AC Pwr',
+  dc: 'DC Pwr'
+}
+
+/** Accent colors for cable type chips — same palette as ProtocolEdge.tsx. */
+const CABLE_COLORS: Record<CableType, string> = {
+  cat5e: '#58a6ff',
+  cat6: '#58a6ff',
+  cat6a: '#79c0ff',
+  smf: '#e3b341',
+  mmf: '#e3b341',
+  rs232: '#c9a227',
+  rs485: '#c9a227',
+  ac: '#ff7b72',
+  dc: '#ff7b72'
+}
 
 /** Pipe stroke color by protocol — matches ProtocolEdge color scheme. */
 const PIPE_COLORS: Record<Protocol, string> = {
@@ -72,6 +98,12 @@ export interface PipeEdgeData {
   protocol: Protocol
   /** Optional label override — shown instead of the protocol name when set. */
   label?: string
+  /**
+   * Optional physical cable / media type for this pipe connection.
+   * When set, a second smaller chip is rendered above the protocol chip showing
+   * the cable type (e.g., "RS-485" for a Modbus RTU serial field bus).
+   */
+  cableType?: CableType
   /**
    * Identifies which PLC coil state drives this pipe's flow animation.
    * When set, ScadaCanvas polls the coil at runtime and writes `flowActive`.
@@ -122,7 +154,9 @@ export function PipeEdge({
   const edgeData = data as unknown as PipeEdgeData
   const protocol = edgeData?.protocol ?? 'none'
   const isNone = protocol === 'none'
-  const { flowActive, coilSource } = edgeData ?? {}
+  const { flowActive, coilSource, cableType } = edgeData ?? {}
+  const cableLabel = cableType ? (CABLE_LABELS[cableType] ?? cableType) : undefined
+  const cableColor = cableType ? (CABLE_COLORS[cableType] ?? '#58a6ff') : undefined
 
   // Flow state overrides the default protocol color when a coilSource is configured.
   // The three states give students immediate visual feedback about PLC coil changes:
@@ -226,14 +260,30 @@ export function PipeEdge({
         className={`pipe-edge${isNone ? ' pipe-edge--none' : ''}${flowClass ? ` ${flowClass}` : ''}`}
       />
 
-      {/* Protocol label chip — only shown for named protocols */}
+      {/* Protocol + cable label chips — only shown for named protocols */}
       {!isNone && displayLabel && (
         <EdgeLabelRenderer>
+          {/* Cable type chip — shown above the protocol chip when a cable is set */}
+          {cableType && cableLabel && cableColor && (
+            <div
+              className="cable-type-chip"
+              style={{
+                position: 'absolute',
+                transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY - 20}px)`,
+                borderColor: cableColor,
+                color: cableColor,
+                pointerEvents: 'all'
+              }}
+            >
+              {cableLabel}
+            </div>
+          )}
+          {/* Protocol chip — shifted slightly down when a cable chip is also present */}
           <div
             className={`pipe-edge-label${selected ? ' selected' : ''}`}
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + (cableType ? 8 : 0)}px)`,
               borderColor: strokeColor,
               color: strokeColor,
               pointerEvents: 'all'

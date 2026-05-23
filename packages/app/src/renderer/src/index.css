@@ -2597,12 +2597,115 @@ code.prop-value {
   color: var(--accent-red);
 }
 
-/* Colored circle dot indicating the protocol accent color */
+/* Colored circle dot indicating the protocol or cable accent color */
 .connection-context-menu-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  border: 1px solid transparent; /* cable dots use border color, protocol dots fill */
   flex-shrink: 0;
+}
+
+/* ── Context menu sections ────────────────────────────────────────────────────── */
+
+/* Small section header ("Application Protocol" / "Physical Cable") */
+.connection-context-menu-section-title {
+  padding: 5px 12px 2px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+/* Inline hint shown next to the Physical Cable heading when a cable is selected */
+.connection-context-menu-cable-hint {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--accent-teal);
+  font-size: 0.6rem;
+}
+
+/* Checkmark shown at the right end of a selected cable item */
+.connection-context-menu-check {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 0.75rem;
+  color: var(--accent-teal);
+}
+
+/* Selected cable item — subtle teal background so it reads as "active" */
+.connection-context-menu-item--selected {
+  background: rgba(57, 208, 176, 0.08);
+  color: var(--text-primary);
+}
+
+.connection-context-menu-item--selected:hover {
+  background: rgba(57, 208, 176, 0.15);
+}
+
+/* ── Cable type chip (rendered on edges alongside the protocol chip) ──────────── */
+
+/*
+ * Small secondary label chip shown above the protocol chip when a physical cable
+ * type is set on an edge. Uses a slightly smaller font and lighter styling than
+ * the protocol chip so it reads as secondary information.
+ */
+.cable-type-chip {
+  background: #060d14; /* matches P&ID canvas background so it reads clearly */
+  border: 1px solid;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.58rem;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none; /* passthrough — the protocol chip handles interaction */
+  user-select: none;
+}
+
+/* ── Cross-layer navigation stubs ─────────────────────────────────────────────── */
+
+/*
+ * Container for the zone-badge strip that appears below device nodes which have
+ * connections reaching into other Purdue layers. Positioned absolutely below the
+ * 80 px node boundary so it doesn't affect React Flow's edge routing.
+ *
+ * overflow: visible on .device-node lets these badges show outside the node bounds.
+ */
+.cross-layer-stubs {
+  position: absolute;
+  top: 84px; /* device-node height (80px) + 4px gap */
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3px;
+  pointer-events: all;
+  z-index: 20;
+}
+
+/*
+ * Individual zone navigation badge. Colored with the destination zone accent.
+ * Tiny font so it fits below the 80 px node without dominating the canvas.
+ * Cursor pointer + hover background signal that the badge is clickable.
+ */
+.cross-layer-stub {
+  background: rgba(13, 17, 23, 0.88);
+  border: 1px solid;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.56rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.4;
+  transition: background 0.12s;
+  user-select: none;
+}
+
+.cross-layer-stub:hover {
+  background: rgba(57, 208, 176, 0.12);
 }
 
 /* ── Connecting mode state ─────────────────────────────────────────────────────── */

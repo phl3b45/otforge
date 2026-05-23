@@ -18,6 +18,30 @@ export type Protocol =
   | 'none'
 
 /**
+ * Physical cable / media types used in ICS and IT network infrastructure.
+ *
+ * Organized by media family:
+ *   Ethernet twisted-pair — cat5e (100 Mbps), cat6 (1 Gbps), cat6a (10 Gbps)
+ *   Fiber optic            — smf (single-mode, long-haul), mmf (multi-mode, in-building)
+ *   Serial                 — rs232 (point-to-point console), rs485 (multi-drop field bus)
+ *   Power                  — ac (mains power), dc (24 VDC instrument power)
+ *
+ * Cable type is OPTIONAL on canvas edges; omitting it means the physical medium
+ * is not specified. When present, connectionRules enforces that the selected cable
+ * is appropriate for both device endpoints (e.g., RS-485 only valid to field devices).
+ */
+export type CableType =
+  | 'cat5e' // Ethernet Cat5e — 100 Mbps, twisted pair, typical OT field network
+  | 'cat6' // Ethernet Cat6  — 1 Gbps, twisted pair, control center / enterprise
+  | 'cat6a' // Ethernet Cat6a — 10 Gbps, twisted pair, data center / spine links
+  | 'smf' // Single-Mode Fiber — long-distance backbone (inter-building, inter-zone)
+  | 'mmf' // Multi-Mode Fiber  — short-distance fiber (within substation / building)
+  | 'rs232' // Serial RS-232 — point-to-point console / programming cable
+  | 'rs485' // Serial RS-485 — multi-drop field bus, Modbus RTU / serial instruments
+  | 'ac' // AC mains power cable
+  | 'dc' // DC instrument power (24 VDC, loop-powered sensors and actuators)
+
+/**
  * Network zones following the Purdue Reference Model (IEC 62443-3-2 / NIST SP 800-82).
  *   ot           — Levels 0–2:   Field devices — PLCs, RTUs, IEDs, sensors, actuators
  *   control      — Level 3:      Control Center/Processing LAN — HMIs, historians, app/db servers
@@ -95,6 +119,14 @@ export interface CanvasEdge {
   data: {
     protocol: Protocol
     label?: string
+    /**
+     * Optional physical cable / media type for this connection.
+     * When set, the canvas renders a second label chip on the edge showing the
+     * cable type. connectionRules validates that the cable is appropriate for
+     * the source and target device categories.
+     * When absent, the physical medium is not specified (protocol-only view).
+     */
+    cableType?: CableType
     /**
      * Optional coil binding for OT-layer pipe flow animation.
      * When set, the SCADA canvas polls the named PLC coil at runtime and colors

@@ -28,6 +28,19 @@ import type { DeviceConfig, NetworkZone } from '@otforge/schema'
 import { DeviceIcon } from '../icons/DeviceIcons'
 
 /**
+ * One cross-layer connection stub — represents a canvas edge whose OTHER endpoint
+ * lives in a different Purdue zone. Clicking the stub navigates to that zone's tab.
+ */
+export type CrossLayerLink = {
+  /** Destination Purdue zone (the zone tab to navigate to when clicked). */
+  zone: NetworkZone
+  /** Short abbreviation shown on the stub badge (e.g., "CTRL", "DMZ"). */
+  label: string
+  /** Zone accent color for the stub border and text. */
+  color: string
+}
+
+/**
  * Data payload carried by each DeviceNode in the React Flow node graph.
  * Stored in node.data and passed to the component via NodeProps.
  */
@@ -49,6 +62,20 @@ export type DeviceNodeData = {
    *   0.8–1.0  → red    (critical — overflow imminent or occurring)
    */
   fillLevel?: number
+  /**
+   * Cross-layer connection stubs — each entry represents an edge to a device in
+   * a different Purdue zone. ScadaCanvas injects this from the full scenario edge
+   * list (not just the current-layer subset) when computing displayNodes.
+   * Renders as small colored badges below the device node; clicking one calls
+   * onLayerNavigate to switch the active tab to the destination zone.
+   */
+  crossLayerLinks?: CrossLayerLink[]
+  /**
+   * Callback injected by ScadaCanvas when cross-layer stubs are present.
+   * Called with the destination zone when a stub badge is clicked.
+   * Wired to the App-level setActiveLayer so clicking navigates the user.
+   */
+  onLayerNavigate?: (zone: NetworkZone) => void
 }
 
 /** Typed React Flow node shape for use with useNodesState and NodeTypes. */
@@ -103,54 +130,82 @@ export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps
         : 'rgba(248, 81, 73, 0.42)'
 
   return (
-    <div
-      className="device-node"
-      style={{
-        // White border when selected (high contrast), zone color when unselected
-        borderColor: selected ? '#e6edf3' : zoneColor,
-        // Outer ring in zone color when selected so zone membership stays visible
-        boxShadow: selected ? `0 0 0 2px ${zoneColor}` : 'none'
-      }}
-    >
-      {/* Incoming connection handle — positioned at the top of the node */}
-      <Handle
-        type="target"
-        position={Position.Top}
-        style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
-      />
+    <>
+      <div
+        className="device-node"
+        style={{
+          borderColor: selected ? '#e6edf3' : zoneColor,
+          boxShadow: selected ? `0 0 0 2px ${zoneColor}` : 'none'
+        }}
+      >
+        {/* Incoming connection handle — positioned at the top of the node */}
+        <Handle
+          type="target"
+          position={Position.Top}
+          style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
+        />
+
+        {/*
+         * Water fill indicator — only rendered for process-unit (Water Tank) nodes while
+         * the simulation is running (fillLevel is set by ScadaCanvas polling HR0).
+         * Positioned behind the icon/label via z-index so content remains legible.
+         * CSS transition animates the rising level smoothly between 2 s poll ticks.
+         */}
+        {isProcessUnit && data.fillLevel !== undefined && (
+          <div
+            className="device-node-water-fill"
+            style={{ height: `${fillLevel * 100}%`, background: fillColor }}
+          />
+        )}
+
+        {/* ISA-5.1 device icon, colored by zone — sized to fill the cell */}
+        <div className="device-node-icon" style={{ color: zoneColor }}>
+          <DeviceIcon category={data.device.category} size={44} />
+        </div>
+
+        {/* Label and IP address, compact layout to fit the 80 × 80 cell. */}
+        <div className="device-node-info">
+          <div className="device-node-label">{data.label}</div>
+          {data.device.ipAddress && <div className="device-node-meta">{data.device.ipAddress}</div>}
+        </div>
+
+        {/* Outgoing connection handle — positioned at the bottom of the node */}
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
+        />
+      </div>
 
       {/*
-       * Water fill indicator — only rendered for process-unit (Water Tank) nodes while
-       * the simulation is running (fillLevel is set by ScadaCanvas polling HR0).
-       * Positioned behind the icon/label via z-index so content remains legible.
-       * CSS transition animates the rising level smoothly between 2 s poll ticks.
+       * Cross-layer connection stubs — rendered below the device node when this device
+       * has edges to devices in other Purdue zones. Each badge is colored with the
+       * destination zone accent and shows a short zone abbreviation. Clicking navigates
+       * to that layer tab so students can follow the connection chain across zones.
+       *
+       * Positioned with position:absolute below the 80 px node via the CSS class.
+       * The React Flow node wrapper has overflow:visible by default, so these badges
+       * render outside the node bounds without affecting edge routing.
        */}
-      {isProcessUnit && data.fillLevel !== undefined && (
-        <div
-          className="device-node-water-fill"
-          style={{ height: `${fillLevel * 100}%`, background: fillColor }}
-        />
+      {data.crossLayerLinks && data.crossLayerLinks.length > 0 && (
+        <div className="cross-layer-stubs">
+          {data.crossLayerLinks.map(link => (
+            <button
+              key={link.zone}
+              className="cross-layer-stub"
+              style={{ borderColor: link.color, color: link.color }}
+              onClick={e => {
+                // Stop propagation so the canvas doesn't interpret this as a node click
+                e.stopPropagation()
+                data.onLayerNavigate?.(link.zone)
+              }}
+              title={`Go to ${link.zone} layer`}
+            >
+              {link.label} →
+            </button>
+          ))}
+        </div>
       )}
-
-      {/* ISA-5.1 device icon, colored by zone — sized to fill the cell */}
-      <div className="device-node-icon" style={{ color: zoneColor }}>
-        <DeviceIcon category={data.device.category} size={44} />
-      </div>
-
-      {/* Label and IP address, compact layout to fit the 80 × 80 cell.
-          IP address row is suppressed when empty (visual-only nodes like pump/valve/sensor
-          have no container so they carry no real IP address). */}
-      <div className="device-node-info">
-        <div className="device-node-label">{data.label}</div>
-        {data.device.ipAddress && <div className="device-node-meta">{data.device.ipAddress}</div>}
-      </div>
-
-      {/* Outgoing connection handle — positioned at the bottom of the node */}
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
-      />
-    </div>
+    </>
   )
 })
