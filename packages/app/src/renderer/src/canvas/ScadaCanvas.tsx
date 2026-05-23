@@ -595,7 +595,7 @@ export function ScadaCanvas({
 
     // Collect edges that carry a coilSource binding (the wired OT pipe edges)
     const coilEdges = edges.filter(e => {
-      const d = e.data as import('./PipeEdge').PipeEdgeData
+      const d = e.data as unknown as import('./PipeEdge').PipeEdgeData
       return d?.coilSource !== undefined
     })
     if (coilEdges.length === 0) return
@@ -604,7 +604,8 @@ export function ScadaCanvas({
     // a single FC01 frame reads all coils in one round-trip.
     const plcMaxCoil = new Map<string, number>()
     for (const edge of coilEdges) {
-      const { nodeId, coilIndex } = (edge.data as import('./PipeEdge').PipeEdgeData).coilSource!
+      const { nodeId, coilIndex } = (edge.data as unknown as import('./PipeEdge').PipeEdgeData)
+        .coilSource!
       const current = plcMaxCoil.get(nodeId) ?? -1
       if (coilIndex > current) plcMaxCoil.set(nodeId, coilIndex)
     }
@@ -653,7 +654,7 @@ export function ScadaCanvas({
   const displayEdges = useMemo(() => {
     if (coilStates.size === 0) return edges
     return edges.map(edge => {
-      const pipeData = edge.data as import('./PipeEdge').PipeEdgeData
+      const pipeData = edge.data as unknown as import('./PipeEdge').PipeEdgeData
       if (!pipeData?.coilSource) return edge
       const key = `${pipeData.coilSource.nodeId}:${pipeData.coilSource.coilIndex}`
       const flowActive = coilStates.get(key)
@@ -745,13 +746,14 @@ export function ScadaCanvas({
         // Find any connected edge that carries a coilSource to identify which PLC
         // owns the tank_level register. The coilSource.nodeId is the PLC node.
         const connectedEdge = edges.find(e => {
-          const d = e.data as import('./PipeEdge').PipeEdgeData
+          const d = e.data as unknown as import('./PipeEdge').PipeEdgeData
           return d?.coilSource !== undefined && (e.source === n.id || e.target === n.id)
         })
         if (!connectedEdge) return n
 
-        const { nodeId: plcId } = (connectedEdge.data as import('./PipeEdge').PipeEdgeData)
-          .coilSource!
+        const { nodeId: plcId } = (
+          connectedEdge.data as unknown as import('./PipeEdge').PipeEdgeData
+        ).coilSource!
         const raw = levelStates.get(plcId)
         if (raw === undefined) return n
 

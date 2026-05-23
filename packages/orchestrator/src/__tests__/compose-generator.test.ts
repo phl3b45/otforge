@@ -634,9 +634,10 @@ describe('fixed infrastructure services', () => {
     expect(compose.services['suricata'].cap_add).toContain('NET_RAW')
   })
 
-  it('attaches Suricata to both ot-net and control-net to monitor cross-zone traffic', () => {
+  it('runs Suricata in host network mode for AF_PACKET bridge interface access', () => {
     const compose = gen(infraScenario)
-    expect(compose.services['suricata'].networks).toHaveProperty('ot-net')
-    expect(compose.services['suricata'].networks).toHaveProperty('control-net')
+    // Suricata uses network_mode: 'host' so it can open AF_PACKET sockets on the
+    // br-XXXX Docker bridge interfaces — per-network IP assignments are not used.
+    expect(compose.services['suricata'].network_mode).toBe('host')
   })
 })
