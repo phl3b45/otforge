@@ -26,12 +26,16 @@ echo "[ics-openplc] Device=${DEVICE_ID}  category=${DEVICE_CATEGORY}  web=${OPEN
 
 cd /opt/openplc
 
-# ── Pre-load Structured Text program ──────────────────────────────────────────
+# ── Pre-load and compile Structured Text program ──────────────────────────────
 #
-# If INITIAL_PROGRAM_B64 is set, decode the base64 string to a .st file and
-# copy it into OpenPLC's program upload directory. The OpenPLC Runtime auto-
-# compiles and runs the most recently uploaded program on startup when the
-# file is placed in the correct location.
+# If INITIAL_PROGRAM_B64 is set, decode the base64 string to a .st file,
+# register it in the OpenPLC database, and COMPILE it to a native binary so
+# the runtime executes it immediately on startup.
+#
+# IMPORTANT: webserver.py does NOT auto-compile from source at startup — it
+# only spawns a pre-built binary at webserver/core/openplc. Writing the ST
+# file and setting DB flags is not enough; we must invoke compile_program.sh
+# here so the binary exists before start_openplc.sh is called.
 #
 # The ST file is named after the device ID so it appears correctly in the
 # OpenPLC web interface program list for debugging purposes.
@@ -86,17 +90,40 @@ if [ -n "${INITIAL_PROGRAM_B64}" ]; then
   echo "${PROG_BASENAME}" > /opt/openplc/webserver/active_program
   echo "[ics-openplc] active_program → ${PROG_BASENAME}"
 
+  # ── Compile the ST program to a native binary ──────────────────────────────
+  #
+  # Mirrors the steps in openplc.py compile_program():
+  #   1. Copy core/debug.blank → core/debug.cpp  (required stub; compile_program.sh
+  #      links against it and will fail if the file is missing or stale)
+  #   2. Call scripts/compile_program.sh <basename>
+  #      — iec2c (MatIEC) converts the ST source to ANSI C
+  #      — glue_generator binds IEC variable addresses to hardware memory
+  #      — GCC links everything into the core/openplc executable
+  #
+  # scripts/compile_program.sh must be called from /opt/openplc/webserver/
+  # because it does its own 'cd scripts' internally to read the openplc_platform
+  # and openplc_driver config files. Compilation takes 30–90 s on first run.
+  echo "[ics-openplc] Compiling '${PROG_BASENAME}' — MatIEC + GCC (30-90 s)..."
+  cd /opt/openplc/webserver
+  cp -f core/debug.blank core/debug.cpp
+  if bash scripts/compile_program.sh "${PROG_BASENAME}"; then
+    echo "[ics-openplc] Compilation succeeded — core/openplc binary ready"
+  else
+    echo "[ics-openplc] ERROR: Compilation failed — runtime will start without a program"
+  fi
+  cd /opt/openplc
+
 else
   echo "[ics-openplc] No INITIAL_PROGRAM_B64 set — starting with no program loaded"
 fi
 
 # ── Start OpenPLC Runtime ──────────────────────────────────────────────────────
-# OpenPLC Runtime v3 starts via start_openplc.sh, which:
-#   1. Changes to /opt/openplc/webserver
-#   2. Launches webserver.py under the .venv Python interpreter
-#   3. webserver.py (Flask) manages IEC-to-C compilation and spawns the
-#      compiled PLC scan binary (webserver/core/openplc) as a subprocess
-#   4. The core binary serves:
-#      - Modbus/TCP slave on port ${MODBUS_PORT} (502)
-#      - EtherNet/IP CIP server on port ${ENIP_PORT:-44818}
+# start_openplc.sh changes to /opt/openplc/webserver, activates the .venv, and
+# launches webserver.py (Flask). On startup webserver.py checks Start_run_mode;
+# when true it calls start_runtime() which exec's the pre-compiled binary at
+# webserver/core/openplc. That binary serves:
+#   - Modbus/TCP slave  on port ${MODBUS_PORT}  (502)
+#   - EtherNet/IP CIP   on port ${ENIP_PORT:-44818}
+#   - S7comm (snap7)    on port 102
+# The binary must already exist (built above) before webserver.py starts.
 exec /opt/openplc/start_openplc.sh "$@"
