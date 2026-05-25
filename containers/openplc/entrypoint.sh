@@ -117,6 +117,23 @@ else
   echo "[ics-openplc] No INITIAL_PROGRAM_B64 set — starting with no program loaded"
 fi
 
+# ── Generate mbconfig.cfg ─────────────────────────────────────────────────────
+#
+# modbus_master.cpp opens mbconfig.cfg at runtime to discover external slave
+# devices (OpenPLC acting as Modbus master). When the file is absent it logs:
+#   "Skipping configuration of Slave Devices (mbconfig.cfg file not found)"
+#
+# In our scenario the PLC is a Modbus server only — no outgoing master
+# connections. Writing a zero-device config here silences the warning without
+# changing behaviour. webserver.py regenerates this file whenever slave devices
+# are added or removed via the UI, so this stub is always safe to pre-create.
+cat > /opt/openplc/webserver/mbconfig.cfg <<'EOF'
+Num_Devices = "0"
+Polling_Period = "100"
+Timeout = "1000"
+EOF
+echo "[ics-openplc] mbconfig.cfg → 0 slave devices"
+
 # ── Start OpenPLC Runtime ──────────────────────────────────────────────────────
 # start_openplc.sh changes to /opt/openplc/webserver, activates the .venv, and
 # launches webserver.py (Flask). On startup webserver.py checks Start_run_mode;

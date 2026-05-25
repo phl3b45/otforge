@@ -31,6 +31,37 @@ WORKDIR /opt/openplc
 # Run the automated installer (Linux target)
 RUN chmod +x install.sh && ./install.sh linux
 
+# Patch monitoring.py — fix two bugs present in the upstream source:
+#
+#   1. split(' ') on VAR declaration lines: any alignment padding (multiple
+#      spaces between the variable name and AT) produces empty tokens that
+#      shift subsequent index lookups, giving wrong name/location/type in the
+#      Monitoring page.  Fix: use split() with no arg so whitespace runs
+#      collapse to a single separator.
+#
+#   2. Type field parsing: declarations like "pump_run AT %QX0.0 : BOOL"
+#      leave tmp[4] = "BOOL" clean, but "BOOL := TRUE;" leaves
+#      tmp[4] = "BOOL" (correct — the ":=" shifts to tmp[5]).  However the
+#      old code only stripped the trailing semicolon; the extra split(':')[0]
+#      + strip() handles any edge-case residue.
+#
+# Using Python string replace rather than sed to avoid shell-escaping issues
+# with brackets and apostrophes in the match strings.
+RUN python3 - <<'PYEOF'
+p = 'webserver/monitoring.py'
+s = open(p).read()
+s = s.replace(
+    "tmp = line.strip().split(' ')",
+    "tmp = line.strip().split()"
+)
+s = s.replace(
+    "debug_data.type = tmp[4].split(';')[0]",
+    "debug_data.type = tmp[4].split(';')[0].split(':')[0].strip()"
+)
+open(p, 'w').write(s)
+print('monitoring.py patched OK')
+PYEOF
+
 # Expose all protocol ports served by OpenPLC Runtime v3 Linux driver:
 #   8080     — OpenPLC web interface (REST API for program upload, status)
 #   502/tcp  — Modbus TCP slave
