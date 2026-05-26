@@ -19,6 +19,12 @@
 #                          var is logged here and used by the scenario for FUXA/
 #                          pycomm3 configuration.
 #   ENIP_SLOT            — Backplane slot number for this controller (default: 0).
+#   PROCESS_SIM_IP       — (Optional) Docker network IP of the connected process-unit
+#                          container. When set, entrypoint generates a single-device
+#                          Modbus TCP mbconfig.cfg so the OpenPLC Modbus master polls
+#                          the physics simulator (%IW100 = LEVEL_PV) and drives its
+#                          actuators (%QX100.0-3 = pump/valve commands). Injected by
+#                          compose-generator.ts when a PLC↔process-unit edge exists.
 
 set -e
 
@@ -123,16 +129,55 @@ fi
 # devices (OpenPLC acting as Modbus master). When the file is absent it logs:
 #   "Skipping configuration of Slave Devices (mbconfig.cfg file not found)"
 #
-# In our scenario the PLC is a Modbus server only — no outgoing master
-# connections. Writing a zero-device config here silences the warning without
-# changing behaviour. webserver.py regenerates this file whenever slave devices
-# are added or removed via the UI, so this stub is always safe to pre-create.
-cat > /opt/openplc/webserver/mbconfig.cfg <<'EOF'
+# If PROCESS_SIM_IP is set (injected by compose-generator when this PLC is
+# connected to a process-unit in the scenario), configure a single Modbus TCP
+# slave pointing at the physics simulator so the ST program can read LEVEL_PV
+# (%IW100) and drive PUMP/VALVE commands (%QX100.x) via the Modbus master.
+#
+# Address mapping (from modbus_master.cpp updateBuffersIn_MB / updateBuffersOut_MB):
+#   Coils_Start=0, Coils_Size=4  → bool_output[100][0..3] = %QX100.0..100.3
+#   Holding_Registers_Read_Start=0, Size=1 → int_input[100] = %IW100
+#
+# If PROCESS_SIM_IP is NOT set, write a zero-device stub to silence the warning.
+# webserver.py regenerates this file whenever slaves are added via the UI, so
+# the pre-created stub is always safe.
+if [ -n "${PROCESS_SIM_IP}" ]; then
+  cat > /opt/openplc/webserver/mbconfig.cfg << EOF
+Num_Devices = "1"
+Polling_Period = "100"
+Timeout = "1000"
+
+device0.name = "process-unit"
+device0.protocol = "TCP"
+device0.slave_id = "1"
+device0.address = "${PROCESS_SIM_IP}"
+device0.IP_Port = "502"
+device0.RTU_Baud_Rate = "0"
+device0.RTU_Parity = "0"
+device0.RTU_Data_Bits = "0"
+device0.RTU_Stop_Bits = "0"
+device0.RTU_TX_Pause = "0"
+
+device0.Discrete_Inputs_Start = "0"
+device0.Discrete_Inputs_Size = "0"
+device0.Coils_Start = "0"
+device0.Coils_Size = "4"
+device0.Input_Registers_Start = "0"
+device0.Input_Registers_Size = "0"
+device0.Holding_Registers_Read_Start = "0"
+device0.Holding_Registers_Read_Size = "1"
+device0.Holding_Registers_Start = "0"
+device0.Holding_Registers_Size = "0"
+EOF
+  echo "[ics-openplc] mbconfig.cfg → 1 slave device (process-unit @ ${PROCESS_SIM_IP}:502)"
+else
+  cat > /opt/openplc/webserver/mbconfig.cfg <<'EOF'
 Num_Devices = "0"
 Polling_Period = "100"
 Timeout = "1000"
 EOF
-echo "[ics-openplc] mbconfig.cfg → 0 slave devices"
+  echo "[ics-openplc] mbconfig.cfg → 0 slave devices (standalone mode)"
+fi
 
 # ── Start OpenPLC Runtime ──────────────────────────────────────────────────────
 # start_openplc.sh changes to /opt/openplc/webserver, activates the .venv, and

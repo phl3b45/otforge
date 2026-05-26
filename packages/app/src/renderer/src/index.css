@@ -4844,6 +4844,11 @@ code.prop-value {
   flex-direction: column;
   font-size: 0.85rem;
   color: #c9d1d9;
+  /* Cap total panel height so it never overflows the viewport.
+     The body section flexes to fill the remaining space and scrolls
+     internally, keeping header, progress bar, and footer always visible. */
+  max-height: calc(100vh - 24px);
+  overflow: hidden;
   /* Smooth height transition when minimising */
   transition: box-shadow 0.15s;
   /* Prevent text selection while dragging */
@@ -4942,10 +4947,13 @@ code.prop-value {
   flex-direction: column;
   gap: 10px;
   overflow-y: auto;
-  /* Increased to 640 px (from 520) so steps with a command block + success check
-     (e.g., steps 5 and 6) show the full command without requiring the student
-     to scroll. min() keeps it within 70 % viewport height on small screens. */
-  max-height: min(70vh, 640px);
+  /* flex: 1 1 auto + min-height: 0 lets the body grow to fill available panel
+     height while also allowing it to shrink below its natural content size.
+     Without min-height: 0 a flex child will not shrink past its content size,
+     so overflow-y: auto would never activate. The panel's max-height CSS rule
+     (calc(100vh - 24px)) sets the outer budget; the body scrolls within it. */
+  flex: 1 1 auto;
+  min-height: 0;
   /* Custom scrollbar to match dark theme */
   scrollbar-width: thin;
   scrollbar-color: #30363d transparent;

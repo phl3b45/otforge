@@ -371,11 +371,53 @@ export function generateCompose(
   // The same base is mirrored in main/index.ts → activePlcModbusPorts map.
   const PLC_MODBUS_PORT_BASE = 18550
   let plcPortIndex = 0
+  // Process-unit Modbus TCP port (502) published on host starting at 18700 so
+  // the Electron main process (and students) can reach the physics simulator
+  // registers directly without docker exec. Range 18700+ is chosen to be clear
+  // of both PLC web (18080+) and PLC Modbus (18550+) reservations.
+  const PROC_MODBUS_PORT_BASE = 18700
+  let processUnitPortIndex = 0
   const ATTACK_NOVNC_PORT_BASE = 6900
   let attackPortIndex = 0
-  // Collected during the device loop so we can attach PLC services to
-  // monitoring-net after that network is defined (later in this function).
+  // Collected during the device loop so we can attach PLC and process-unit
+  // services to monitoring-net after that network is defined (later in this function).
   const plcServiceNames: string[] = []
+  const processUnitServiceNames: string[] = []
+
+  // ── PLC → process-unit IP map ──────────────────────────────────────────────
+  // Scan canvas edges to find which process-unit (if any) each PLC is connected
+  // to. Used below to inject PROCESS_SIM_IP into the PLC env so the OpenPLC
+  // Modbus master can poll the physics simulator at container startup.
+  //
+  // Primary strategy: look for edges that carry a coilSource referencing a PLC
+  // where one endpoint is a process-unit. This handles the common scenario
+  // topology where pump/valve nodes sit between the PLC and the process-unit —
+  // no direct PLC↔process-unit edge exists, but coilSource names the controller.
+  //
+  // Fallback: direct PLC↔process-unit edges for simpler scenario topologies.
+  //
+  // The map stores: plcNodeId → processUnitNodeId for later IP resolution.
+  const plcToProcessUnitNodeId = new Map<string, string>()
+  for (const edge of scenario.visual.edges) {
+    const srcDevice = scenario.devices.devices[edge.source]
+    const tgtDevice = scenario.devices.devices[edge.target]
+    if (!srcDevice || !tgtDevice) continue
+    if (edge.data.coilSource) {
+      // coilSource-based: edge touches a process-unit and names the controlling PLC
+      if (tgtDevice.category === 'process-unit') {
+        plcToProcessUnitNodeId.set(edge.data.coilSource.nodeId, edge.target)
+      } else if (srcDevice.category === 'process-unit') {
+        plcToProcessUnitNodeId.set(edge.data.coilSource.nodeId, edge.source)
+      }
+    } else {
+      // Direct edge fallback: one endpoint is PLC, other is process-unit
+      if (srcDevice.category === 'plc' && tgtDevice.category === 'process-unit') {
+        plcToProcessUnitNodeId.set(edge.source, edge.target)
+      } else if (srcDevice.category === 'process-unit' && tgtDevice.category === 'plc') {
+        plcToProcessUnitNodeId.set(edge.target, edge.source)
+      }
+    }
+  }
 
   // ── IP deduplication ────────────────────────────────────────────────────────
   // Tracks host octets already assigned per Docker network so that stale or
@@ -491,6 +533,37 @@ export function generateCompose(
       services[serviceName].ports = [`${hostWebPort}:8080`, `${hostModbusPort}:502`]
       plcServiceNames.push(serviceName)
       plcPortIndex++
+
+      // If this PLC is connected to a process-unit, inject PROCESS_SIM_IP so the
+      // OpenPLC entrypoint generates a Modbus master config (mbconfig.cfg) pointing
+      // at the physics simulator. The simulator's IP is resolved from the scenario
+      // the same way all device IPs are — using the effective (post-dedup) address
+      // from claimedDeviceIps if already processed, or resolveDeviceIp otherwise.
+      const processUnitNodeId = plcToProcessUnitNodeId.get(nodeId)
+      if (processUnitNodeId) {
+        const procSimIp =
+          claimedDeviceIps.get(processUnitNodeId) ??
+          resolveDeviceIp(
+            scenario.devices.devices[processUnitNodeId].ipAddress,
+            scenario,
+            effectiveZones
+          )
+        const plcEnv: string[] = services[serviceName].environment ?? []
+        plcEnv.push(`PROCESS_SIM_IP=${procSimIp}`)
+        services[serviceName].environment = plcEnv
+      }
+    }
+
+    // Process-unit containers publish their Modbus TCP port (502) on a deterministic
+    // host port starting at PROC_MODBUS_PORT_BASE so students can reach the physics
+    // simulator registers directly (e.g. to verify attack effects on LEVEL_PV).
+    // Requires monitoring-net attachment below (same reason as PLC ports — ot-net
+    // is internal: true and Docker silently drops host port bindings on internal nets).
+    if (device.category === 'process-unit') {
+      const hostProcModbusPort = PROC_MODBUS_PORT_BASE + processUnitPortIndex
+      services[serviceName].ports = [`${hostProcModbusPort}:502`]
+      processUnitServiceNames.push(serviceName)
+      processUnitPortIndex++
     }
 
     // Firewall bridges OT, Control Center, and Plant DMZ to enforce inter-zone ACLs.
@@ -663,6 +736,15 @@ export function generateCompose(
   plcServiceNames.forEach((svcName, idx) => {
     services[svcName].networks!['monitoring-net'] = {
       ipv4_address: `${monitorBase}.${10 + idx}`
+    }
+  })
+
+  // Attach each process-unit service to monitoring-net for the same reason: ot-net
+  // is internal: true and Docker Desktop silently drops host port bindings on
+  // internal-only bridges. IPs start at .20 (PLCs use .10–.19).
+  processUnitServiceNames.forEach((svcName, idx) => {
+    services[svcName].networks!['monitoring-net'] = {
+      ipv4_address: `${monitorBase}.${20 + idx}`
     }
   })
 
