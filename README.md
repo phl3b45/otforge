@@ -96,7 +96,7 @@ Real protocol packets flow on Docker virtual networks — scanner tools and expl
 
 | Requirement | Minimum |
 |---|---|
-| OS | Windows 10/11, macOS 13+, Ubuntu 22.04+ |
+| OS | Windows 10 22H2+ or Windows 11 23H2+, macOS 13+, Ubuntu 22.04+ |
 | RAM | 8 GB (16 GB recommended for attack machine scenarios) |
 | Disk | 20 GB free (Docker images downloaded on first run) |
 | Docker Desktop | Latest stable |
