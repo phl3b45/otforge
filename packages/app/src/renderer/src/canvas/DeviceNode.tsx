@@ -163,10 +163,28 @@ export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps
           <DeviceIcon category={data.device.category} size={44} />
         </div>
 
-        {/* Label and IP address, compact layout to fit the 80 × 80 cell. */}
+        {/*
+         * Label + live level for process-unit, or label + IP for everything else.
+         * During simulation (fillLevel defined) the Water Tank node shows the live
+         * tank_level value in cm instead of the static IP so students can read the
+         * exact number without switching to the OpenPLC Monitoring page.
+         * Color mirrors the fill indicator: blue (safe) → amber → red (critical).
+         */}
         <div className="device-node-info">
           <div className="device-node-label">{data.label}</div>
-          {data.device.ipAddress && <div className="device-node-meta">{data.device.ipAddress}</div>}
+          {isProcessUnit && data.fillLevel !== undefined ? (
+            <div
+              className="device-node-meta"
+              style={{
+                color: fillLevel >= 0.8 ? '#f85149' : fillLevel >= 0.5 ? '#e3b341' : '#58a6ff',
+                fontWeight: 600
+              }}
+            >
+              {Math.round(data.fillLevel * 1000)} cm
+            </div>
+          ) : (
+            data.device.ipAddress && <div className="device-node-meta">{data.device.ipAddress}</div>
+          )}
         </div>
 
         {/* Outgoing connection handle — positioned at the bottom of the node */}
