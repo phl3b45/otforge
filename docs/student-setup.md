@@ -12,7 +12,7 @@ This guide walks you through installing everything you need to run OTForge on yo
 |---|---|
 | **Docker Desktop** | Runs the virtual ICS/OT devices (PLCs, sensors, network equipment) as containers |
 | **Git** | Downloads the OTForge source code from GitHub |
-| **Node.js 20** | Builds and runs the OTForge desktop application |
+| **Node.js 22** | Builds and runs the OTForge desktop application |
 | **OTForge** | The SCADA canvas application you will use for all labs |
 
 **Estimated time:** 30–45 minutes, depending on download speed.
@@ -72,18 +72,20 @@ You should see `git version 2.x.x`.
 
 ---
 
-### Step 3 — Install Node.js 20
+### Step 3 — Install Node.js 22
 
 1. Go to **https://nodejs.org** and click the **LTS** download button (Long Term Support).  
-   Make sure it says **v20.x.x** — if the site shows a different major version, click "Other Downloads" and select v20.
+   Make sure it says **v22.x.x** — if the site shows a different major version, click "Other Downloads" and select v22.
 2. Run the installer. Accept defaults. On the "Tools for Native Modules" screen, you can leave the checkbox unchecked.
+
+> **Node.js 20 will not work.** OTForge uses Vite 8, which requires Node.js 22 or later. If you have Node.js 20 installed, uninstall it first (Windows Settings → Apps → search "Node.js" → Uninstall), then install v22 from the link above.
 
 **Verify Node.js works:**
 ```
 node --version
 npm --version
 ```
-Both commands should return version numbers (e.g., `v20.19.x` and `10.x.x`).
+Both commands should return version numbers (e.g., `v22.x.x` and `10.x.x`).
 
 ---
 
@@ -211,13 +213,13 @@ git --version
 
 ---
 
-### Step 4 — Install Node.js 20
+### Step 4 — Install Node.js 22
 
 ```bash
-brew install node@20
+brew install node@22
 ```
 
-After installation, Homebrew may ask you to add Node 20 to your PATH. If so, run the commands it prints (they look like `echo 'export PATH=...' >> ~/.zshrc`).
+After installation, Homebrew may ask you to add Node 22 to your PATH. If so, run the commands it prints (they look like `echo 'export PATH=...' >> ~/.zshrc`).
 
 Then reload your shell configuration:
 ```bash
@@ -229,9 +231,11 @@ source ~/.zshrc
 node --version
 npm --version
 ```
-Both should return version numbers (`v20.x.x` and `10.x.x`).
+Both should return version numbers (`v22.x.x` and `10.x.x`).
 
-> **Already have a different Node version?** You can use `nvm` (Node Version Manager) to switch versions. Run `nvm install 20 && nvm use 20` if you have nvm installed.
+> **Node.js 20 will not work.** OTForge uses Vite 8, which requires Node.js 22 or later. If you already have Node.js 20 via Homebrew, run `brew unlink node@20 && brew link --overwrite node@22` to switch.
+
+> **Already have a different Node version?** You can use `nvm` (Node Version Manager) to switch versions. Run `nvm install 22 && nvm use 22` if you have nvm installed.
 
 ---
 
@@ -353,6 +357,22 @@ You need to enable virtualization in your computer's BIOS/UEFI firmware. The exa
 ### Apple Silicon Mac — "image not found" or architecture mismatch
 
 Make sure you downloaded the **Apple Silicon** version of Docker Desktop (not the Intel version). Check Docker Desktop → Settings → General → confirm "Use Virtualization Framework" is enabled.
+
+### `TypeError: crypto.hash is not a function` (Mac or Windows)
+
+You are running Node.js 20, which is too old. OTForge uses Vite 8, which requires Node.js 22 or later.
+
+**Fix (macOS):**
+```bash
+brew install node@22
+brew unlink node@20
+brew link --overwrite node@22
+node --version   # should print v22.x.x
+npm ci
+npm run dev
+```
+
+**Fix (Windows):** Uninstall Node.js from Windows Settings → Apps → search "Node.js" → Uninstall. Then install Node.js 22 LTS from **https://nodejs.org** and repeat the setup from Step 5.
 
 ---
 
