@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OTForge Student Setup Guide</title>
+  <style>
+    /* ── Reset & base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #ffffff;
+      --surface:     #f6f8fa;
+      --border:      #d0d7de;
+      --text:        #1f2328;
+      --text-muted:  #636c76;
+      --accent:      #0550ae;
+      --accent-bg:   #ddf4ff;
+      --warn-bg:     #fff8c5;
+      --warn-border: #d4a72c;
+      --code-bg:     #f6f8fa;
+      --code-border: #d0d7de;
+      --green:       #1a7f37;
+      --sidebar-w:   260px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      color: var(--text);
+      background: var(--bg);
+      display: flex;
+    }
+
+    /* ── Sidebar ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0;
+      width: var(--sidebar-w);
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 24px 0 40px;
+      font-size: 13px;
+    }
+
+    nav .nav-logo {
+      padding: 0 20px 16px;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+
+    nav ul { list-style: none; }
+
+    nav ul li a {
+      display: block;
+      padding: 4px 20px;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-left: 2px solid transparent;
+    }
+
+    nav ul li a:hover { color: var(--accent); background: var(--accent-bg); }
+
+    nav .nav-section {
+      padding: 10px 20px 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+
+    nav ul li.sub a { padding-left: 32px; font-size: 12.5px; }
+
+    /* ── Main content ── */
+    main {
+      margin-left: var(--sidebar-w);
+      max-width: 860px;
+      padding: 48px 48px 80px;
+      width: 100%;
+    }
+
+    /* ── Typography ── */
+    h1 { font-size: 28px; font-weight: 700; margin-bottom: 12px; }
+    h2 { font-size: 21px; font-weight: 700; margin: 48px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    h3 { font-size: 17px; font-weight: 600; margin: 32px 0 10px; }
+    p  { margin-bottom: 12px; }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    strong { font-weight: 600; }
+    em     { font-style: italic; }
+
+    /* ── Horizontal rule ── */
+    hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+
+    /* ── Ordered / unordered lists ── */
+    ol, ul { padding-left: 24px; margin-bottom: 12px; }
+    li { margin-bottom: 4px; }
+    li > ul, li > ol { margin-top: 4px; margin-bottom: 0; }
+
+    /* ── Inline code ── */
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+
+    /* ── Code blocks ── */
+    pre {
+      background: #1b1f23;
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      margin: 12px 0 16px;
+      position: relative;
+    }
+
+    pre code {
+      font-size: 13px;
+      background: none;
+      border: none;
+      padding: 0;
+      color: #e6edf3;
+      white-space: pre;
+    }
+
+    /* ── Blockquotes (notes / callouts) ── */
+    blockquote {
+      border-left: 4px solid var(--warn-border);
+      background: var(--warn-bg);
+      border-radius: 0 6px 6px 0;
+      padding: 10px 16px;
+      margin: 14px 0;
+      color: var(--text);
+    }
+
+    blockquote p { margin-bottom: 0; }
+
+    blockquote.note {
+      border-left-color: var(--accent);
+      background: var(--accent-bg);
+    }
+
+    /* ── Tables ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+
+    th {
+      background: var(--surface);
+      font-weight: 600;
+      text-align: left;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+    }
+
+    td {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td { background: var(--surface); }
+
+    /* ── Step badge ── */
+    .step-badge {
+      display: inline-block;
+      background: var(--accent);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 12px;
+      padding: 2px 10px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    /* ── OS tabs (Windows / macOS toggle) ── */
+    .tab-group { margin: 8px 0 4px; }
+
+    .tab-group input[type="radio"] { display: none; }
+
+    .tab-labels {
+      display: flex;
+      gap: 0;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 0;
+    }
+
+    .tab-labels label {
+      padding: 8px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text-muted);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+    }
+
+    #tab-win:checked ~ .tab-labels label[for="tab-win"],
+    #tab-mac:checked ~ .tab-labels label[for="tab-mac"] {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-content { display: none; padding-top: 16px; }
+
+    #tab-win:checked ~ .tab-content.win,
+    #tab-mac:checked ~ .tab-content.mac { display: block; }
+
+    /* ── Quick reference card ── */
+    .ref-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0;
+      overflow: hidden;
+      margin: 16px 0;
+    }
+
+    .ref-card table { margin: 0; }
+    .ref-card th { background: #e8ecf0; }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      nav { display: none; }
+      main { margin-left: 0; padding: 24px 20px 60px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     Sidebar navigation
+════════════════════════════════════════════════════════════ -->
+<nav>
+  <div class="nav-logo">OTForge Setup Guide</div>
+  <ul>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#requirements">System Requirements</a></li>
+
+    <div class="nav-section">Windows Setup</div>
+    <li class="sub"><a href="#win-docker">Step 1 — Docker Desktop</a></li>
+    <li class="sub"><a href="#win-git">Step 2 — Git</a></li>
+    <li class="sub"><a href="#win-node">Step 3 — Node.js 22</a></li>
+    <li class="sub"><a href="#win-clone">Step 4 — Clone Repo</a></li>
+    <li class="sub"><a href="#win-deps">Step 5 — Dependencies</a></li>
+    <li class="sub"><a href="#win-build">Step 6 — Build Packages</a></li>
+    <li class="sub"><a href="#win-launch">Step 7 — Launch</a></li>
+    <li class="sub"><a href="#win-scenarios">Step 8 — Scenarios Folder</a></li>
+
+    <div class="nav-section">macOS Setup</div>
+    <li class="sub"><a href="#mac-docker">Step 1 — Docker Desktop</a></li>
+    <li class="sub"><a href="#mac-brew">Step 2 — Homebrew</a></li>
+    <li class="sub"><a href="#mac-git">Step 3 — Git</a></li>
+    <li class="sub"><a href="#mac-node">Step 4 — Node.js 22</a></li>
+    <li class="sub"><a href="#mac-clone">Step 5 — Clone Repo</a></li>
+    <li class="sub"><a href="#mac-deps">Step 6 — Dependencies</a></li>
+    <li class="sub"><a href="#mac-build">Step 7 — Build Packages</a></li>
+    <li class="sub"><a href="#mac-launch">Step 8 — Launch</a></li>
+    <li class="sub"><a href="#mac-scenarios">Step 9 — Scenarios Folder</a></li>
+
+    <div class="nav-section">Reference</div>
+    <li><a href="#first-run">First Simulation Run</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li><a href="#updating">Keeping Updated</a></li>
+    <li><a href="#quick-ref">Quick Reference</a></li>
+  </ul>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════════
+     Main content
+════════════════════════════════════════════════════════════ -->
+<main>
+
+  <h1 id="overview">OTForge Student Setup Guide</h1>
+
+  <p>This guide walks you through installing everything you need to run OTForge on your personal computer. By the end you will have Docker Desktop and OTForge running, and your computer will be ready to load lab scenario files.</p>
+
+  <blockquote>
+    <p><strong>Your instructor will distribute Lab 01 (<code>.otflab</code> file) through Canvas.</strong> You do not need it before completing this setup — just make sure your <code>scenarios</code> folder is ready when it arrives.</p>
+  </blockquote>
+
+  <!-- ── What you are installing ── -->
+  <h2>What You Are Installing</h2>
+
+  <table>
+    <thead>
+      <tr><th>Component</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Docker Desktop</strong></td><td>Runs the virtual ICS/OT devices (PLCs, sensors, network equipment) as containers</td></tr>
+      <tr><td><strong>Git</strong></td><td>Downloads the OTForge source code from GitHub</td></tr>
+      <tr><td><strong>Node.js 22</strong></td><td>Builds and runs the OTForge desktop application</td></tr>
+      <tr><td><strong>OTForge</strong></td><td>The SCADA canvas application you will use for all labs</td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>Estimated time:</strong> 30–45 minutes, depending on download speed.</p>
+  <p><strong>Disk space needed:</strong> ~8 GB total (Docker, Node.js, Docker images).</p>
+
+  <!-- ── System Requirements ── -->
+  <h2 id="requirements">System Requirements</h2>
+
+  <table>
+    <thead>
+      <tr><th></th><th>Windows</th><th>macOS</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>OS version</strong></td><td>Windows 10 version 21H2 or later, or Windows 11</td><td>macOS 12 Monterey or later</td></tr>
+      <tr><td><strong>RAM</strong></td><td>8 GB minimum, 16 GB recommended</td><td>8 GB minimum, 16 GB recommended</td></tr>
+      <tr><td><strong>Disk</strong></td><td>20 GB free</td><td>20 GB free</td></tr>
+      <tr><td><strong>CPU</strong></td><td>64-bit, virtualization enabled in BIOS</td><td>Intel or Apple Silicon (M1/M2/M3/M4)</td></tr>
+    </tbody>
+  </table>
+
+  <blockquote>
+    <p><strong>Windows only — Virtualization check:</strong><br>
+    Open Task Manager → Performance → CPU. Confirm "Virtualization: Enabled". If it says Disabled, ask your instructor for BIOS help before proceeding.</p>
+  </blockquote>
+
+  <hr>
+
+  <!-- ════════════════════════════════════════════════════════
+       WINDOWS SETUP
+  ═════════════════════════════════════════════════════════ -->
+  <h2 id="windows-setup">Windows Setup</h2>
+
+  <!-- Step 1 -->
+  <h3 id="win-docker"><span class="step-badge">1</span> Install Docker Desktop</h3>
+
+  <ol>
+    <li>Go to <a href="https://www.docker.com/products/docker-desktop" target="_blank">https://www.docker.com/products/docker-desktop</a> and click <strong>Download for Windows</strong>.</li>
+    <li>Run the installer (<code>Docker Desktop Installer.exe</code>).</li>
+    <li>When prompted, leave <strong>Use WSL 2 instead of Hyper-V</strong> checked (recommended for most systems).</li>
+    <li>Click <strong>OK</strong> and let the installer finish. Your computer may restart.</li>
+    <li>After restart, Docker Desktop launches automatically and shows a whale icon in your taskbar.</li>
+    <li>Wait for the status to say <strong>"Engine running"</strong> (green circle) before continuing.</li>
+  </ol>
+
+  <blockquote class="note">
+    <p><strong>First-time Docker sign-in is not required.</strong> You can skip account creation by clicking "Continue without signing in."</p>
+  </blockquote>
+
+  <p><strong>Verify Docker works:</strong></p>
+  <p>Open <strong>PowerShell</strong> (search the Start menu) and run:</p>
+<pre><code>docker --version</code></pre>
+  <p>You should see something like <code>Docker version 27.x.x</code>. If you get an error, restart Docker Desktop and try again.</p>
+
+  <!-- Step 2 -->
+  <h3 id="win-git"><span class="step-badge">2</span> Install Git</h3>
+
+  <ol>
+    <li>Go to <a href="https://git-scm.com/download/win" target="_blank">https://git-scm.com/download/win</a> and download the latest <strong>64-bit</strong> installer.</li>
+    <li>Run the installer. Accept all defaults — the standard options work fine.</li>
+    <li>When the installer finishes, close and reopen PowerShell.</li>
+  </ol>
+
+  <p><strong>Verify Git works:</strong></p>
+<pre><code>git --version</code></pre>
+  <p>You should see <code>git version 2.x.x</code>.</p>
+
+  <!-- Step 3 -->
+  <h3 id="win-node"><span class="step-badge">3</span> Install Node.js 22</h3>
+
+  <ol>
+    <li>Go to <a href="https://nodejs.org" target="_blank">https://nodejs.org</a> and click the <strong>LTS</strong> download button (Long Term Support).<br>
+    Make sure it says <strong>v22.x.x</strong> — if the site shows a different major version, click "Other Downloads" and select v22.</li>
+    <li>Run the installer. Accept defaults. On the "Tools for Native Modules" screen, you can leave the checkbox unchecked.</li>
+  </ol>
+
+  <blockquote>
+    <p><strong>Node.js 20 will not work.</strong> OTForge uses Vite 8, which requires Node.js 22 or later. If you have Node.js 20 installed, uninstall it first (Windows Settings → Apps → search "Node.js" → Uninstall), then install v22 from the link above.</p>
+  </blockquote>
+
+  <p><strong>Verify Node.js works:</strong></p>
+<pre><code>node --version
+npm --version</code></pre>
+  <p>Both commands should return version numbers (e.g., <code>v22.x.x</code> and <code>10.x.x</code>).</p>
+
+  <!-- Step 4 -->
+  <h3 id="win-clone"><span class="step-badge">4</span> Clone the OTForge Repository</h3>
+
+  <p>You will create a dedicated folder on your <code>C:</code> drive and download the project into it.</p>
+  <p>In PowerShell, run these commands <strong>one at a time</strong>:</p>
+
+<pre><code>mkdir C:\OTForge
+cd C:\OTForge
+git clone https://github.com/iburres/otforge.git .</code></pre>
+
+  <blockquote class="note">
+    <p>The final <code>.</code> (period) tells Git to clone into the current folder instead of creating a subfolder. Make sure you include it.</p>
+  </blockquote>
+
+  <p>When the clone finishes, you will see a list of files and folders inside <code>C:\OTForge</code>.</p>
+
+  <!-- Step 5 -->
+  <h3 id="win-deps"><span class="step-badge">5</span> Install OTForge Dependencies</h3>
+
+  <p>Still in PowerShell (inside <code>C:\OTForge</code>), run:</p>
+<pre><code>npm ci</code></pre>
+  <p>This downloads all the JavaScript packages OTForge needs. It may take a few minutes. You will see a lot of output — that is normal. Wait for the prompt to return.</p>
+
+  <!-- Step 6 -->
+  <h3 id="win-build"><span class="step-badge">6</span> Build the Support Packages</h3>
+
+<pre><code>npm run build:packages</code></pre>
+  <p>This compiles two internal packages (<code>schema</code> and <code>orchestrator</code>) that the main app depends on. It takes about 30 seconds.</p>
+
+  <!-- Step 7 -->
+  <h3 id="win-launch"><span class="step-badge">7</span> Launch OTForge</h3>
+
+<pre><code>npm run dev</code></pre>
+  <p>The OTForge window will open. The first time you run it, you may see a Windows Defender prompt asking to allow network access — click <strong>Allow</strong>.</p>
+  <p>You are now ready for lab work.</p>
+
+  <!-- Step 8 -->
+  <h3 id="win-scenarios"><span class="step-badge">8</span> Prepare Your Scenarios Folder</h3>
+
+  <p>Your scenario files (<code>.otflab</code>) live in:</p>
+<pre><code>C:\OTForge\scenarios\</code></pre>
+  <p>This folder already exists after cloning. When your instructor releases a lab file through Canvas, download it and save it to that folder.</p>
+
+  <hr>
+
+  <!-- ════════════════════════════════════════════════════════
+       macOS SETUP
+  ═════════════════════════════════════════════════════════ -->
+  <h2 id="macos-setup">macOS Setup</h2>
+
+  <!-- Step 1 -->
+  <h3 id="mac-docker"><span class="step-badge">1</span> Install Docker Desktop</h3>
+
+  <ol>
+    <li>Go to <a href="https://www.docker.com/products/docker-desktop" target="_blank">https://www.docker.com/products/docker-desktop</a> and click <strong>Download for Mac</strong>.</li>
+    <li><strong>Important:</strong> On the download page, choose the correct version for your chip:
+      <ul>
+        <li><strong>Apple Silicon (M1/M2/M3/M4):</strong> Choose "Mac with Apple Silicon"</li>
+        <li><strong>Intel Mac:</strong> Choose "Mac with Intel chip"</li>
+      </ul>
+      <em>To check your chip: Apple menu (&#63743;) → About This Mac. Look for "Chip" (Apple M-series) or "Processor" (Intel).</em>
+    </li>
+    <li>Open the downloaded <code>.dmg</code> file and drag Docker to your Applications folder.</li>
+    <li>Open Docker from Applications. macOS will ask for your password to allow the Docker helper to install.</li>
+    <li>Wait for the Docker menu bar icon (whale) to show <strong>"Docker Desktop is running"</strong>.</li>
+  </ol>
+
+  <blockquote class="note">
+    <p><strong>Sign-in is not required.</strong> Click "Continue without signing in" if prompted.</p>
+  </blockquote>
+
+  <p><strong>Verify Docker works:</strong></p>
+  <p>Open <strong>Terminal</strong> (Applications → Utilities → Terminal) and run:</p>
+<pre><code>docker --version</code></pre>
+  <p>You should see <code>Docker version 27.x.x</code>.</p>
+
+  <!-- Step 2 -->
+  <h3 id="mac-brew"><span class="step-badge">2</span> Install Homebrew (Package Manager)</h3>
+
+  <p>Homebrew makes installing Git and Node.js much easier on macOS. If you already have it, skip to Step 3.</p>
+  <p>In Terminal, run:</p>
+<pre><code>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</code></pre>
+  <p>Follow the prompts. You will need your macOS password. On Apple Silicon, the installer may ask you to add Homebrew to your PATH — copy and run the two commands it shows before continuing.</p>
+
+  <p><strong>Verify Homebrew works:</strong></p>
+<pre><code>brew --version</code></pre>
+
+  <!-- Step 3 -->
+  <h3 id="mac-git"><span class="step-badge">3</span> Install Git</h3>
+
+  <p>macOS often includes a system Git, but installing a newer version through Homebrew is recommended:</p>
+<pre><code>brew install git</code></pre>
+
+  <p><strong>Verify:</strong></p>
+<pre><code>git --version</code></pre>
+
+  <!-- Step 4 -->
+  <h3 id="mac-node"><span class="step-badge">4</span> Install Node.js 22</h3>
+
+<pre><code>brew install node@22</code></pre>
+
+  <p>After installation, Homebrew may ask you to add Node 22 to your PATH. If so, run the commands it prints (they look like <code>echo 'export PATH=...' &gt;&gt; ~/.zshrc</code>).</p>
+  <p>Then reload your shell configuration:</p>
+<pre><code>source ~/.zshrc</code></pre>
+
+  <p><strong>Verify:</strong></p>
+<pre><code>node --version
+npm --version</code></pre>
+  <p>Both should return version numbers (<code>v22.x.x</code> and <code>10.x.x</code>).</p>
+
+  <blockquote>
+    <p><strong>Node.js 20 will not work.</strong> OTForge uses Vite 8, which requires Node.js 22 or later. If you already have Node.js 20 via Homebrew, run <code>brew unlink node@20 &amp;&amp; brew link --overwrite node@22</code> to switch.</p>
+  </blockquote>
+
+  <blockquote class="note">
+    <p><strong>Already have a different Node version?</strong> You can use <code>nvm</code> (Node Version Manager) to switch versions. Run <code>nvm install 22 &amp;&amp; nvm use 22</code> if you have nvm installed.</p>
+  </blockquote>
+
+  <!-- Step 5 -->
+  <h3 id="mac-clone"><span class="step-badge">5</span> Clone the OTForge Repository</h3>
+
+  <p>In Terminal, run these commands <strong>one at a time</strong>:</p>
+<pre><code>mkdir ~/OTForge
+cd ~/OTForge
+git clone https://github.com/iburres/otforge.git .</code></pre>
+
+  <blockquote class="note">
+    <p>The final <code>.</code> (period) clones into the current folder. Do not omit it.</p>
+  </blockquote>
+
+  <!-- Step 6 -->
+  <h3 id="mac-deps"><span class="step-badge">6</span> Install OTForge Dependencies</h3>
+
+<pre><code>npm ci</code></pre>
+  <p>Wait for it to finish (a few minutes). You will see package installation output — that is normal.</p>
+
+  <!-- Step 7 -->
+  <h3 id="mac-build"><span class="step-badge">7</span> Build the Support Packages</h3>
+
+<pre><code>npm run build:packages</code></pre>
+  <p>This takes about 30 seconds.</p>
+
+  <!-- Step 8 -->
+  <h3 id="mac-launch"><span class="step-badge">8</span> Launch OTForge</h3>
+
+<pre><code>npm run dev</code></pre>
+  <p>The OTForge window opens. On first launch, macOS may show a security dialog — click <strong>Open</strong> to allow the Electron application to run.</p>
+
+  <!-- Step 9 -->
+  <h3 id="mac-scenarios"><span class="step-badge">9</span> Prepare Your Scenarios Folder</h3>
+
+  <p>Your scenario files live in:</p>
+<pre><code>~/OTForge/scenarios/</code></pre>
+  <p>(This is <code>/Users/yourname/OTForge/scenarios/</code> — the <code>~</code> is shorthand for your home folder.)</p>
+  <p>When your instructor releases a lab file through Canvas, download it and save it here.</p>
+
+  <hr>
+
+  <!-- ── First simulation run ── -->
+  <h2 id="first-run">What Happens on First Simulation Run</h2>
+
+  <p>When you open a lab scenario and click <strong>Start Simulation</strong> for the first time, OTForge will automatically pull the required Docker container images from GitHub's container registry. This is a <strong>one-time download of approximately 2–4 GB</strong> and may take several minutes depending on your internet connection. You will see a progress overlay in the application while this happens.</p>
+  <p>Subsequent runs use the cached images and start in seconds.</p>
+
+  <hr>
+
+  <!-- ════════════════════════════════════════════════════════
+       TROUBLESHOOTING
+  ═════════════════════════════════════════════════════════ -->
+  <h2 id="troubleshooting">Troubleshooting</h2>
+
+  <h3>"Docker Desktop is not running" error in OTForge</h3>
+  <p>Make sure Docker Desktop is open and the taskbar/menu bar icon shows a running state (green indicator). OTForge cannot start simulations if Docker is not running.</p>
+
+  <h3><code>npm ci</code> fails with permission errors (Windows)</h3>
+  <p>Right-click PowerShell in the Start menu and choose <strong>Run as Administrator</strong>, then retry the command from <code>C:\OTForge</code>.</p>
+
+  <h3><code>npm ci</code> fails with permission errors (macOS)</h3>
+  <p>Run <code>sudo npm ci</code> and enter your password, or fix npm permissions:</p>
+<pre><code>sudo chown -R $(whoami) ~/.npm
+npm ci</code></pre>
+
+  <h3><code>npm run dev</code> fails with "Error: Electron uninstall"</h3>
+  <p>The Electron binary did not download correctly during <code>npm ci</code> — Windows Defender and some campus antivirus tools sometimes block or interrupt the download.</p>
+
+  <p><strong>Fix (Windows — run from <code>C:\OTForge</code>):</strong></p>
+<pre><code>rmdir /s /q node_modules
+npm ci
+npm run dev</code></pre>
+
+  <p>If <code>npm ci</code> completes but the error still appears, run the Electron installer manually, then retry:</p>
+<pre><code>node node_modules/electron/install.js
+npm run dev</code></pre>
+
+  <p>If you get a permission error on <code>rmdir</code>, right-click PowerShell and choose <strong>Run as Administrator</strong>, then repeat the commands above.</p>
+
+  <h3><code>npm run dev</code> opens no window</h3>
+  <p>Check that <code>npm run build:packages</code> completed without errors first. If it did, try closing and reopening your terminal, then run <code>npm run dev</code> again.</p>
+
+  <h3>Docker images fail to pull</h3>
+  <p>Confirm you have an internet connection and that Docker Desktop is signed in (or that your network does not block <code>ghcr.io</code>). On campus networks, check with IT if container registry traffic is blocked.</p>
+
+  <h3>"Virtualization not supported" on Windows</h3>
+  <p>You need to enable virtualization in your computer's BIOS/UEFI firmware. The exact steps vary by manufacturer — search for your laptop model + "enable virtualization BIOS". Contact your instructor if you need help.</p>
+
+  <h3>Apple Silicon Mac — "image not found" or architecture mismatch</h3>
+  <p>Make sure you downloaded the <strong>Apple Silicon</strong> version of Docker Desktop (not the Intel version). Check Docker Desktop → Settings → General → confirm "Use Virtualization Framework" is enabled.</p>
+
+  <h3><code>TypeError: crypto.hash is not a function</code> (Mac or Windows)</h3>
+  <p>You are running Node.js 20, which is too old. OTForge uses Vite 8, which requires Node.js 22 or later.</p>
+
+  <p><strong>Fix (macOS):</strong></p>
+<pre><code>brew install node@22
+brew unlink node@20
+brew link --overwrite node@22
+node --version   # should print v22.x.x
+npm ci
+npm run dev</code></pre>
+
+  <p><strong>Fix (Windows):</strong> Uninstall Node.js from Windows Settings → Apps → search "Node.js" → Uninstall. Then install Node.js 22 LTS from <a href="https://nodejs.org" target="_blank">https://nodejs.org</a> and repeat the setup from Step 5.</p>
+
+  <hr>
+
+  <!-- ── Keeping updated ── -->
+  <h2 id="updating">Keeping OTForge Updated</h2>
+
+  <p>Your instructor may push updates to the repository during the semester. To get the latest version:</p>
+
+<pre><code># Windows (PowerShell in C:\OTForge)
+git pull
+npm ci
+npm run build:packages
+
+# macOS (Terminal in ~/OTForge)
+git pull
+npm ci
+npm run build:packages</code></pre>
+
+  <p>Then relaunch with <code>npm run dev</code>.</p>
+
+  <hr>
+
+  <!-- ── Quick reference ── -->
+  <h2 id="quick-ref">Quick Reference</h2>
+
+  <div class="ref-card">
+    <table>
+      <thead>
+        <tr><th>Task</th><th>Windows</th><th>macOS</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Open terminal</td><td>Start → PowerShell</td><td>Applications → Utilities → Terminal</td></tr>
+        <tr><td>Navigate to OTForge</td><td><code>cd C:\OTForge</code></td><td><code>cd ~/OTForge</code></td></tr>
+        <tr><td>Start OTForge</td><td><code>npm run dev</code></td><td><code>npm run dev</code></td></tr>
+        <tr><td>Scenarios folder</td><td><code>C:\OTForge\scenarios\</code></td><td><code>~/OTForge/scenarios/</code></td></tr>
+        <tr><td>Update OTForge</td><td><code>git pull &amp;&amp; npm ci &amp;&amp; npm run build:packages</code></td><td><code>git pull &amp;&amp; npm ci &amp;&amp; npm run build:packages</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    <p>Questions? Post in the course discussion board or bring your laptop to office hours.</p>
+  </footer>
+
+</main>
+</body>
+</html>
