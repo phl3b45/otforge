@@ -100,7 +100,7 @@ Real protocol packets flow on Docker virtual networks — scanner tools and expl
 | RAM | 8 GB (16 GB recommended for attack machine scenarios) |
 | Disk | 20 GB free (Docker images downloaded on first run) |
 | Docker Desktop | Latest stable |
-| Node.js | 20+ (development only) |
+| Node.js | 22+ (development only — Node 20 is EOL and incompatible with Vite 8) |
 
 ---
 
@@ -111,11 +111,16 @@ Real protocol packets flow on Docker virtual networks — scanner tools and expl
 ```bash
 git clone https://github.com/iburres/otforge.git
 cd otforge
-npm install
+npm ci
+npm run build:packages
 npm run dev
 ```
 
 Docker Desktop must be running before launching the app.
+
+> **Node.js 22+ required.** Vite 8 uses `crypto.hash()`, which was added in Node 21.7. Node 20 will throw `TypeError: crypto.hash is not a function`.
+
+**First-time students:** see [`docs/student-setup.md`](docs/student-setup.md) (also available as [`docs/student-setup.html`](docs/student-setup.html)) for a full step-by-step walkthrough covering Docker, Git, Node.js, and OTForge setup on both Windows and macOS.
 
 ### Build a distributable
 
