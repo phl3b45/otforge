@@ -31,6 +31,12 @@ WORKDIR /opt/openplc
 # Run the automated installer (Linux target)
 RUN chmod +x install.sh && ./install.sh linux
 
+# Replace compile_program.sh with a patched version that normalizes the
+# filenames iec2c produces (config0.c → Config0.c, RESOURCE.c → Res0.c)
+# so the subsequent mv and g++ steps find the files they expect.
+COPY compile_program.sh /opt/openplc/webserver/scripts/compile_program.sh
+RUN chmod +x /opt/openplc/webserver/scripts/compile_program.sh
+
 # Patch monitoring.py — fix two bugs present in the upstream source:
 #
 #   1. split(' ') on VAR declaration lines: any alignment padding (multiple
