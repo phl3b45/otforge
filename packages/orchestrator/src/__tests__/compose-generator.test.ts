@@ -186,14 +186,14 @@ describe('image assignment', () => {
     expect(compose.services['plc-1'].image).toMatch(/otforge-openplc/)
   })
 
-  it('uses the alpine stub image for RTU devices (until otforge-modbus is published)', () => {
+  it('uses the otforge-modbus image for RTU devices', () => {
     const compose = gen(makeScenario([['rtu-1', { category: 'rtu', ipAddress: '10.200.10.10' }]]))
-    expect(compose.services['rtu-1'].image).toBe('alpine:latest')
+    expect(compose.services['rtu-1'].image).toBe('ghcr.io/iburres/otforge-modbus:latest')
   })
 
-  it('uses the alpine stub image for IED devices (until otforge-dnp3 is published)', () => {
+  it('uses the otforge-dnp3 image for IED devices', () => {
     const compose = gen(makeScenario([['ied-1', { category: 'ied', ipAddress: '10.200.10.10' }]]))
-    expect(compose.services['ied-1'].image).toBe('alpine:latest')
+    expect(compose.services['ied-1'].image).toBe('ghcr.io/iburres/otforge-dnp3:latest')
   })
 
   it('uses a custom dockerImage override when provided on the device', () => {
