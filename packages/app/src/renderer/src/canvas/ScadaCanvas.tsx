@@ -1178,6 +1178,52 @@ export function ScadaCanvas({
     [pendingConnection, nodes, activeLayer, setEdges, onScenarioChange, cancelConnection]
   )
 
+  /**
+   * Edge click handler — toggles a coil-bound pipe edge when simulation is running.
+   *
+   * Clicking a PipeEdge with a coilSource on the OT layer sends an FC05 Write Single
+   * Coil request to the PLC. FC05 writes through the OpenPLC glue pointer directly to
+   * the IEC variable, so the program responds in its next 500 ms scan cycle. The coil
+   * state is optimistically flipped in coilStates immediately so the pipe color updates
+   * without waiting for the next polling interval.
+   *
+   * No-op when:
+   *   - The simulation is not running (no PLC port registered)
+   *   - The layer is not OT (no coilSource edges on other layers)
+   *   - The edge has no coilSource binding (topology or infrastructure edges)
+   */
+  const onEdgeClick = useCallback(
+    async (_event: React.MouseEvent, edge: Edge) => {
+      if (!simRunning || activeLayer !== 'ot') return
+      const pipeData = edge.data as unknown as import('./PipeEdge').PipeEdgeData
+      if (!pipeData?.coilSource) return
+
+      const { nodeId, coilIndex } = pipeData.coilSource
+      const stateKey = `${nodeId}:${coilIndex}`
+      // Current coil state — default to true (both coils start ON in the init block)
+      const currentValue = coilStates.get(stateKey) ?? true
+      const nextValue = !currentValue
+
+      // Optimistic update — flips the pipe color immediately before the poll confirms
+      setCoilStates(prev => {
+        const next = new Map(prev)
+        next.set(stateKey, nextValue)
+        return next
+      })
+
+      const result = await window.electronAPI.modbus.writeCoil(nodeId, coilIndex, nextValue)
+      if (!result.ok) {
+        // Write failed — revert the optimistic update so the display stays accurate
+        setCoilStates(prev => {
+          const next = new Map(prev)
+          next.set(stateKey, currentValue)
+          return next
+        })
+      }
+    },
+    [simRunning, activeLayer, coilStates]
+  )
+
   // Escape key cancels the open menu or pending connection
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1334,6 +1380,7 @@ export function ScadaCanvas({
         onNodeDragStop={readOnly ? undefined : onNodeDragStop}
         onNodeContextMenu={onNodeContextMenu}
         onNodeClick={onNodeClick}
+        onEdgeClick={onEdgeClick}
         onPaneClick={cancelConnection}
         nodesDraggable={!readOnly}
         nodesConnectable={!readOnly}

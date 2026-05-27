@@ -1291,6 +1291,75 @@ function registerIPCHandlers(): void {
     }
   )
 
+  /**
+   * Writes a single coil to a PLC via Modbus TCP FC05 (Write Single Coil).
+   *
+   * FC05 writes through the OpenPLC glue pointer directly to the IEC variable,
+   * so the PLC program sees the change in its next scan cycle (every 500 ms).
+   * This is the correct control path — the OpenPLC IDE "force" feature only
+   * overrides the output buffer that Modbus reads, not the internal IEC variable
+   * the program computes with.
+   *
+   * Used by ScadaCanvas to let instructors toggle coil states directly from the
+   * OT layer canvas by clicking a coil-bound pipe edge.
+   *
+   * @param nodeId    - Scenario device node ID of the target PLC.
+   * @param coilIndex - Coil address (0 = %QX0.0 = pump_run, 1 = %QX0.1 = valve_open).
+   * @param value     - Desired coil state (true = ON, false = OFF).
+   */
+  ipcMain.handle(
+    'modbus:writeCoil',
+    async (
+      _e,
+      { nodeId, coilIndex, value }: { nodeId: string; coilIndex: number; value: boolean }
+    ): Promise<{ ok: boolean; error?: string }> => {
+      const hostPort = activePlcModbusPorts.get(nodeId)
+      if (!hostPort) return { ok: false, error: 'PLC not in active simulation' }
+
+      return new Promise<{ ok: boolean; error?: string }>(resolve => {
+        const socket = new net.Socket()
+        const TIMEOUT_MS = 2500
+
+        const fail = (err?: Error) => {
+          if (!socket.destroyed) socket.destroy()
+          resolve({ ok: false, error: err?.message ?? 'connection failed' })
+        }
+
+        socket.setTimeout(TIMEOUT_MS)
+        socket.once('error', fail)
+        socket.once('timeout', () => fail(new Error('timeout')))
+
+        socket.connect(hostPort, '127.0.0.1', () => {
+          // Modbus TCP FC05 (Write Single Coil) request — 12 bytes.
+          // MBAP header (7 bytes): Transaction ID=2, Protocol=0, Length=6, Unit=1
+          // PDU (5 bytes): FC=0x05, Coil Address, Value (0xFF00=ON, 0x0000=OFF)
+          const req = Buffer.alloc(12)
+          req.writeUInt16BE(2, 0) // Transaction ID
+          req.writeUInt16BE(0, 2) // Protocol ID
+          req.writeUInt16BE(6, 4) // Length
+          req.writeUInt8(1, 6) // Unit ID = 1
+          req.writeUInt8(0x05, 7) // Function Code: Write Single Coil
+          req.writeUInt16BE(coilIndex, 8) // Output address (coil index)
+          req.writeUInt16BE(value ? 0xff00 : 0x0000, 10) // Output value
+          socket.write(req)
+        })
+
+        socket.once('data', (data: Buffer) => {
+          socket.destroy()
+          // FC05 success: server echoes the request (8 bytes minimum, FC=0x05)
+          if (data.length >= 8 && data[7] === 0x05) {
+            resolve({ ok: true })
+          } else if (data.length >= 8 && (data[7] & 0x80) !== 0) {
+            // Exception response: FC|0x80, exception code at byte 8
+            resolve({ ok: false, error: `Modbus exception code ${data[8]}` })
+          } else {
+            resolve({ ok: false, error: 'unexpected response' })
+          }
+        })
+      })
+    }
+  )
+
   // ── Attack terminal ───────────────────────────────────────────────────────────
 
   /**

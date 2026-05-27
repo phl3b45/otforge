@@ -390,7 +390,30 @@ const api = {
      * @returns Array of uint16 values, regs[0] = address 0. Returns [] on failure.
      */
     readHoldingRegisters: (nodeId: string, count: number): Promise<number[]> =>
-      ipcRenderer.invoke('modbus:readHoldingRegisters', { nodeId, count })
+      ipcRenderer.invoke('modbus:readHoldingRegisters', { nodeId, count }),
+
+    /**
+     * Writes a single coil to a PLC via Modbus TCP FC05 (Write Single Coil).
+     *
+     * FC05 goes through the OpenPLC glue pointer to the IEC variable directly,
+     * so the PLC program responds in its next scan cycle (~500 ms). This is the
+     * correct write path — the OpenPLC IDE "force" feature only overrides the
+     * Modbus output buffer and does not reach the program's internal computation.
+     *
+     * Used by ScadaCanvas: clicking a coil-bound pipe edge on the OT layer
+     * while the simulation is running toggles the coil via this call.
+     *
+     * @param nodeId    - Scenario device node ID of the target PLC.
+     * @param coilIndex - Coil address (0 = pump_run %QX0.0, 1 = valve_open %QX0.1).
+     * @param value     - Target coil state (true = ON / flowing, false = OFF / blocked).
+     * @returns { ok: true } on success; { ok: false, error } on Modbus failure.
+     */
+    writeCoil: (
+      nodeId: string,
+      coilIndex: number,
+      value: boolean
+    ): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('modbus:writeCoil', { nodeId, coilIndex, value })
   },
 
   // ── Clipboard ─────────────────────────────────────────────────────────────────
