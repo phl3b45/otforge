@@ -46,11 +46,18 @@ chmod +x /root/Desktop/Grafana.desktop
 # with nftables rules that permit Modbus/DNP3/BACnet from control → OT.
 # Add a /16 summary route so the protocol scripts can reach PLCs and sensors
 # on the OT subnet (10.200.10.x) without any extra configuration.
-FW_IP=$(ip -4 addr show eth0 | awk '/inet / {print $2}' | cut -d/ -f1 | sed 's/\.[0-9]*$/.254/')
-if [ -n "$FW_IP" ]; then
-    ip route add 10.200.0.0/16 via "$FW_IP" dev eth0 2>/dev/null || true
-    echo "[ics-workstation] OT route added: 10.200.0.0/16 via ${FW_IP}"
-fi
+# monitoring-net is always 10.200.70.0/24 — skip it and find the control-net
+# interface so the route goes through the firewall at .254, not the monitoring gateway.
+for iface in eth0 eth1 eth2 eth3; do
+    ip link show "$iface" > /dev/null 2>&1 || continue
+    addr=$(ip -4 addr show "$iface" | awk '/inet / {print $2}' | cut -d/ -f1)
+    [ -z "$addr" ] && continue
+    echo "$addr" | grep -q "^10\.200\.70\." && continue
+    FW_IP=$(echo "$addr" | sed 's/\.[0-9]*$/.254/')
+    ip route add 10.200.0.0/16 via "$FW_IP" dev "$iface" 2>/dev/null && \
+        echo "[ics-workstation] OT route added: 10.200.0.0/16 via ${FW_IP} (${iface})" || true
+    break
+done
 
 # ── VNC server ────────────────────────────────────────────────────────────────
 # No password setup needed — vncserver is started with -SecurityTypes None so
