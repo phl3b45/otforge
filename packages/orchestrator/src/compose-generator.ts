@@ -47,11 +47,10 @@ import { ZONE_DEFAULTS } from './network-config'
 const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   // ── OT Process (Levels 0–2) ────────────────────────────────────────────────
   plc: 'ghcr.io/iburres/otforge-openplc:latest',
-  // STUB: alpine provides a minimal container that starts and joins the network.
-  // Replace with otforge-modbus (Modbus TCP outstation) once published.
-  rtu: 'alpine:latest',
-  // STUB: Replace with otforge-dnp3 (DNP3 outstation) once published.
-  ied: 'alpine:latest',
+  // Modbus TCP/RTU outstation — pymodbus 3.7 server on Alpine (containers/modbus)
+  rtu: 'ghcr.io/iburres/otforge-modbus:latest',
+  // DNP3 outstation — OpenDNP3 Python bindings on Alpine (containers/dnp3)
+  ied: 'ghcr.io/iburres/otforge-dnp3:latest',
   // Phase 10: Conpot legacy device emulation (S7comm + IEC 104)
   'legacy-plc': 'ghcr.io/iburres/otforge-conpot:latest',
   'iec104-rtu': 'ghcr.io/iburres/otforge-conpot:latest',
