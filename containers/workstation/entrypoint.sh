@@ -41,9 +41,9 @@ EOF
 chmod +x /root/Desktop/Grafana.desktop
 
 # ── VNC server ────────────────────────────────────────────────────────────────
+# No password setup needed — vncserver is started with -SecurityTypes None so
+# no authentication is required and the passwd file is never read.
 mkdir -p /root/.vnc
-echo "" | vncpasswd -f > /root/.vnc/passwd
-chmod 600 /root/.vnc/passwd
 
 # xstartup: launch Xfce4 desktop
 cat > /root/.vnc/xstartup << 'EOF'
