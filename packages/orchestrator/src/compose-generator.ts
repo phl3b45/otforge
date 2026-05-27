@@ -62,7 +62,8 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   'dcs-controller': 'alpine:latest',
   // STUB: VFD / Motor Drive — Modbus RTU server stub.
   vfd: 'alpine:latest',
-  sensor: 'alpine:latest',
+  // BACnet/IP device — bacpypes3 Python server on Alpine (containers/bacnet)
+  sensor: 'ghcr.io/iburres/otforge-bacnet:latest',
   actuator: 'alpine:latest',
   pump: 'alpine:latest',
   valve: 'alpine:latest',
@@ -147,7 +148,7 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   'safety-plc': { memory: 128, cpus: '0.5' }, // Safety PLC / SIS — same budget as process PLC
   'dcs-controller': { memory: 128, cpus: '0.5' }, // DCS Controller — OPC-UA server + loop logic
   vfd: { memory: 64, cpus: '0.15' }, // VFD / Motor Drive — Modbus RTU register server
-  sensor: { memory: 64, cpus: '0.15' },
+  sensor: { memory: 96, cpus: '0.25' }, // BACnet/IP bacpypes3 Python server
   actuator: { memory: 64, cpus: '0.15' },
   pump: { memory: 64, cpus: '0.15' },
   valve: { memory: 64, cpus: '0.15' },
@@ -1276,6 +1277,14 @@ function buildDeviceEnv(
   if (device.iec104) {
     env.push(`IEC104_COMMON_ADDRESS=${device.iec104.commonAddress}`)
     env.push(`IEC104_PORT=${device.iec104.port}`)
+  }
+
+  // BACnet/IP configuration — consumed by containers/bacnet/server.py.
+  // BACNET_DEVICE_INSTANCE must be unique per device on the network (0–4194302).
+  // The server falls back to defaults when these vars are absent.
+  if (device.bacnet) {
+    env.push(`BACNET_DEVICE_INSTANCE=${device.bacnet.deviceInstance}`)
+    env.push(`BACNET_PORT=${device.bacnet.port ?? 47808}`)
   }
 
   // Phase 11: Physical process simulation — consumed by containers/process-sim/sim.py.

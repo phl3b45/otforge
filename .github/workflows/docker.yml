@@ -40,6 +40,8 @@ jobs:
             context: containers/dnp3
           - image: otforge-opcua
             context: containers/opcua
+          - image: otforge-bacnet
+            context: containers/bacnet
           - image: otforge-firewall
             context: containers/firewall
           - image: otforge-switch

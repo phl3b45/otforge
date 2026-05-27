@@ -238,6 +238,17 @@ export interface Iec104Config {
   port: number
 }
 
+export interface BacnetConfig {
+  /**
+   * BACnet device instance number — uniquely identifies this device on the
+   * BACnet internetwork (0–4194302). Each device in the scenario must have
+   * a distinct instance number for Who-Is / I-Am discovery to work correctly.
+   */
+  deviceInstance: number
+  /** UDP port for BACnet/IP (standard default is 47808). */
+  port?: number
+}
+
 export interface OpcUaConfig {
   port: number
   namespace: string
@@ -365,6 +376,7 @@ export interface DeviceConfig {
   modbus?: ModbusConfig
   dnp3?: DNP3Config
   opcua?: OpcUaConfig
+  bacnet?: BacnetConfig // BACnet/IP config (sensor devices)
   ethernetip?: EtherNetIPConfig // EtherNet/IP CIP config (plc, rtu devices)
   s7?: S7Config // Siemens S7comm config (legacy-plc devices, Phase 10)
   iec104?: Iec104Config // IEC 60870-5-104 config (iec104-rtu devices, Phase 10)
