@@ -87,12 +87,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Python; these are dev/lab tools, not production packages.
 RUN pip3 install --no-cache-dir --break-system-packages \
     websockify \
-    pymodbus \
+    "pymodbus==3.7.4" \
     dnp3-python \
     opcua \
     python-snap7 \
     bacpypes3 \
-    scapy 2>/dev/null || pip3 install --no-cache-dir --break-system-packages websockify pymodbus scapy
+    scapy 2>/dev/null || pip3 install --no-cache-dir --break-system-packages websockify "pymodbus==3.7.4" scapy
 
 # ── Layer 8: noVNC web client ─────────────────────────────────────────────────
 # Fetch noVNC from the official GitHub release (pinned to v1.5.0 for
