@@ -56,8 +56,7 @@ chmod +x /root/.vnc/xstartup
 
 # Start TigerVNC on display :1 (port 5901), 1920x1080
 echo "[ics-workstation] Starting VNC server on display :1 (port 5901)..."
-vncserver :1 -geometry 1920x1080 -depth 24 -SecurityTypes None -localhost no \
-    2>/dev/null
+vncserver :1 -geometry 1920x1080 -depth 24 -SecurityTypes None -localhost yes
 
 # Wait for VNC to accept connections
 for i in $(seq 1 15); do
