@@ -1503,6 +1503,13 @@ export default function App() {
                 onClick={() =>
                   window.electronAPI.workstation
                     .launchWindow(firstWorkstationDevice.nodeId)
+                    .then(result => {
+                      if (!result.ok) {
+                        setSimError(
+                          result.error ?? 'Could not open Engineering Workstation window.'
+                        )
+                      }
+                    })
                     .catch(() => {})
                 }
                 title="Open Engineering Workstation desktop — Wireshark, ICS protocol tools, nmap"

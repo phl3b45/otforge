@@ -2167,18 +2167,10 @@ function registerIPCHandlers(): void {
         }
       }
 
-      // Probe the noVNC websockify port before opening the window.
-      const ready = await isPortOpen(port)
-      if (!ready) {
-        return {
-          ok: false,
-          error:
-            `Workstation is not ready yet (port ${port} is not open). ` +
-            'The container may still be pulling its image or starting the VNC server — ' +
-            'wait a few seconds and try again.'
-        }
-      }
-
+      // Open the noVNC window immediately — the noVNC client displays its own
+      // "Connecting…" spinner while websockify starts, so we do not need to probe
+      // the port first. Blocking here would cause the button to silently do nothing
+      // while the Ubuntu + TigerVNC + websockify startup (30-60 s) is in progress.
       const vncUrl = `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale`
 
       // Dedicated non-persistent session for workstation windows, isolated from the
