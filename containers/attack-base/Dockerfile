@@ -85,6 +85,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # kali-rolling apt mirror for these two packages.
 # --break-system-packages is needed because Kali uses PEP 668 externally-managed
 # Python; these are dev/lab tools, not production packages.
+#
+# Remove the Kali apt-installed python3-pymodbus first. Kali ships a newer
+# version (3.8+) that renamed slave= to device_id= and made count keyword-only,
+# which breaks scripts written against the 3.7.x API. Removing it ensures the
+# pip-pinned 3.7.4 below is the only pymodbus on the system.
+RUN apt-get remove -y python3-pymodbus 2>/dev/null || true
+
 RUN pip3 install --no-cache-dir --break-system-packages \
     websockify \
     "pymodbus==3.7.4" \
