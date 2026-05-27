@@ -86,20 +86,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # --break-system-packages is needed because Kali uses PEP 668 externally-managed
 # Python; these are dev/lab tools, not production packages.
 #
-# Remove the Kali apt-installed python3-pymodbus first. Kali ships a newer
-# version (3.8+) that renamed slave= to device_id= and made count keyword-only,
-# which breaks scripts written against the 3.7.x API. Removing it ensures the
-# pip-pinned 3.7.4 below is the only pymodbus on the system.
+# Remove the Kali apt-installed python3-pymodbus before pip installs ours.
+# The apt package version varies with the kali-rolling mirror and may differ
+# from the pip version; removing it ensures a single consistent install.
 RUN apt-get remove -y python3-pymodbus 2>/dev/null || true
 
 RUN pip3 install --no-cache-dir --break-system-packages \
     websockify \
-    "pymodbus==3.7.4" \
+    pymodbus \
     dnp3-python \
     opcua \
     python-snap7 \
     bacpypes3 \
-    scapy 2>/dev/null || pip3 install --no-cache-dir --break-system-packages websockify "pymodbus==3.7.4" scapy
+    scapy 2>/dev/null || pip3 install --no-cache-dir --break-system-packages websockify pymodbus scapy
 
 # ── Layer 8: noVNC web client ─────────────────────────────────────────────────
 # Fetch noVNC from the official GitHub release (pinned to v1.5.0 for

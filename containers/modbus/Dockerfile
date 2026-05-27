@@ -2,7 +2,9 @@ FROM python:3.12-alpine
 
 WORKDIR /app
 
-# pymodbus 3.7 is pure Python — no C compilation needed on Alpine
+# pymodbus 3.7.4 pinned — the server-side API (ModbusDeviceContext, ModbusServerContext)
+# changed significantly in 3.13 and is deprecated again in favour of SimData/SimDevice
+# in v4. Pin here until the v4 migration is done as a dedicated task.
 RUN pip install --no-cache-dir "pymodbus==3.7.4"
 
 COPY server.py .
