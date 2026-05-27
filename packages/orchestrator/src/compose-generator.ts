@@ -582,6 +582,10 @@ export function generateCompose(
     if (device.category === 'engineering-workstation') {
       const hostWsPort = WORKSTATION_NOVNC_PORT_BASE + workstationPortIndex
       services[serviceName].ports = [`${hostWsPort}:6080`]
+      // NET_ADMIN lets the entrypoint add a static route to the OT network
+      // via the firewall (.254 on the control-net) so protocol scripts can
+      // reach PLCs and field devices directly from the workstation desktop.
+      services[serviceName].cap_add = ['NET_ADMIN']
       workstationServiceNames.push(serviceName)
       workstationPortIndex++
     }
