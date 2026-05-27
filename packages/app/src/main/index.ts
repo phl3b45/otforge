@@ -397,6 +397,21 @@ const activeAttackPorts = new Map<string, number>()
 const attackWindows = new Map<string, BrowserWindow>()
 
 /**
+ * Maps engineering-workstation device nodeIds to their published host ports.
+ * Populated on simulation start with the same index ordering as the compose
+ * generator's WORKSTATION_NOVNC_PORT_BASE=6800 logic (host port → container port 6080).
+ *
+ * Used by workstation:launchWindow and workstation:getVncUrl to build the noVNC URL.
+ */
+const activeWorkstationPorts = new Map<string, number>()
+
+/**
+ * Tracks open noVNC BrowserWindows keyed by engineering-workstation device nodeId.
+ * Populated by workstation:launchWindow, cleaned up on window 'closed' event.
+ */
+const workstationWindows = new Map<string, BrowserWindow>()
+
+/**
  * The currently active terminal process (docker exec session).
  * Only one terminal session is supported at a time — opening a second one
  * kills the previous. Null when no terminal is open.
@@ -767,14 +782,16 @@ function registerIPCHandlers(): void {
         const projectName = toProjectName(scenario.meta.name)
         activeProjectName = projectName
 
-        // Build PLC and attack-machine port maps with the same iteration order and base ports
-        // as compose-generator.ts so the IPC handlers can find host ports without re-parsing
-        // the generated compose file.
+        // Build PLC, attack-machine, and workstation port maps with the same iteration order
+        // and base ports as compose-generator.ts so the IPC handlers can find host ports
+        // without re-parsing the generated compose file.
         activePlcPorts.clear()
         activePlcModbusPorts.clear()
         activeAttackPorts.clear()
+        activeWorkstationPorts.clear()
         let plcIdx = 0
         let attackIdx = 0
+        let workstationIdx = 0
         for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
           if (device.category === 'plc') {
             activePlcPorts.set(nodeId, 18080 + plcIdx)
@@ -786,6 +803,11 @@ function registerIPCHandlers(): void {
             // Base port 6900 matches ATTACK_NOVNC_PORT_BASE in compose-generator.ts
             activeAttackPorts.set(nodeId, 6900 + attackIdx)
             attackIdx++
+          }
+          if (device.category === 'engineering-workstation') {
+            // Base port 6800 matches WORKSTATION_NOVNC_PORT_BASE in compose-generator.ts
+            activeWorkstationPorts.set(nodeId, 6800 + workstationIdx)
+            workstationIdx++
           }
         }
 
@@ -854,6 +876,7 @@ function registerIPCHandlers(): void {
         activePlcPorts.clear()
         activePlcModbusPorts.clear()
         activeAttackPorts.clear()
+        activeWorkstationPorts.clear()
         return { ok: false, error: `Simulation start failed: ${(err as Error).message}` }
       }
     }
@@ -882,6 +905,7 @@ function registerIPCHandlers(): void {
       activePlcPorts.clear()
       activePlcModbusPorts.clear()
       activeAttackPorts.clear()
+      activeWorkstationPorts.clear()
     }
     return result
   })
@@ -2101,6 +2125,104 @@ function registerIPCHandlers(): void {
     }
   )
 
+  // ── Engineering Workstation window ───────────────────────────────────────────
+
+  /**
+   * Returns the localhost URL for the noVNC web interface of the given engineering
+   * workstation device. The URL points to the websockify bridge (container port 6080)
+   * published on the host port tracked in activeWorkstationPorts.
+   *
+   * @param nodeId - Canvas node ID of the engineering-workstation device.
+   * @returns { url } on success, { error } if the simulation is not running
+   *   or the device is not found in the active port map.
+   */
+  ipcMain.handle('workstation:getVncUrl', (_e, { nodeId }: { nodeId: string }) => {
+    const port = activeWorkstationPorts.get(nodeId)
+    if (!port) {
+      return { error: 'No noVNC port found — is the simulation running?' }
+    }
+    return { url: `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale` }
+  })
+
+  /**
+   * Opens the engineering workstation's Xfce4 Linux desktop in a separate Electron
+   * BrowserWindow that loads the noVNC WebSocket interface.
+   *
+   * The workstation runs Ubuntu 22.04 with Wireshark, nmap, tshark, tcpdump,
+   * and Python ICS protocol scripts (Modbus, OPC UA, BACnet, DNP3) pre-installed
+   * on the desktop. Students use it to interact with OT devices as an operator.
+   *
+   * @param nodeId - Canvas node ID of the engineering-workstation device.
+   * @returns { ok: true } on success, { ok: false, error } if the simulation is not
+   *   running or the device's noVNC port is not yet open.
+   */
+  ipcMain.handle(
+    'workstation:launchWindow',
+    async (_e, { nodeId }: { nodeId: string }): Promise<{ ok: boolean; error?: string }> => {
+      const port = activeWorkstationPorts.get(nodeId)
+      if (!port) {
+        return {
+          ok: false,
+          error: 'No noVNC port found for this workstation — is the simulation running?'
+        }
+      }
+
+      // Probe the noVNC websockify port before opening the window.
+      const ready = await isPortOpen(port)
+      if (!ready) {
+        return {
+          ok: false,
+          error:
+            `Workstation is not ready yet (port ${port} is not open). ` +
+            'The container may still be pulling its image or starting the VNC server — ' +
+            'wait a few seconds and try again.'
+        }
+      }
+
+      const vncUrl = `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale`
+
+      // Dedicated non-persistent session for workstation windows, isolated from the
+      // main renderer and from attack windows.
+      const wsSession = session.fromPartition('workstation-novnc')
+      wsSession.setPermissionRequestHandler((_wc, permission, callback) => {
+        callback(permission === 'clipboard-read' || permission === 'clipboard-sanitized-write')
+      })
+      wsSession.setPermissionCheckHandler((_wc, permission) => {
+        return permission === 'clipboard-read' || permission === 'clipboard-sanitized-write'
+      })
+
+      const wsWindow = new BrowserWindow({
+        width: 1280,
+        height: 900,
+        minWidth: 800,
+        minHeight: 600,
+        title: `Engineering Workstation — ${nodeId}`,
+        autoHideMenuBar: true,
+        // Dark background matches Xfce4 default terminal colours
+        backgroundColor: '#2c2c2c',
+        webPreferences: {
+          session: wsSession,
+          sandbox: true,
+          contextIsolation: true,
+          nodeIntegration: false,
+          webviewTag: false
+        }
+      })
+
+      wsWindow.loadURL(vncUrl)
+      wsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
+      workstationWindows.set(nodeId, wsWindow)
+      wsWindow.on('closed', () => {
+        if (workstationWindows.get(nodeId) === wsWindow) {
+          workstationWindows.delete(nodeId)
+        }
+      })
+
+      return { ok: true }
+    }
+  )
+
   // ── Community scenario packs (Phase 9) ────────────────────────────────────────
 
   /**
@@ -2582,63 +2704,74 @@ async function configureAttackMachine(): Promise<void> {
 // ── FUXA auto-provisioning ────────────────────────────────────────────────────
 
 /**
- * Auto-provisions Modbus device connections in FUXA after a simulation starts.
+ * Auto-provisions ICS device connections in FUXA after a simulation starts.
  *
- * FUXA is a web-based HMI that stores device connections in a SQLite database
- * inside its container. On every fresh simulation, the named volume is pre-created
- * but empty, so FUXA has no devices configured. This function provisions them
- * automatically so instructors don't have to manually add PLCs in the FUXA UI.
+ * FUXA stores device connections in a SQLite database inside its named volume.
+ * On every fresh simulation the volume is empty, so this function provisions
+ * all three protocol families automatically — students open the HMI and see
+ * live data without any manual FUXA configuration.
  *
- * Provisioning algorithm:
- *   1. Poll localhost:1881 until FUXA's HTTP API is ready (up to 60 s).
- *   2. Read scenario.visual.edges to find all Modbus-TCP connections.
- *   3. For each edge, identify the PLC endpoint (category='plc' or 'rtu').
- *   4. POST /api/device to FUXA with the PLC's IP, port 502, and Modbus unit ID.
- *   5. Skip PLCs that already have an entry (FUXA returns 400 on duplicate id).
+ * Protocols provisioned:
+ *   MODBUSTCP  — PLC and RTU devices connected via modbus-tcp canvas edges.
+ *   OPCUA      — All scada-server devices (asyncua Python server, port 4840).
+ *   BACnet     — All sensor devices (bacpypes3 Python server, port 47808).
  *
- * FUXA REST API for device creation (confirmed from fuxa source, server/apimanager.js):
- *   POST /api/device
- *   Content-Type: application/json
- *   Body: {
- *     id: string,          // Unique device ID (we use the canvas node ID)
- *     name: string,        // Display name shown in FUXA editor
- *     enabled: true,
- *     type: "MODBUSTCP",
- *     polling: 1000,       // Poll interval in ms
- *     request: 30000,      // Request timeout in ms
- *     property: { address: string, port: 502, uid: 1 },
- *     tags: {}
+ * FUXA REST API — POST /api/device (confirmed from server/apimanager.js):
+ *   {
+ *     id:       string,   // Unique ID (we use the canvas node ID)
+ *     name:     string,   // Display name shown in the FUXA editor
+ *     enabled:  true,
+ *     type:     "MODBUSTCP" | "OPCUA" | "BACnet",
+ *     polling:  number,   // Poll interval in ms
+ *     request:  number,   // Request timeout in ms
+ *     property: object,   // Protocol-specific connection parameters (see below)
+ *     tags:     {}
  *   }
  *
- * The function is fire-and-forget from simulation:start — if FUXA is slow to
- * start or the scenario has no Modbus edges it simply logs and returns without
- * affecting the simulation start result visible to the renderer.
+ *   Modbus property:  { address: "ip", port: 502, uid: 1 }
+ *   OPC UA property:  { address: "opc.tcp://ip:4840" }
+ *   BACnet property:  { address: "ip", port: 47808 }
+ *
+ * HTTP 200 = created; 400 = duplicate device id (volume persisted from a
+ * previous run with the same project name) — both are acceptable; log + continue.
+ *
+ * Fire-and-forget from simulation:start — errors are swallowed so a slow FUXA
+ * start or a scenario with no provisionable devices never blocks the caller.
  *
  * @param scenario - The scenario that was just started.
  */
 async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
-  // Build the list of PLC nodes reachable via Modbus-TCP edges.
-  // An edge's source or target may be the PLC — check both sides.
-  const plcNodeIds = new Set<string>()
+  const FUXA_PORT = 1881
+
+  // ── Collect Modbus/PLC nodes from canvas edges ─────────────────────────────
+  // Only PLC and RTU nodes that appear on a modbus-tcp edge are wired to FUXA.
+  // Other Modbus devices (e.g., a sensor stub on Alpine) are not worth polling.
+  const modbusNodeIds = new Set<string>()
   for (const edge of scenario.visual.edges) {
     if (edge.data.protocol !== 'modbus-tcp') continue
-    // Determine which endpoint is the PLC (the device with modbus config or plc/rtu category)
     for (const candidateId of [edge.source, edge.target]) {
       const device = scenario.devices.devices[candidateId]
       if (device && (device.category === 'plc' || device.category === 'rtu')) {
-        plcNodeIds.add(candidateId)
+        modbusNodeIds.add(candidateId)
       }
     }
   }
 
-  if (plcNodeIds.size === 0) {
-    // No Modbus-TCP PLC connections in this scenario — nothing to provision
-    return
-  }
+  // ── Collect OPC UA devices (all scada-server nodes) ────────────────────────
+  const opcuaEntries = Object.entries(scenario.devices.devices).filter(
+    ([, d]) => d.category === 'scada-server'
+  )
 
-  // Poll until FUXA's HTTP API is responsive (up to 60 seconds with 3-second gaps).
+  // ── Collect BACnet devices (all sensor nodes) ──────────────────────────────
+  const bacnetEntries = Object.entries(scenario.devices.devices).filter(
+    ([, d]) => d.category === 'sensor'
+  )
+
+  const totalDevices = modbusNodeIds.size + opcuaEntries.length + bacnetEntries.length
+  if (totalDevices === 0) return
+
+  // ── Wait for FUXA HTTP API (up to 60 s) ────────────────────────────────────
   // The FUXA Node.js server takes 10–20 s after container start to initialize.
-  const FUXA_PORT = 1881
   const MAX_WAIT_MS = 60_000
   const POLL_INTERVAL_MS = 3_000
   const deadline = Date.now() + MAX_WAIT_MS
@@ -2649,33 +2782,16 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS))
   }
 
-  // Extra 2-second grace period after the port opens — FUXA's HTTP router may not
-  // be fully registered even though the TCP socket is accepting connections.
+  // Extra 2-second grace period after the TCP port opens.
+  // FUXA's Express router finishes registering ~1 s after the socket accepts.
   await new Promise(resolve => setTimeout(resolve, 2000))
 
-  // POST each PLC as a Modbus-TCP device in FUXA
-  for (const nodeId of plcNodeIds) {
-    const device = scenario.devices.devices[nodeId]
-    if (!device) continue
-
-    // Extract just the IP (no CIDR suffix) from the device config
-    const address = device.ipAddress.split('/')[0]
-
-    // Read Modbus unit ID from the device's modbus config if present, default to 1
-    const uid = device.modbus?.unitId ?? 1
-    const port = device.modbus?.port ?? 502
-
-    const payload = JSON.stringify({
-      id: nodeId,
-      name: `${nodeId} (PLC)`,
-      enabled: true,
-      type: 'MODBUSTCP',
-      polling: 1000,
-      request: 30_000,
-      property: { address, port, uid },
-      tags: {}
-    })
-
+  /**
+   * POST a single device entry to FUXA's /api/device endpoint.
+   * Silently ignores duplicate-id errors (HTTP 400) — these are expected when the
+   * named volume already contains devices from a previous run of the same scenario.
+   */
+  async function postDevice(payload: string): Promise<void> {
     try {
       await httpPost(
         {
@@ -2690,12 +2806,84 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
         },
         payload
       )
-      // 200 = created, 400 = duplicate (device already exists from a previous run with
-      // the same named volume) — both are acceptable outcomes; log and continue.
     } catch {
       // Connection refused or timeout — FUXA may have failed to start.
-      // Log and continue so a single failure doesn't block the remaining PLCs.
+      // Log and continue so a single failure doesn't block remaining devices.
     }
+  }
+
+  // ── Provision Modbus TCP (PLCs / RTUs) ─────────────────────────────────────
+  for (const nodeId of modbusNodeIds) {
+    const device = scenario.devices.devices[nodeId]
+    if (!device) continue
+    const address = device.ipAddress.split('/')[0]
+    const uid = device.modbus?.unitId ?? 1
+    const port = device.modbus?.port ?? 502
+
+    await postDevice(
+      JSON.stringify({
+        id: nodeId,
+        name: `${nodeId} (Modbus)`,
+        enabled: true,
+        type: 'MODBUSTCP',
+        polling: 1000,
+        request: 30_000,
+        property: { address, port, uid },
+        tags: {}
+      })
+    )
+  }
+
+  // ── Provision OPC UA (SCADA servers) ──────────────────────────────────────
+  // FUXA connects to an OPC UA server via its endpoint URL (opc.tcp://host:port).
+  // Security is intentionally disabled for the training environment so no
+  // certificate exchange is needed before tags can be browsed and logged.
+  for (const [nodeId, device] of opcuaEntries) {
+    const address = device.ipAddress.split('/')[0]
+    const port = device.opcua?.port ?? 4840
+    const endpointUrl = `opc.tcp://${address}:${port}`
+
+    await postDevice(
+      JSON.stringify({
+        id: nodeId,
+        name: `${nodeId} (OPC UA)`,
+        enabled: true,
+        type: 'OPCUA',
+        polling: 2000,
+        request: 30_000,
+        // FUXA OPC UA plugin reads 'address' as the full endpoint URL.
+        // Security/policy/mode left at None — matches the server container defaults.
+        property: {
+          address: endpointUrl,
+          security: 'None',
+          policy: 'None',
+          mode: 'Anonymous'
+        },
+        tags: {}
+      })
+    )
+  }
+
+  // ── Provision BACnet/IP (sensors) ─────────────────────────────────────────
+  // FUXA's BACnet plugin sends Who-Is broadcasts and unicast ReadProperty to
+  // discover and poll objects. We register the sensor's static IP and UDP port
+  // so FUXA knows where to address its BACnet messages.
+  for (const [nodeId, device] of bacnetEntries) {
+    const address = device.ipAddress.split('/')[0]
+    const port = device.bacnet?.port ?? 47808
+
+    await postDevice(
+      JSON.stringify({
+        id: nodeId,
+        name: `${nodeId} (BACnet)`,
+        enabled: true,
+        type: 'BACnet',
+        polling: 2000,
+        request: 30_000,
+        property: { address, port },
+        tags: {}
+      })
+    )
   }
 }
 

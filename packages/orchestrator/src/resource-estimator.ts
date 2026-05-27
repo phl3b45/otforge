@@ -44,6 +44,9 @@ const RAM_LOKI = 80
 const RAM_FUXA = 100
 const RAM_FIREWALL = 20
 
+/** Engineering workstation: Ubuntu 22.04 Xfce4 + TigerVNC + Wireshark + Python ICS libs. */
+const RAM_WORKSTATION = 512
+
 /** Kali Linux image with nmap, Metasploit, pymodbus, tshark pre-installed. */
 const RAM_ATTACK = 512
 
@@ -68,10 +71,11 @@ export function estimateResources(scenario: OTForgeScenario): ResourceEstimate {
   const devices = Object.values(scenario.devices.devices)
   const containerCount = devices.length
 
-  // Sum per-device RAM, giving PLCs and OPC UA servers their larger budgets
+  // Sum per-device RAM, giving PLCs, OPC UA servers, and workstations their larger budgets
   const deviceRam = devices.reduce((total, device) => {
     if (device.category === 'plc' || device.category === 'safety-plc') return total + RAM_OPENPLC
     if (device.category === 'scada-server') return total + RAM_OPCUA
+    if (device.category === 'engineering-workstation') return total + RAM_WORKSTATION
     return total + RAM_DEVICE
   }, 0)
 

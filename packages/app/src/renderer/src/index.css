@@ -3404,6 +3404,21 @@ code.prop-value {
   color: #fff;
 }
 
+/* ── Engineering Workstation toolbar button ──────────────────────────────────
+ * Shown while the simulation is running and the scenario contains an
+ * engineering-workstation device. Opens the Xfce4 desktop in a separate window.
+ * Uses a teal-green tone to distinguish it from the blue HMI and red Kali buttons.
+ */
+.btn-workstation {
+  background: rgba(46, 160, 67, 0.1);
+  border: 1px solid #2ea043;
+  color: #2ea043;
+}
+
+.btn-workstation:hover:not(:disabled) {
+  background: rgba(46, 160, 67, 0.2);
+}
+
 /*
  * Desktop hint toast — fixed bottom-right notice shown when the noVNC window
  * opens. Explains that clipboard paste is unavailable there and that the

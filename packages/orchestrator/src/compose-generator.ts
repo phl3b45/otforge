@@ -89,9 +89,10 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   'application-server': 'nginx:alpine',
   // STUB: Replace with otforge-dbserver (PostgreSQL + ICS schema) once published.
   'database-server': 'postgres:16-alpine',
-  // linuxserver webtop: Ubuntu XFCE desktop via KasmVNC on port 3000.
-  // Replace with otforge-workstation once published.
-  'engineering-workstation': 'lscr.io/linuxserver/webtop:ubuntu-xfce',
+  // Engineering workstation: Ubuntu 22.04 Xfce4 desktop with Wireshark, nmap,
+  // and ICS protocol tools (pymodbus, asyncua, bacpypes3) via TigerVNC + noVNC.
+  // Students access the full Linux desktop at container port 6080 (noVNC WebSocket).
+  'engineering-workstation': 'ghcr.io/iburres/otforge-workstation:latest',
   // ── Plant DMZ (Level 3.5) ───────────────────────────────────────────────────
   firewall: 'ghcr.io/iburres/otforge-firewall:latest',
   'ids-ips': 'ghcr.io/iburres/otforge-suricata:latest',
@@ -165,7 +166,8 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   historian: { memory: 256, cpus: '0.5' }, // InfluxDB 1.8
   'application-server': { memory: 256, cpus: '0.5' }, // generic app server
   'database-server': { memory: 256, cpus: '0.5' }, // generic database
-  'engineering-workstation': { memory: 128, cpus: '0.25' }, // lightweight workstation sim
+  // 512 MB: Ubuntu 22.04 base + Xfce4 + TigerVNC + Wireshark GUI + Python ICS libs + noVNC server.
+  'engineering-workstation': { memory: 512, cpus: '0.5' },
   // ── Plant DMZ (Level 3.5) ───────────────────────────────────────────────────
   firewall: { memory: 32, cpus: '0.25' },
   'ids-ips': { memory: 256, cpus: '0.5' },
@@ -379,10 +381,16 @@ export function generateCompose(
   let processUnitPortIndex = 0
   const ATTACK_NOVNC_PORT_BASE = 6900
   let attackPortIndex = 0
-  // Collected during the device loop so we can attach PLC and process-unit
-  // services to monitoring-net after that network is defined (later in this function).
+  // Engineering-workstation noVNC port base — host port 6800+n publishes container port 6080
+  // (the noVNC websockify bridge started by the workstation entrypoint.sh).
+  // The same base is mirrored in main/index.ts → activeWorkstationPorts map.
+  const WORKSTATION_NOVNC_PORT_BASE = 6800
+  let workstationPortIndex = 0
+  // Collected during the device loop so we can attach PLC, process-unit, and
+  // workstation services to monitoring-net after that network is defined (later in this function).
   const plcServiceNames: string[] = []
   const processUnitServiceNames: string[] = []
+  const workstationServiceNames: string[] = []
 
   // ── PLC → process-unit IP map ──────────────────────────────────────────────
   // Scan canvas edges to find which process-unit (if any) each PLC is connected
@@ -566,6 +574,18 @@ export function generateCompose(
       processUnitPortIndex++
     }
 
+    // Engineering workstation publishes its noVNC WebSocket bridge (container port 6080)
+    // to a deterministic host port so the Electron main process can open the Xfce4
+    // desktop in a separate BrowserWindow via the workstation:launchWindow IPC handler.
+    // monitoring-net attachment added below (control-net is internal: true — Docker
+    // Desktop silently drops host port bindings on internal-only bridges).
+    if (device.category === 'engineering-workstation') {
+      const hostWsPort = WORKSTATION_NOVNC_PORT_BASE + workstationPortIndex
+      services[serviceName].ports = [`${hostWsPort}:6080`]
+      workstationServiceNames.push(serviceName)
+      workstationPortIndex++
+    }
+
     // Firewall bridges OT, Control Center, and Plant DMZ to enforce inter-zone ACLs.
     // NET_ADMIN is required to create and manage nftables rules.
     // NET_RAW is required for raw socket access (ICMP, packet capture).
@@ -745,6 +765,14 @@ export function generateCompose(
   processUnitServiceNames.forEach((svcName, idx) => {
     services[svcName].networks!['monitoring-net'] = {
       ipv4_address: `${monitorBase}.${20 + idx}`
+    }
+  })
+
+  // Attach each engineering-workstation service to monitoring-net so its noVNC port
+  // binding is honoured by Docker Desktop. IPs start at .30 (PLCs .10–.19, process-units .20–.29).
+  workstationServiceNames.forEach((svcName, idx) => {
+    services[svcName].networks!['monitoring-net'] = {
+      ipv4_address: `${monitorBase}.${30 + idx}`
     }
   })
 

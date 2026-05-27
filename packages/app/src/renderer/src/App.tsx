@@ -1271,6 +1271,14 @@ export default function App() {
   const firstAttackDevice = (attackDevices[0]?.[1] as DeviceConfig) ?? null
   const hasTutorial = !!scenario?.meta.tutorialSteps?.length
 
+  // Engineering workstation helpers — first workstation device for the toolbar button
+  const workstationDevices = scenario
+    ? Object.entries(scenario.devices.devices).filter(
+        ([, d]) => d.category === 'engineering-workstation'
+      )
+    : []
+  const firstWorkstationDevice = (workstationDevices[0]?.[1] as DeviceConfig) ?? null
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (view === 'launch') {
@@ -1487,6 +1495,20 @@ export default function App() {
                   {hasAttackMachine ? '⚔ Attack Ready' : '+ Attack Machine'}
                 </button>
               )
+            )}
+            {/* Engineering Workstation — only while simulation is running + workstation exists */}
+            {simIsRunning && firstWorkstationDevice && (
+              <button
+                className="btn btn-sm btn-workstation"
+                onClick={() =>
+                  window.electronAPI.workstation
+                    .launchWindow(firstWorkstationDevice.nodeId)
+                    .catch(() => {})
+                }
+                title="Open Engineering Workstation desktop — Wireshark, ICS protocol tools, nmap"
+              >
+                🖥 Workstation
+              </button>
             )}
             {/* Open HMI — only while simulation is running */}
             {simIsRunning && (

@@ -539,6 +539,34 @@ const api = {
       ipcRenderer.invoke('attack:openTerminalWindow', { nodeId, pasteText })
   },
 
+  // ── Engineering Workstation window ───────────────────────────────────────────
+  workstation: {
+    /**
+     * Opens the engineering workstation's Xfce4 Linux desktop in a separate Electron
+     * BrowserWindow that loads the noVNC WebSocket interface (container port 6080).
+     *
+     * The workstation has Wireshark, nmap, tcpdump, and Python ICS protocol scripts
+     * (Modbus, OPC UA, BACnet, DNP3) pre-installed on the Desktop. Students use it
+     * to interact with OT field devices as an operator or engineer would.
+     *
+     * @param nodeId - Canvas node ID of the engineering-workstation device.
+     * @returns { ok: true } on success, { ok: false, error } if simulation not running
+     *   or the VNC port is not yet accepting connections.
+     */
+    launchWindow: (nodeId: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('workstation:launchWindow', { nodeId }),
+
+    /**
+     * Returns the noVNC URL for the workstation desktop webview.
+     * The URL includes autoconnect and scale parameters for seamless embedding.
+     *
+     * @param nodeId - Canvas node ID of the engineering-workstation device.
+     * @returns { url } on success, { error } if the simulation is not running.
+     */
+    getVncUrl: (nodeId: string): Promise<{ url?: string; error?: string }> =>
+      ipcRenderer.invoke('workstation:getVncUrl', { nodeId })
+  },
+
   // ── One-way push events from main → renderer ──────────────────────────────────
   // These listeners attach to ipcRenderer events and return an unsubscribe function
   // so the renderer can clean up in a useEffect return.

@@ -17,8 +17,9 @@ packages/app/src/renderer/dist
 #   curl -fsSL https://github.com/thiagoralves/OpenPLC_v3/archive/refs/heads/master.tar.gz \
 #     | tar -xz --strip-components=1 -C containers/openplc/openplc-src
 containers/openplc/openplc-src/
-# ICS Lab 01 is used for a university course — keep it off the public repo.
+# ICS Lab scenarios are distributed via Canvas — keep off the public repo.
 scenarios/ICS_Lab_01.otflab
+scenarios/ICS_Lab_02.otflab
 # Old tutorial filenames from before the rename — no longer tracked.
 scenarios/tutorial-01-modbus-coil-write.otflab
 scenarios/tutorial-02-scenario-builder.otflab
