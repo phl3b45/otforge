@@ -33,6 +33,9 @@ const RAM_DEVICE = 80
 /** PLC devices run OpenPLC Runtime (Ubuntu 22.04 + build toolchain). */
 const RAM_OPENPLC = 128
 
+/** OPC UA server (asyncua Python) — larger footprint than simple Modbus devices. */
+const RAM_OPCUA = 256
+
 const RAM_SURICATA = 150
 const RAM_ZEEK = 150
 const RAM_INFLUXDB = 200
@@ -65,9 +68,11 @@ export function estimateResources(scenario: OTForgeScenario): ResourceEstimate {
   const devices = Object.values(scenario.devices.devices)
   const containerCount = devices.length
 
-  // Sum per-device RAM, giving PLCs their larger OpenPLC budget
+  // Sum per-device RAM, giving PLCs and OPC UA servers their larger budgets
   const deviceRam = devices.reduce((total, device) => {
-    return total + (device.category === 'plc' ? RAM_OPENPLC : RAM_DEVICE)
+    if (device.category === 'plc' || device.category === 'safety-plc') return total + RAM_OPENPLC
+    if (device.category === 'scada-server') return total + RAM_OPCUA
+    return total + RAM_DEVICE
   }, 0)
 
   const hasAttackMachine = devices.some(d => d.category === 'attack-machine')

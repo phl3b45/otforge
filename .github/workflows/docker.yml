@@ -38,6 +38,8 @@ jobs:
             context: containers/modbus
           - image: otforge-dnp3
             context: containers/dnp3
+          - image: otforge-opcua
+            context: containers/opcua
           - image: otforge-firewall
             context: containers/firewall
           - image: otforge-switch

@@ -80,8 +80,8 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   'iot-gateway': 'alpine:latest',
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: 'frangoteam/fuxa:latest',
-  // STUB: SCADA Server (master polling engine) — nginx stub until otforge-scada-server is built.
-  'scada-server': 'nginx:alpine',
+  // OPC UA 1.04 server — asyncua Python server on Alpine (containers/opcua)
+  'scada-server': 'ghcr.io/iburres/otforge-opcua:latest',
   historian: 'influxdb:1.8-alpine',
   // STUB: nginx:alpine serves HTTP so the container appears "up" on the network.
   // Replace with otforge-appserver once published.
@@ -160,7 +160,7 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   'iot-gateway': { memory: 96, cpus: '0.2' }, // IoT gateway — MQTT broker + protocol bridge
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: { memory: 256, cpus: '0.5' }, // FUXA Node.js HMI
-  'scada-server': { memory: 256, cpus: '0.5' }, // SCADA master polling engine
+  'scada-server': { memory: 256, cpus: '0.5' }, // OPC UA server (asyncua Python)
   historian: { memory: 256, cpus: '0.5' }, // InfluxDB 1.8
   'application-server': { memory: 256, cpus: '0.5' }, // generic app server
   'database-server': { memory: 256, cpus: '0.5' }, // generic database
