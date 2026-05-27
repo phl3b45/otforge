@@ -582,10 +582,15 @@ export function generateCompose(
     if (device.category === 'engineering-workstation') {
       const hostWsPort = WORKSTATION_NOVNC_PORT_BASE + workstationPortIndex
       services[serviceName].ports = [`${hostWsPort}:6080`]
-      // NET_ADMIN lets the entrypoint add a static route to the OT network
-      // via the firewall (.254 on the control-net) so protocol scripts can
-      // reach PLCs and field devices directly from the workstation desktop.
-      services[serviceName].cap_add = ['NET_ADMIN']
+      // Dual-home the workstation on control-net (primary, scenario IP) and ot-net
+      // (secondary, .200+idx). In the Purdue model Level 2 workstations have direct
+      // L1 access so students can run Modbus/DNP3/OPC-UA scripts without routing
+      // through the firewall. Uses the already-resolved primary IP from networks[].
+      const wsOtIp = claimIp('ot-net', `${otBase}.${200 + workstationPortIndex}`)
+      services[serviceName].networks = {
+        ...services[serviceName].networks,
+        'ot-net': { ipv4_address: wsOtIp }
+      }
       workstationServiceNames.push(serviceName)
       workstationPortIndex++
     }
