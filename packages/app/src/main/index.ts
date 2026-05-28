@@ -1283,10 +1283,9 @@ function registerIPCHandlers(): void {
           req.writeUInt16BE(6, 4) // Length
           req.writeUInt8(1, 6) // Unit ID = 1
           req.writeUInt8(0x03, 7) // Function Code: Read Holding Registers
-          // OpenPLC Runtime maps %MW memory words starting at Modbus HR address 1024.
-          // Addresses 0–1023 return %IW input words (all zero for our scenarios).
-          // See containers/openplc/openplc-src/webserver/core/modbus.cpp: MIN_16B_RANGE = 1024.
-          req.writeUInt16BE(1024, 8) // Starting Address: 1024 (%MW0 in OpenPLC)
+          // OpenPLC Runtime maps %QW output words to Modbus HR starting at address 0.
+          // tank_level is declared AT %QW0, so it lives at HR 0.
+          req.writeUInt16BE(0, 8) // Starting Address: 0 (%QW0 in OpenPLC)
           req.writeUInt16BE(count, 10) // Quantity of Registers
           socket.write(req)
         })

