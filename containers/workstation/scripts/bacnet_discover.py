@@ -15,13 +15,14 @@ Services:  ReadProperty, ReadPropertyMultiple
 
 import argparse
 import asyncio
+import socket
 import sys
 
+from bacpypes3.ipv4 import IPv4Address
 from bacpypes3.ipv4.app import NormalApplication
 from bacpypes3.local.device import DeviceObject
 from bacpypes3.pdu import Address
 from bacpypes3.primitivedata import CharacterString
-from bacpypes3.apdu import ReadPropertyRequest
 from bacpypes3.basetypes import PropertyIdentifier, ObjectIdentifier
 
 
@@ -39,13 +40,17 @@ async def read_device(host: str, port: int, instance: int) -> None:
         segmentationSupported="noSegmentation",
     )
 
-    import socket
+    # Route to the target host to discover which local interface to bind.
+    # On the dual-homed workstation (control-net + ot-net), BACnet sensors live
+    # on ot-net — routing to the sensor IP selects the correct source interface.
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("10.255.255.255", 1))
+    s.connect((host, 1))
     local_ip = s.getsockname()[0]
     s.close()
 
-    app = NormalApplication(local_device, f"{local_ip}:{port}")
+    # bacpypes3 >= 0.0.90 requires an IPv4Address object (not a plain string).
+    # CIDR /24 notation lets BACnet compute the correct subnet broadcast address.
+    app = NormalApplication(local_device, IPv4Address(f"{local_ip}/24"))
     target = Address(f"{host}:{port}")
 
     print(f"[bacnet] Sending ReadProperty to device,{instance} at {host}:{port}")
