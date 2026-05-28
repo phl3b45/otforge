@@ -122,18 +122,19 @@ export class DockerClient {
    * Steps:
    *   1. Create `<workDir>/<projectName>/` if it does not exist.
    *   2. Write the YAML string as `docker-compose.yml` in that directory.
-   *   3. Check if any required container images are missing from the local cache.
-   *   4. If images are missing, call `onPullNeeded()` so the renderer can show an
-   *      "Importing Containers" overlay before the long docker pull begins.
-   *   5. Run `docker compose up -d --remove-orphans` to launch all services.
+   *   3. Fire `onPullNeeded()` so the renderer shows an "Importing Containers" overlay
+   *      before the compose up begins (always — we always pull latest images).
+   *   4. Run `docker compose up --pull always -d --remove-orphans` to launch all services.
+   *      `--pull always` checks GHCR on every start and downloads any updated layers,
+   *      ensuring students always run the newest container images without a manual pull.
    *      `--remove-orphans` removes containers from a previous run of the same
    *      project that are no longer defined in the new compose file.
    *
    * @param projectName  - Sanitized scenario name used as the Compose project name.
    *   Must match the Docker Compose project name constraint: lowercase alphanumeric + hyphen.
    * @param composeYaml  - Complete docker-compose.yml content as a YAML string.
-   * @param onPullNeeded - Optional callback fired before a docker pull if at least one
-   *   image is not already cached locally. Use to show a progress overlay in the UI.
+   * @param onPullNeeded - Optional callback fired before compose up begins. Use to show
+   *   a progress overlay in the UI during the image pull / digest check.
    * @returns { ok: true } on success, { ok: false, error } on failure.
    */
   async startScenario(
@@ -149,19 +150,18 @@ export class DockerClient {
       await mkdir(scenarioDir, { recursive: true })
       await writeFile(composeFile, composeYaml, 'utf-8')
 
-      // Pre-flight image check: if any images are not in the local Docker cache, the
-      // `docker compose up` below will pull them before starting containers. Notify the
-      // caller so the UI can show an "Importing Containers" overlay during the pull.
-      if (onPullNeeded) {
-        const missing = await this.anyImagesMissing(composeYaml)
-        if (missing) onPullNeeded()
-      }
+      // Always notify the caller before compose up — with --pull always, Docker will
+      // contact GHCR on every start to check for updated image digests, which can take
+      // several seconds or trigger a full layer download if an image was updated.
+      onPullNeeded?.()
 
-      // --quiet-pull suppresses per-layer download progress lines from stderr.
-      // Without it, pulling 10+ images on first launch generates 10–50 MB of
-      // progress output that overflows maxBuffer even at 50 MB on slow connections.
+      // --pull always: check GHCR for newer image digests on every start; download
+      //   updated layers if found. If the local image is already current the digest
+      //   check is fast (<1 s per image) and no download occurs.
+      // --quiet-pull: suppress per-layer progress lines from stderr (10–50 MB on a
+      //   first pull or large update; overflows maxBuffer without this flag).
       await run(
-        `docker compose -p ${projectName} -f "${composeFile}" up -d --remove-orphans --quiet-pull`
+        `docker compose -p ${projectName} -f "${composeFile}" up --pull always -d --remove-orphans --quiet-pull`
       )
       return { ok: true }
     } catch (err) {
