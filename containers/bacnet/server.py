@@ -44,6 +44,7 @@ import random
 import socket
 
 from bacpypes3.basetypes import EngineeringUnits, Polarity
+from bacpypes3.ipv4 import IPv4Address
 from bacpypes3.ipv4.app import NormalApplication
 from bacpypes3.local.analog import AnalogInputObject
 from bacpypes3.local.binary import BinaryInputObject
@@ -138,11 +139,10 @@ async def main() -> None:
     device discoverable by FUXA and student tools (bacnet-discover, etc.)
     """
     ip = local_ip()
-    address = f"{ip}:{PORT}"
 
     log.info(
-        "BACnet/IP device starting — id=%s  instance=%d  address=%s",
-        DEVICE_ID, DEVICE_INSTANCE, address,
+        "BACnet/IP device starting — id=%s  instance=%d  address=%s:%d",
+        DEVICE_ID, DEVICE_INSTANCE, ip, PORT,
     )
 
     # ── Device Object (required by BACnet spec) ────────────────────────────────
@@ -184,30 +184,34 @@ async def main() -> None:
         binary_nodes.append(obj)
 
     # ── Start the application ──────────────────────────────────────────────────
-    app = NormalApplication(device, address)
+    # bacpypes3 >= 0.0.90 requires an IPv4Address object (not a plain string) and
+    # NormalApplication must be used as an async context manager so that the UDP
+    # socket is actually bound before the server starts serving requests.
+    # CIDR /24 lets bacpypes3 compute the correct subnet broadcast address for
+    # Who-Is discovery. Port defaults to 47808 (BACnet standard).
+    async with NormalApplication(device, IPv4Address(f"{ip}/24")) as app:
+        # Register all objects with the application so they appear in the address space
+        for obj in analog_nodes.values():
+            app.add_object(obj)
+        for obj in binary_nodes:
+            app.add_object(obj)
 
-    # Register all objects with the application so they appear in the address space
-    for obj in analog_nodes.values():
-        app.add_object(obj)
-    for obj in binary_nodes:
-        app.add_object(obj)
+        log.info(
+            "Device ready — %d analog inputs, %d binary inputs",
+            len(analog_nodes), len(binary_nodes),
+        )
+        log.info(
+            "Analog: %s",
+            ", ".join(f"AI:{i} {n}" for i, n, *_ in ANALOG_OBJECTS),
+        )
+        log.info(
+            "Binary: %s",
+            ", ".join(f"BI:{i} {n}" for i, n, _ in BINARY_OBJECTS),
+        )
 
-    log.info(
-        "Device ready — %d analog inputs, %d binary inputs",
-        len(analog_nodes), len(binary_nodes),
-    )
-    log.info(
-        "Analog: %s",
-        ", ".join(f"AI:{i} {n}" for i, n, *_ in ANALOG_OBJECTS),
-    )
-    log.info(
-        "Binary: %s",
-        ", ".join(f"BI:{i} {n}" for i, n, _ in BINARY_OBJECTS),
-    )
-
-    # Run simulation and server concurrently
-    asyncio.create_task(simulate(analog_nodes))
-    await asyncio.Future()  # run until cancelled
+        # Run simulation and server concurrently
+        asyncio.create_task(simulate(analog_nodes))
+        await asyncio.Future()  # run until cancelled
 
 
 if __name__ == "__main__":
