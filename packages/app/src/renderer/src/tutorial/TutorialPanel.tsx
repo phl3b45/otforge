@@ -110,6 +110,15 @@ function renderBody(body: string): React.ReactNode {
   // Split on double-newlines for paragraphs; single newlines preserved inside
   const paragraphs = body.trim().split(/\n\n+/)
   return paragraphs.map((para, pi) => {
+    // Fenced code blocks: ```[lang]\n...\n```
+    const fenceMatch = para.match(/^```[^\n]*\n([\s\S]*?)```$/)
+    if (fenceMatch) {
+      return (
+        <pre key={pi} className="tutorial-code-block">
+          <code>{fenceMatch[1].trimEnd()}</code>
+        </pre>
+      )
+    }
     // Detect bullet list blocks
     if (para.startsWith('- ') || para.includes('\n- ')) {
       const items = para.split('\n').filter(l => l.startsWith('- '))
@@ -119,6 +128,20 @@ function renderBody(body: string): React.ReactNode {
             <li key={ii}>{inlineFormat(item.slice(2))}</li>
           ))}
         </ul>
+      )
+    }
+    // Headings: ## or ###
+    if (para.startsWith('## ') || para.startsWith('### ')) {
+      const level = para.startsWith('### ') ? 3 : 2
+      const text = para.replace(/^#{2,3} /, '')
+      return level === 2 ? (
+        <h2 key={pi} className="tutorial-heading">
+          {inlineFormat(text)}
+        </h2>
+      ) : (
+        <h3 key={pi} className="tutorial-subheading">
+          {inlineFormat(text)}
+        </h3>
       )
     }
     return (

@@ -5007,6 +5007,34 @@ code.prop-value {
   margin-bottom: 4px;
 }
 
+.tutorial-code-block {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 0.8rem;
+  color: #e6edf3;
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+.tutorial-heading {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e6edf3;
+}
+
+.tutorial-subheading {
+  margin: 0 0 4px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #c9d1d9;
+}
+
 .tutorial-inline-code {
   font-family: 'Consolas', 'Fira Code', monospace;
   font-size: 0.82em;
