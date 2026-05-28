@@ -219,43 +219,6 @@ export class DockerClient {
   }
 
   /**
-   * Checks whether any Docker images referenced by a compose YAML are missing from
-   * the local image cache. Used as a pre-flight check before `docker compose up` so
-   * the UI can show a "Pulling images" notification before the long network operation.
-   *
-   * Image names are extracted from the YAML using a regex that matches `image:` lines
-   * at the service level (indented 4+ spaces). This is intentionally simple — it
-   * handles the standard indentation produced by compose-generator.ts. Templated
-   * image names (with `${VAR}`) are skipped since they cannot be inspected directly.
-   *
-   * @param composeYaml - Complete docker-compose.yml content as a YAML string.
-   * @returns true if at least one referenced image is not in the local cache.
-   */
-  private async anyImagesMissing(composeYaml: string): Promise<boolean> {
-    // Match lines like "    image: ghcr.io/foo/bar:latest" (4+ spaces of indentation)
-    const imageRegex = /^\s{4,}image:\s+(.+?)(?:\s*#.*)?$/gm
-    const images: string[] = []
-    let match: RegExpExecArray | null
-    while ((match = imageRegex.exec(composeYaml)) !== null) {
-      const imageName = match[1].trim()
-      // Skip template-style names; they can't be inspected without variable expansion
-      if (!imageName.includes('${') && imageName.length > 0) {
-        images.push(imageName)
-      }
-    }
-
-    for (const image of images) {
-      try {
-        // `docker image inspect` exits with 1 if the image is not local; exits 0 if present.
-        await run(`docker image inspect --format "{{.Id}}" "${image}"`)
-      } catch {
-        return true // found at least one missing image
-      }
-    }
-    return false
-  }
-
-  /**
    * Stops and removes all containers, networks, and volumes for a scenario.
    *
    * Runs `docker compose down --volumes` which:
