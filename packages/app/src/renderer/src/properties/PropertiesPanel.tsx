@@ -309,6 +309,21 @@ export function PropertiesPanel({
             </section>
           )}
 
+          {/* ── BACnet config (shown only when device has BACnet enabled) ─────── */}
+          {device.bacnet && (
+            <section className="prop-section">
+              <div className="prop-section-title">BACnet</div>
+              <div className="prop-row">
+                <span className="prop-label">Device Instance</span>
+                <code className="prop-value">{device.bacnet.deviceInstance}</code>
+              </div>
+              <div className="prop-row">
+                <span className="prop-label">Port</span>
+                <code className="prop-value">{device.bacnet.port ?? 47808}</code>
+              </div>
+            </section>
+          )}
+
           {/* ── OPC UA config (shown only when device has OPC UA enabled) ──────── */}
           {device.opcua && (
             <section className="prop-section">
