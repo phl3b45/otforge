@@ -232,10 +232,15 @@ def poll_outstation(host: str, port: int, master_addr: int, outstation_addr: int
 
         # Length field tells us how many more bytes follow (after the fixed header)
         length     = header[2]
-        # Payload bytes = length - 5 (ctrl+dest+src), arranged in 16-byte CRC blocks
-        payload_bytes = max(0, length - 5)
-        block_count   = (payload_bytes + 15) // 16
-        remaining     = block_count * 18   # 16 data + 2 CRC per block
+        # Payload bytes = length - 5 (ctrl+dest+src), arranged in 16-byte CRC blocks.
+        # Each complete 16-byte block occupies 18 wire bytes (16 data + 2 CRC).
+        # The final partial block occupies (k + 2) wire bytes, NOT 18 — using
+        # ceil-division here over-estimates and causes a hang waiting for bytes
+        # that are never sent.
+        payload_bytes   = max(0, length - 5)
+        complete_blocks = payload_bytes // 16
+        partial_bytes   = payload_bytes % 16
+        remaining = complete_blocks * 18 + (partial_bytes + 2 if partial_bytes > 0 else 0)
 
         body = b""
         while len(body) < remaining:

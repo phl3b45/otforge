@@ -152,9 +152,13 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             # User data after the header: payload blocks follow
             # length covers ctrl(1)+dest(2)+src(2)+payload; subtract 5 for those fields
             payload_len = max(0, length - 5)
-            # Payload is split into 16-byte blocks with 2-byte CRC each
-            block_count = (payload_len + 15) // 16
-            extra_len   = block_count * 18  # 16 data + 2 CRC
+            # Payload is split into 16-byte data blocks each followed by 2 CRC bytes.
+            # The last block is typically shorter than 16 bytes, so its wire size is
+            # (k + 2) not 18 — using ceil-division over-estimates and would stall
+            # readexactly on requests whose payload is not a multiple of 16 bytes.
+            complete_blocks = payload_len // 16
+            partial_bytes   = payload_len % 16
+            extra_len = complete_blocks * 18 + (partial_bytes + 2 if partial_bytes > 0 else 0)
             extra = await asyncio.wait_for(reader.read(extra_len), timeout=5)
 
             frame = parse_link_frame(header + extra)
