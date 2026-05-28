@@ -14,14 +14,16 @@ Register map:
               flow-meter: 150 → 15.0 L/min
               pump: 1 → running, HR1 = RPM
               valve: 1000 → 100.0% open
+              rtu: 250 → 25.0 °C  (HR1=1013 kPa, HR2=150 L/min — all drift)
     HR1-HR99 — Reserved / secondary values
     IR mirrors HR so both function codes (FC3/FC4) return valid data.
 
 Process simulation:
-    A background asyncio task (simulate()) drifts HR0 ±magnitude every 2 seconds
-    so that values look like live process measurements rather than static registers.
-    This is important for educational scenarios — a frozen value does not demonstrate
-    poll-response interaction meaningfully.
+    A background asyncio task (simulate()) drifts one or more registers every
+    2 seconds so that values look like live process measurements rather than
+    static registers. DRIFT maps each device category to a list of
+    (register_index, max_drift_magnitude) pairs so multi-register devices
+    (e.g., RTU with temperature + pressure + flow) all drift independently.
 
 Protocol reference: Modbus Application Protocol v1.1b3
 pymodbus version: 3.7+ (asyncio API)
@@ -56,24 +58,30 @@ UNIT_ID   = int(os.getenv("MODBUS_UNIT_ID", "1"))
 # the engineering-unit reading (e.g., HR0=250 → 25.0 °C).
 # A full 100-register block is allocated for each device; unused registers are 0.
 DEFAULTS: dict[str, list[int]] = {
-    "sensor":               [250]  + [0] * 99,    # 25.0 °C ambient temperature
-    "pressure-transmitter": [1013] + [0] * 99,    # 101.3 kPa (1 atm)
-    "flow-meter":           [150]  + [0] * 99,    # 15.0 L/min
-    "pump":                 [1, 1500] + [0] * 98,  # HR0=run(1=on), HR1=RPM
-    "valve":                [1000] + [0] * 99,    # 100.0% open (fully open)
-    "actuator":             [0] * 100,            # Off/zero by default
-    "plc":                  [0] * 100,            # Cleared (PLC loads its own program)
-    "rtu":                  [0] * 100,            # Cleared
+    "sensor":               [250]  + [0] * 99,          # 25.0 °C ambient temperature
+    "pressure-transmitter": [1013] + [0] * 99,          # 101.3 kPa (1 atm)
+    "flow-meter":           [150]  + [0] * 99,          # 15.0 L/min
+    "pump":                 [1, 1500] + [0] * 98,       # HR0=run(1=on), HR1=RPM
+    "valve":                [1000] + [0] * 99,          # 100.0% open (fully open)
+    "actuator":             [0] * 100,                  # Off/zero by default
+    "plc":                  [0] * 100,                  # Cleared (PLC loads its own program)
+    # RTU: HR0=Temperature(×10), HR1=Pressure(×10), HR2=FlowRate(×10)
+    # All three drift independently to simulate a real remote measurement unit.
+    "rtu":                  [250, 1013, 150] + [0] * 97,
 }
 
 # ── Simulation drift configuration ─────────────────────────────────────────────
-# Tuple: (register_index, max_drift_magnitude_per_tick)
-# Devices not listed here have static registers (infrastructure devices, PLCs).
-DRIFT: dict[str, tuple[int, float]] = {
-    "sensor":               (0, 3.0),   # ±0.3 °C per tick (×10 fixed-point → ±3 register units)
-    "pressure-transmitter": (0, 1.5),   # ±0.15 kPa per tick
-    "flow-meter":           (0, 5.0),   # ±0.5 L/min per tick
-    "pump":                 (1, 20.0),  # RPM register drifts ±20 per tick (HR1)
+# Each entry maps a device category to a list of (register_index, magnitude) pairs.
+# Every pair drifts independently: value += random.uniform(-magnitude, +magnitude)
+# each tick. Devices not listed here have static registers (PLCs, infrastructure).
+DRIFT: dict[str, list[tuple[int, float]]] = {
+    "sensor":               [(0, 3.0)],              # ±0.3 °C per tick (×10 → ±3 units)
+    "pressure-transmitter": [(0, 1.5)],              # ±0.15 kPa per tick
+    "flow-meter":           [(0, 5.0)],              # ±0.5 L/min per tick
+    "pump":                 [(1, 20.0)],             # RPM register drifts ±20 per tick
+    # RTU drifts all three measurement registers independently.
+    "rtu":                  [(0, 5.0), (1, 3.0), (2, 10.0)],
+    #                         HR0 temp ±0.5°C  HR1 pressure ±0.3kPa  HR2 flow ±1.0L/min
 }
 
 
@@ -105,8 +113,9 @@ def build_store() -> ModbusSlaveContext:
 
 async def simulate(store: ModbusSlaveContext) -> None:
     """
-    Background task that drifts the primary process register every 2 seconds.
+    Background task that drifts one or more process registers every 2 seconds.
 
+    Each drift spec is a (register_index, magnitude) pair from DRIFT[CATEGORY].
     Reads the current HR value, adds a random offset in [-magnitude, +magnitude],
     clamps to [0, 65535] (valid Modbus register range), and writes back to both
     HR (FC3) and IR (FC4) to keep them in sync.
@@ -120,20 +129,22 @@ async def simulate(store: ModbusSlaveContext) -> None:
     if CATEGORY not in DRIFT:
         # Infrastructure devices (PLC, firewall, switch) have no drift configured
         return
-    reg, magnitude = DRIFT[CATEGORY]
-    log.info("Process simulation: register HR%d drifts ±%.1f per tick", reg, magnitude)
+    drift_specs = DRIFT[CATEGORY]
+    for reg, magnitude in drift_specs:
+        log.info("Process simulation: register HR%d drifts ±%.1f per tick", reg, magnitude)
     while True:
         await asyncio.sleep(2)
-        try:
-            # getValues(function_code, start_address, count) — FC3 = holding registers
-            [val] = store.getValues(3, reg, 1)
-            new_val = int(val + random.uniform(-magnitude, magnitude))
-            # Clamp to unsigned 16-bit range — Modbus registers are uint16
-            new_val = max(0, min(65535, new_val))
-            store.setValues(3, reg, [new_val])  # Update HR (FC3)
-            store.setValues(4, reg, [new_val])  # Keep IR (FC4) in sync
-        except Exception as exc:
-            log.warning("Simulation tick error: %s", exc)
+        for reg, magnitude in drift_specs:
+            try:
+                # getValues(function_code, start_address, count) — FC3 = holding registers
+                [val] = store.getValues(3, reg, 1)
+                new_val = int(val + random.uniform(-magnitude, magnitude))
+                # Clamp to unsigned 16-bit range — Modbus registers are uint16
+                new_val = max(0, min(65535, new_val))
+                store.setValues(3, reg, [new_val])  # Update HR (FC3)
+                store.setValues(4, reg, [new_val])  # Keep IR (FC4) in sync
+            except Exception as exc:
+                log.warning("Simulation tick error (HR%d): %s", reg, exc)
 
 
 async def main() -> None:
