@@ -1573,12 +1573,26 @@ export default function App() {
            * Two-state mode badge:
            *   Author Mode  — builderModeActive = true; instructor can drag/drop/edit
            *   Student Mode — builderModeActive = false; default after any file import
+           *
+           * For unlocked scenarios (meta.locked = false) the badge is a clickable
+           * button that toggles builderModeActive so students can switch between
+           * modes during a tutorial. For fully-locked scenarios it is a static <div>.
            */}
-          <div
-            className={`mode-badge ${builderModeActive ? 'mode-badge-author' : 'mode-badge-student'}`}
-          >
-            {builderModeActive ? '✎ Author Mode' : '🔒 Student Mode'}
-          </div>
+          {scenario.meta.locked ? (
+            <div className="mode-badge mode-badge-student">🔒 Student Mode</div>
+          ) : (
+            <button
+              className={`mode-badge mode-badge-toggle ${builderModeActive ? 'mode-badge-author' : 'mode-badge-student'}`}
+              onClick={() => setBuilderModeActive(prev => !prev)}
+              title={
+                builderModeActive
+                  ? 'Switch to Student Mode — hides Device Palette'
+                  : 'Switch to Author Mode — shows Device Palette and editing tools'
+              }
+            >
+              {builderModeActive ? '✎ Author Mode' : '🔒 Student Mode'}
+            </button>
+          )}
         </div>
       )}
 
