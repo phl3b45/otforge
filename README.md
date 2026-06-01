@@ -10,6 +10,25 @@ Developed by **Ian Burres**, Professor of Practice at the University of Texas at
 
 ---
 
+## Screenshots
+
+![OTForge SCADA canvas — OT layer with water treatment devices](docs/screenshots/canvas-ot-layer.png)
+*Drag-and-drop SCADA canvas — OT layer with PLC, sensors, actuators, and live Modbus protocol edges*
+
+![Kali Linux attack desktop via noVNC](docs/screenshots/kali-desktop.png)
+*Full Kali Linux Xfce4 desktop in a dedicated window — ICS attack toolkit, Wireshark, and Metasploit pre-installed*
+
+![Monitor panel — Suricata IDS alerts and Zeek protocol logs](docs/screenshots/monitor-panel.png)
+*Live Suricata IDS alerts and Zeek deep-packet logs during an active Modbus coil-write attack*
+
+![Tutorial panel — guided step-by-step lab overlay](docs/screenshots/tutorial-panel.png)
+*Guided tutorial overlay — step-by-step instructions with success checks, copy-to-clipboard commands, and attack context*
+
+![Engineering workstation VNC desktop](docs/screenshots/workstation-desktop.png)
+*Engineering workstation Xfce4 desktop — Wireshark, ICS protocol scripts, and one-click shortcuts to OpenPLC and FUXA HMI*
+
+---
+
 ## What It Does
 
 OTForge lets you design, deploy, and attack realistic ICS/SCADA environments using a visual drag-and-drop canvas. Each device in your scenario runs as a real Docker container on an isolated virtual network — protocol traffic is genuine, not simulated at the application layer.
