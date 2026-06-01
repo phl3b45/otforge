@@ -732,6 +732,31 @@ export function generateCompose(
     }
   }
 
+  // ── Post-loop: inject PLC web UI URLs into each workstation's environment ────
+  // All device IPs are now finalised in claimedDeviceIps, so this pass can safely
+  // build the WS_PLC_WEBUIS list without risk of referencing an unresolved IP.
+  // The env var is a comma-separated list of "label|url" pairs — one entry per PLC.
+  // entrypoint.sh parses this and creates a .desktop launcher for each OpenPLC IDE.
+  if (workstationServiceNames.length > 0) {
+    const plcWebUiEntries: string[] = []
+    for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
+      if (device.category === 'plc') {
+        const plcIp = claimedDeviceIps.get(nodeId)
+        if (plcIp) {
+          plcWebUiEntries.push(`${sanitizeServiceName(nodeId)}|http://${plcIp}:8080`)
+        }
+      }
+    }
+    if (plcWebUiEntries.length > 0) {
+      const webUiEnv = `WS_PLC_WEBUIS=${plcWebUiEntries.join(',')}`
+      for (const wsSvcName of workstationServiceNames) {
+        const wsEnv: string[] = services[wsSvcName].environment ?? []
+        wsEnv.push(webUiEnv)
+        services[wsSvcName].environment = wsEnv
+      }
+    }
+  }
+
   // ── Fixed infrastructure services ─────────────────────────────────────────
   // These run in every simulation regardless of scenario contents.
   // .253 and .252 are reserved host addresses in the /24 subnets.

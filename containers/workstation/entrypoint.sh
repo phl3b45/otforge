@@ -19,7 +19,7 @@ Version=1.0
 Type=Application
 Name=FUXA HMI
 Comment=Open the FUXA process HMI
-Exec=firefox http://hmi:1881
+Exec=firefox --new-window http://hmi:1881
 Icon=firefox
 Terminal=false
 Categories=Network;
@@ -33,12 +33,40 @@ Version=1.0
 Type=Application
 Name=Grafana Dashboards
 Comment=Open ICS monitoring dashboards
-Exec=firefox http://grafana:3000
+Exec=firefox --new-window http://grafana:3000
 Icon=firefox
 Terminal=false
 Categories=Network;
 EOF
 chmod +x /root/Desktop/Grafana.desktop
+
+# ── Dynamic shortcuts for PLC OpenPLC web IDEs ───────────────────────────────
+# WS_PLC_WEBUIS is injected by the compose generator as a comma-separated list
+# of "label|url" pairs, e.g.:
+#   plc-main|http://10.200.10.10:8080,plc-backup|http://10.200.10.11:8080
+# Each entry gets its own .desktop launcher so students can open the OpenPLC
+# IDE (ladder logic, monitoring page, ST source) with one click.
+if [ -n "${WS_PLC_WEBUIS:-}" ]; then
+    IFS=',' read -ra _plc_entries <<< "$WS_PLC_WEBUIS"
+    for _entry in "${_plc_entries[@]}"; do
+        _label="${_entry%%|*}"
+        _url="${_entry#*|}"
+        _desktop="/root/Desktop/OpenPLC-${_label}.desktop"
+        cat > "$_desktop" << DESKTOPEOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=OpenPLC: ${_label}
+Comment=Open the OpenPLC IDE for ${_label}
+Exec=firefox --new-window ${_url}
+Icon=firefox
+Terminal=false
+Categories=Development;
+DESKTOPEOF
+        chmod +x "$_desktop"
+        echo "[ics-workstation] Shortcut: OpenPLC: ${_label} → ${_url}"
+    done
+fi
 
 # ── OT network routing ────────────────────────────────────────────────────────
 # The workstation sits on the control network (eth0, e.g. 10.200.20.x/24).
@@ -64,12 +92,21 @@ done
 # no authentication is required and the passwd file is never read.
 mkdir -p /root/.vnc
 
-# xstartup: launch Xfce4 desktop
+# xstartup: launch Xfce4 desktop with a dbus session.
+# Two important changes vs the naive approach:
+#   1. dbus-launch --exit-with-session: starts a private dbus-daemon, exports
+#      DBUS_SESSION_BUS_ADDRESS so all child processes (including Firefox) can
+#      connect to it, and shuts the daemon down when xfce4 exits.
+#      Without this, Firefox cannot contact dbus and fails silently.
+#   2. Stale lock-file cleanup: Docker kills containers without giving Firefox
+#      a chance to remove its profile lock.  The lock persists across container
+#      restarts and prevents Firefox from opening ("already running" dialog).
 cat > /root/.vnc/xstartup << 'EOF'
 #!/bin/bash
 unset SESSION_MANAGER
-unset DBUS_SESSION_BUS_ADDRESS
-exec startxfce4
+rm -f /root/.mozilla/firefox/*/lock \
+      /root/.mozilla/firefox/*/parent.lock 2>/dev/null || true
+exec dbus-launch --exit-with-session startxfce4
 EOF
 chmod +x /root/.vnc/xstartup
 

@@ -3,11 +3,27 @@ FROM ubuntu:22.04
 ARG DEBIAN_FRONTEND=noninteractive
 
 # ── Layer 1: Core system + desktop environment ─────────────────────────────────
+# Firefox is intentionally NOT installed via `apt install firefox`.
+# On Ubuntu 22.04, that package is a snap stub — it tries to exec `snap run firefox`
+# at runtime, but snapd is not available inside Docker containers, so every Firefox
+# launch silently fails with no error message.
+#
+# Fix: use Mozilla's own official apt repository (packages.mozilla.org).
+# curl downloads the repository signing key directly — no add-apt-repository and
+# no gpg-agent dependency, both of which fail in minimal Docker base images.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xfce4 xfce4-terminal xfce4-taskmanager \
     dbus-x11 x11-xserver-utils xdg-utils \
     tigervnc-standalone-server \
-    firefox \
+    ca-certificates curl \
+    && install -d -m 0755 /etc/apt/keyrings \
+    && curl -fsSL https://packages.mozilla.org/apt/repo-signing-key.gpg \
+       -o /etc/apt/keyrings/packages.mozilla.org.asc \
+    && echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" \
+       > /etc/apt/sources.list.d/mozilla.list \
+    && printf 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n' \
+       > /etc/apt/preferences.d/mozilla \
+    && apt-get update && apt-get install -y --no-install-recommends firefox \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Layer 2: Network and protocol analysis tools ───────────────────────────────
