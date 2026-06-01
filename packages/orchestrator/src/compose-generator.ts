@@ -538,10 +538,7 @@ export function generateCompose(
       // Modbus is published so the Electron renderer can poll coil states directly
       // via Node.js raw TCP sockets (modbus:readCoils IPC channel) for the
       // live pipe-flow animation without needing docker exec or extra containers.
-      services[serviceName].ports = [
-        `127.0.0.1:${hostWebPort}:8080`,
-        `127.0.0.1:${hostModbusPort}:502`
-      ]
+      services[serviceName].ports = [`${hostWebPort}:8080`, `${hostModbusPort}:502`]
       plcServiceNames.push(serviceName)
       plcPortIndex++
 
@@ -572,7 +569,7 @@ export function generateCompose(
     // is internal: true and Docker silently drops host port bindings on internal nets).
     if (device.category === 'process-unit') {
       const hostProcModbusPort = PROC_MODBUS_PORT_BASE + processUnitPortIndex
-      services[serviceName].ports = [`127.0.0.1:${hostProcModbusPort}:502`]
+      services[serviceName].ports = [`${hostProcModbusPort}:502`]
       processUnitServiceNames.push(serviceName)
       processUnitPortIndex++
     }
@@ -584,7 +581,7 @@ export function generateCompose(
     // Desktop silently drops host port bindings on internal-only bridges).
     if (device.category === 'engineering-workstation') {
       const hostWsPort = WORKSTATION_NOVNC_PORT_BASE + workstationPortIndex
-      services[serviceName].ports = [`127.0.0.1:${hostWsPort}:6080`]
+      services[serviceName].ports = [`${hostWsPort}:6080`]
       // Dual-home the workstation on control-net (primary, scenario IP) and ot-net
       // (secondary, .200+idx). In the Purdue model Level 2 workstations have direct
       // L1 access so students can run Modbus/DNP3/OPC-UA scripts without routing
@@ -664,7 +661,7 @@ export function generateCompose(
       }
       services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
       // Port 6080: noVNC WebSocket bridge served by our custom otforge-attack-base image
-      services[serviceName].ports = [`127.0.0.1:${webPort}:6080`]
+      services[serviceName].ports = [`${webPort}:6080`]
       attackPortIndex++
 
       // Inject PLC_IP / PLC_PORT so the Attack_Scripts (read_coils.py, write_coil.py)
@@ -964,7 +961,7 @@ export function generateCompose(
     cap_add: undefined,
     volumes: [`${projectName}-loki-data:/loki`],
     // Publish so the Electron main process can proxy Loki API queries
-    ports: ['127.0.0.1:3100:3100'],
+    ports: ['3100:3100'],
     // Healthcheck: recent grafana/loki images use a distroless base with no shell
     // tools, so wget/curl are unavailable. /bin/sh redirected to a TCP device file
     // is also out. Use netcat (nc) via /proc/net/tcp instead — not available either.
@@ -1035,7 +1032,7 @@ export function generateCompose(
     cap_add: undefined,
     volumes: grafanaVolumes,
     // Publish on the standard Grafana port so the Electron webview embeds it
-    ports: ['127.0.0.1:3000:3000'],
+    ports: ['3000:3000'],
     // Healthcheck: /api/health returns 200 once Grafana is fully started.
     // Informational only — the MonitorPanel polls monitor:grafanaReady on the app
     // side before mounting the webview, so no depends_on is needed here.
@@ -1107,7 +1104,7 @@ export function generateCompose(
       'monitoring-net': { ipv4_address: `${monitorBase}.4` }
     },
     // Publish port 1881 so Electron can open FUXA in a separate BrowserWindow
-    ports: ['127.0.0.1:1881:1881'],
+    ports: ['1881:1881'],
     environment: undefined,
     cap_add: undefined,
     volumes: [`${projectName}-fuxa-data:/usr/src/app/FUXA/server/_appdata`],
