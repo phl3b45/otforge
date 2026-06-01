@@ -779,6 +779,12 @@ export function generateCompose(
   const monitorBase = `${controlBase.split('.').slice(0, 2).join('.')}.70`
   networks['monitoring-net'] = {
     driver: 'bridge',
+    // Disable NAT masquerade so containers on this bridge (PLCs, workstations,
+    // process-units) cannot reach the public internet, while still allowing Docker
+    // to publish host ports via DNAT — port bindings use DNAT, not masquerade,
+    // so `ports:` entries continue to work correctly.
+    // Only Kali (attacker-net, non-internal, masquerade on) has real internet access.
+    driver_opts: { 'com.docker.network.bridge.enable_ip_masquerade': 'false' },
     ipam: {
       driver: 'default',
       config: [{ subnet: `${monitorBase}.0/24`, gateway: `${monitorBase}.1` }]
