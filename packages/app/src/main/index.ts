@@ -49,7 +49,7 @@ import { readFile, writeFile, access, mkdir, readdir, rm } from 'fs/promises'
 import { exec, spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import { promisify } from 'util'
-import { join as pathJoin } from 'path'
+import { join as pathJoin, relative as pathRelative } from 'path'
 import os from 'os'
 import http from 'http'
 import net from 'net'
@@ -2331,7 +2331,18 @@ function registerIPCHandlers(): void {
   ipcMain.handle(
     'pack:uninstall',
     async (_e, { packId }: { packId: string }): Promise<PackUninstallResult> => {
-      const packPath = pathJoin(app.getPath('userData'), 'packs', packId)
+      // Validate packId before constructing any path — prevents directory traversal
+      // (e.g. packId = ".." would otherwise delete the entire userData/packs/ parent).
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(packId)) {
+        return { ok: false, error: 'Invalid pack ID.' }
+      }
+      const packsRoot = pathJoin(app.getPath('userData'), 'packs')
+      const packPath = pathJoin(packsRoot, packId)
+      // Double-check the resolved path stays inside the packs root
+      const rel = pathRelative(packsRoot, packPath)
+      if (rel.startsWith('..') || rel.includes('..')) {
+        return { ok: false, error: 'Invalid pack path.' }
+      }
       try {
         await rm(packPath, { recursive: true, force: true })
         return { ok: true }
@@ -2353,7 +2364,18 @@ function registerIPCHandlers(): void {
       _e,
       { packId, relativePath }: { packId: string; relativePath: string }
     ): Promise<ScenarioImportResult> => {
-      const scenarioPath = pathJoin(app.getPath('userData'), 'packs', packId, relativePath)
+      // Validate packId before path construction (same rule as pack:uninstall)
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(packId)) {
+        return { ok: false, error: 'Invalid pack ID.' }
+      }
+      const packRoot = pathJoin(app.getPath('userData'), 'packs', packId)
+      const scenarioPath = pathJoin(packRoot, relativePath)
+      // Ensure the resolved path stays inside the pack directory — prevents a
+      // malicious relativePath like "../../sensitive.json" from escaping.
+      const rel = pathRelative(packRoot, scenarioPath)
+      if (rel.startsWith('..') || rel.includes('..')) {
+        return { ok: false, error: 'Invalid scenario path.' }
+      }
       let raw: unknown
       try {
         raw = JSON.parse(await readFile(scenarioPath, 'utf-8'))
