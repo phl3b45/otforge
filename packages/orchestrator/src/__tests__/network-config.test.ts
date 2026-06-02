@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { ZONE_DEFAULTS, dockerNetworkName, zoneIpPrefix } from '../network-config'
+import { ZONE_DEFAULTS, findFreeSubnets, dockerNetworkName, zoneIpPrefix } from '../network-config'
 
 // ── ZONE_DEFAULTS ─────────────────────────────────────────────────────────────
 
@@ -80,6 +80,103 @@ describe('ZONE_DEFAULTS', () => {
     )
     const uniquePrefixes = new Set(prefixes)
     expect(uniquePrefixes.size).toBe(Object.keys(ZONE_DEFAULTS).length)
+  })
+})
+
+// ── findFreeSubnets ───────────────────────────────────────────────────────────
+
+describe('findFreeSubnets', () => {
+  it('returns ZONE_DEFAULTS unchanged when no CIDRs are in use', () => {
+    const result = findFreeSubnets([])
+    for (const zone of Object.keys(ZONE_DEFAULTS) as Array<keyof typeof ZONE_DEFAULTS>) {
+      expect(result[zone]).toEqual(ZONE_DEFAULTS[zone])
+    }
+  })
+
+  it('bumps only the OT zone when 10.200.10.0/24 conflicts', () => {
+    const result = findFreeSubnets(['10.200.10.0/24'])
+    expect(result.ot.subnet).toBe('10.201.10.0/24')
+    expect(result.ot.gateway).toBe('10.201.10.1')
+    expect(result.control).toEqual(ZONE_DEFAULTS.control)
+    expect(result.attacker).toEqual(ZONE_DEFAULTS.attacker)
+  })
+
+  it('bumps OT and Control independently when both conflict', () => {
+    const result = findFreeSubnets(['10.200.10.0/24', '10.200.20.0/24'])
+    expect(result.ot.subnet).toBe('10.201.10.0/24')
+    expect(result.control.subnet).toBe('10.201.20.0/24')
+    expect(result['plant-dmz']).toEqual(ZONE_DEFAULTS['plant-dmz'])
+  })
+
+  it('skips multiple blocked candidates before finding a free slot', () => {
+    // Block 10.200 and 10.201 for OT — should land on 10.202.10.0/24
+    const result = findFreeSubnets(['10.200.10.0/24', '10.201.10.0/24'])
+    expect(result.ot.subnet).toBe('10.202.10.0/24')
+    expect(result.ot.gateway).toBe('10.202.10.1')
+  })
+
+  it('bumps all zones when a /16 covers the default second octet (10.200.0.0/16)', () => {
+    const result = findFreeSubnets(['10.200.0.0/16'])
+    for (const zone of Object.keys(ZONE_DEFAULTS) as Array<keyof typeof ZONE_DEFAULTS>) {
+      expect(result[zone].subnet).not.toBe(ZONE_DEFAULTS[zone].subnet)
+      // All should move to the first available second octet (10.201.x.0/24)
+      expect(result[zone].subnet).toMatch(/^10\.201\./)
+    }
+  })
+
+  it('falls back to ZONE_DEFAULTS when all 11 candidates are blocked (10.0.0.0/8 VPN)', () => {
+    // A /8 covers all of 10.x.x.x — no candidate in 10.200–10.210 can be used
+    const result = findFreeSubnets(['10.0.0.0/8'])
+    for (const zone of Object.keys(ZONE_DEFAULTS) as Array<keyof typeof ZONE_DEFAULTS>) {
+      expect(result[zone]).toEqual(ZONE_DEFAULTS[zone])
+    }
+  })
+
+  it('does not conflict with a completely separate RFC 1918 range (192.168.1.0/24)', () => {
+    const result = findFreeSubnets(['192.168.1.0/24'])
+    for (const zone of Object.keys(ZONE_DEFAULTS) as Array<keyof typeof ZONE_DEFAULTS>) {
+      expect(result[zone]).toEqual(ZONE_DEFAULTS[zone])
+    }
+  })
+
+  it('does not conflict with an adjacent /24 that shares the second octet but differs in the third', () => {
+    // 10.200.11.0/24 does not overlap 10.200.10.0/24
+    const result = findFreeSubnets(['10.200.11.0/24'])
+    expect(result.ot).toEqual(ZONE_DEFAULTS.ot)
+  })
+
+  it('detects containment — a /24 inside a broader CIDR counts as a conflict', () => {
+    // 10.200.0.0/16 contains 10.200.10.0/24, so OT must move
+    const broadResult = findFreeSubnets(['10.200.0.0/16'])
+    const exactResult = findFreeSubnets(['10.200.10.0/24'])
+    expect(broadResult.ot.subnet).not.toBe(ZONE_DEFAULTS.ot.subnet)
+    expect(exactResult.ot.subnet).not.toBe(ZONE_DEFAULTS.ot.subnet)
+  })
+
+  it('returns valid /24 CIDRs and .1 gateways for all results', () => {
+    const result = findFreeSubnets(['10.200.10.0/24', '10.200.20.0/24'])
+    for (const [, cfg] of Object.entries(result)) {
+      expect(cfg.subnet).toMatch(/^10\.\d+\.\d+\.0\/24$/)
+      expect(cfg.gateway).toMatch(/^10\.\d+\.\d+\.1$/)
+    }
+  })
+
+  it('handles a /0 CIDR (0.0.0.0/0 — entire address space) without throwing', () => {
+    // 0.0.0.0/0 covers every IP address — all candidates fail, falls back to defaults
+    expect(() => findFreeSubnets(['0.0.0.0/0'])).not.toThrow()
+    const result = findFreeSubnets(['0.0.0.0/0'])
+    // Falls back to ZONE_DEFAULTS (all candidates blocked)
+    for (const zone of Object.keys(ZONE_DEFAULTS) as Array<keyof typeof ZONE_DEFAULTS>) {
+      expect(result[zone]).toEqual(ZONE_DEFAULTS[zone])
+    }
+  })
+
+  it('zones at the same pool index do not conflict with each other', () => {
+    // Bump all zones by blocking the full default second octet
+    const result = findFreeSubnets(['10.200.0.0/16'])
+    const subnets = Object.values(result).map(z => z.subnet)
+    // All subnets must be unique (no two zones can land on the same /24)
+    expect(new Set(subnets).size).toBe(subnets.length)
   })
 })
 

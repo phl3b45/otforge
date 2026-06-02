@@ -580,6 +580,299 @@ describe('environment variable injection', () => {
   })
 })
 
+// ── DNS device env vars ───────────────────────────────────────────────────────
+
+describe('DNS device environment variable injection', () => {
+  it('injects DNS_DOMAIN when device.dns.domain is set', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          'dns-1',
+          {
+            category: 'dns-server',
+            ipAddress: '10.200.50.10',
+            dns: { domain: 'ics-lab.local', webServerIp: '', upstream: '8.8.8.8' }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['dns-1'].environment ?? []
+    expect(env).toContain('DNS_DOMAIN=ics-lab.local')
+  })
+
+  it('injects WEB_SERVER_IP when device.dns.webServerIp is set', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          'dns-1',
+          {
+            category: 'dns-server',
+            ipAddress: '10.200.50.10',
+            dns: { domain: 'test.com', webServerIp: '10.200.50.11', upstream: '' }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['dns-1'].environment ?? []
+    expect(env).toContain('WEB_SERVER_IP=10.200.50.11')
+  })
+
+  it('injects DNS_UPSTREAM=8.8.8.8 when upstream is "8.8.8.8"', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          'dns-1',
+          {
+            category: 'dns-server',
+            ipAddress: '10.200.50.10',
+            dns: { domain: '', webServerIp: '', upstream: '8.8.8.8' }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['dns-1'].environment ?? []
+    expect(env).toContain('DNS_UPSTREAM=8.8.8.8')
+  })
+
+  it('injects DNS_UPSTREAM= (empty) when upstream is "" — triggers air-gapped mode', () => {
+    // Empty string upstream is meaningful (air-gapped DNS — no public forwarding).
+    // The inject must use !== undefined so "" is preserved, not skipped.
+    const compose = gen(
+      makeScenario([
+        [
+          'dns-1',
+          {
+            category: 'dns-server',
+            ipAddress: '10.200.50.10',
+            dns: { domain: '', webServerIp: '', upstream: '' }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['dns-1'].environment ?? []
+    expect(env).toContain('DNS_UPSTREAM=')
+  })
+
+  it('does NOT inject DNS_UPSTREAM when upstream is undefined', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          'dns-1',
+          {
+            category: 'dns-server',
+            ipAddress: '10.200.50.10',
+            dns: { domain: '', webServerIp: '' }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['dns-1'].environment ?? []
+    expect(env.some(v => v.startsWith('DNS_UPSTREAM'))).toBe(false)
+  })
+})
+
+// ── Process unit env vars (pipeline + generator) ──────────────────────────────
+
+describe('process unit environment variable injection', () => {
+  it('injects PIPELINE_VOLUME_L and PIPELINE_PUMP_MAX_LPM for pipeline units', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          'pipe-1',
+          {
+            category: 'process-unit',
+            ipAddress: '10.200.10.20',
+            processUnit: {
+              processType: 'pipeline',
+              pipelineVolumeL: 5000,
+              pipelinePumpMaxLpm: 300
+            }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['pipe-1'].environment ?? []
+    expect(env).toContain('PROCESS_TYPE=pipeline')
+    expect(env).toContain('PIPELINE_VOLUME_L=5000')
+    expect(env).toContain('PIPELINE_PUMP_MAX_LPM=300')
+  })
+
+  it('injects GENERATOR_RATED_MW, GENERATOR_INERTIA_H, GENERATOR_FREQ_BASE for generator units', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          'gen-1',
+          {
+            category: 'process-unit',
+            ipAddress: '10.200.10.20',
+            processUnit: {
+              processType: 'generator',
+              generatorRatedMw: 100,
+              generatorInertiaH: 5,
+              generatorFreqBase: 60
+            }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['gen-1'].environment ?? []
+    expect(env).toContain('GENERATOR_RATED_MW=100')
+    expect(env).toContain('GENERATOR_INERTIA_H=5')
+    expect(env).toContain('GENERATOR_FREQ_BASE=60')
+  })
+
+  it('omits optional process unit vars when not set', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          'tank-1',
+          {
+            category: 'process-unit',
+            ipAddress: '10.200.10.20',
+            processUnit: { processType: 'water-tank' }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['tank-1'].environment ?? []
+    expect(env).toContain('PROCESS_TYPE=water-tank')
+    expect(env.some(v => v.startsWith('PIPELINE_'))).toBe(false)
+    expect(env.some(v => v.startsWith('GENERATOR_'))).toBe(false)
+  })
+})
+
+// ── S7 / IEC 104 / BACnet env vars ───────────────────────────────────────────
+
+describe('legacy protocol environment variable injection', () => {
+  it('injects S7_DEVICE_TYPE and S7_PORT for S7 devices', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          's7-1',
+          {
+            category: 'legacy-plc',
+            ipAddress: '10.200.10.10',
+            s7: { deviceType: 'S7-300', port: 102 }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['s7-1'].environment ?? []
+    expect(env).toContain('S7_DEVICE_TYPE=S7-300')
+    expect(env).toContain('S7_PORT=102')
+  })
+
+  it('injects IEC104_COMMON_ADDRESS and IEC104_PORT for IEC 104 RTU devices', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          'rtu-1',
+          {
+            category: 'iec104-rtu',
+            ipAddress: '10.200.10.10',
+            iec104: { commonAddress: 7, port: 2404 }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['rtu-1'].environment ?? []
+    expect(env).toContain('IEC104_COMMON_ADDRESS=7')
+    expect(env).toContain('IEC104_PORT=2404')
+  })
+
+  it('injects BACNET_DEVICE_INSTANCE and BACNET_PORT for BACnet devices', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          'bacnet-1',
+          {
+            category: 'sensor',
+            ipAddress: '10.200.10.10',
+            bacnet: { deviceInstance: 1001, port: 47808 }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['bacnet-1'].environment ?? []
+    expect(env).toContain('BACNET_DEVICE_INSTANCE=1001')
+    expect(env).toContain('BACNET_PORT=47808')
+  })
+
+  it('uses default BACnet port 47808 when port is not specified', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          'bacnet-1',
+          {
+            category: 'sensor',
+            ipAddress: '10.200.10.10',
+            bacnet: { deviceInstance: 42 }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['bacnet-1'].environment ?? []
+    expect(env).toContain('BACNET_PORT=47808')
+  })
+})
+
+// ── WS_PLC_WEBUIS workstation + PLC injection ─────────────────────────────────
+
+describe('WS_PLC_WEBUIS injection', () => {
+  it('injects WS_PLC_WEBUIS into workstation env when a PLC is in the scenario', () => {
+    const compose = gen(
+      makeScenario([
+        ['ws-1', { category: 'engineering-workstation', ipAddress: '10.200.20.50' }],
+        ['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]
+      ])
+    )
+    const env = compose.services['ws-1'].environment ?? []
+    const entry = env.find(v => v.startsWith('WS_PLC_WEBUIS='))
+    expect(entry).toBeDefined()
+    expect(entry).toContain('plc-1|http://10.200.10.10:8080')
+  })
+
+  it('includes all PLCs in WS_PLC_WEBUIS when multiple PLCs are present', () => {
+    const compose = gen(
+      makeScenario([
+        ['ws-1', { category: 'engineering-workstation', ipAddress: '10.200.20.50' }],
+        ['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }],
+        ['plc-2', { category: 'plc', ipAddress: '10.200.10.11' }]
+      ])
+    )
+    const env = compose.services['ws-1'].environment ?? []
+    const entry = env.find(v => v.startsWith('WS_PLC_WEBUIS='))
+    expect(entry).toBeDefined()
+    expect(entry).toContain('plc-1|http://10.200.10.10:8080')
+    expect(entry).toContain('plc-2|http://10.200.10.11:8080')
+  })
+
+  it('does NOT inject WS_PLC_WEBUIS when no PLCs are in the scenario', () => {
+    const compose = gen(
+      makeScenario([
+        ['ws-1', { category: 'engineering-workstation', ipAddress: '10.200.20.50' }],
+        ['rtu-1', { category: 'rtu', ipAddress: '10.200.10.10' }]
+      ])
+    )
+    const env = compose.services['ws-1'].environment ?? []
+    expect(env.some(v => v.startsWith('WS_PLC_WEBUIS='))).toBe(false)
+  })
+
+  it('injects WS_PLC_WEBUIS into all workstations when multiple are present', () => {
+    const compose = gen(
+      makeScenario([
+        ['ws-1', { category: 'engineering-workstation', ipAddress: '10.200.20.50' }],
+        ['ws-2', { category: 'engineering-workstation', ipAddress: '10.200.20.51' }],
+        ['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]
+      ])
+    )
+    for (const wsKey of ['ws-1', 'ws-2']) {
+      const env = compose.services[wsKey].environment ?? []
+      expect(env.some(v => v.startsWith('WS_PLC_WEBUIS='))).toBe(true)
+    }
+  })
+})
+
 // ── Fixed infrastructure services ─────────────────────────────────────────────
 
 describe('fixed infrastructure services', () => {
