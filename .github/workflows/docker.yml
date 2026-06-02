@@ -107,6 +107,49 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
+# ── Container image CVE scan ─────────────────────────────────────────────────
+# Scans the four security-sensitive custom images after they are built and
+# pushed.  --ignore-unfixed suppresses CVEs that have no patch available in
+# the upstream package repos (e.g. zero-day disclosures and CVEs under active
+# embargo), so CI only fails when a fix EXISTS and we have not applied it.
+# This prevents the Zeek base-image's unfixable CVEs from blocking every push
+# while still catching regressions where a newly patched package goes unupgraded.
+
+  scan-images:
+    name: Trivy — scan ${{ matrix.image }}
+    needs: build-images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: otforge-suricata
+          - image: otforge-zeek
+          - image: otforge-workstation
+          - image: otforge-firewall
+
+    steps:
+      - name: Log in to GHCR (read-only pull)
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trivy — scan ${{ matrix.image }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ env.OWNER }}/${{ matrix.image }}:latest
+          scan-type: image
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
 # ── OpenPLC — longer timeout, separate job ────────────────────────────────────
 # Building OpenPLC Runtime from source takes ~20 minutes.
 
