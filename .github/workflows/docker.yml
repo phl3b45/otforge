@@ -140,6 +140,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: actions/checkout@v4
+
       - name: Trivy — scan ${{ matrix.image }}
         uses: aquasecurity/trivy-action@master
         with:
@@ -147,6 +149,7 @@ jobs:
           scan-type: image
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          trivyignores: .trivyignore
           exit-code: '1'
           format: table
 

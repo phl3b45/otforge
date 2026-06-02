@@ -125,6 +125,7 @@ jobs:
           severity: CRITICAL,HIGH
           scanners: vuln,secret
           ignore-unfixed: true
+          trivyignores: .trivyignore
           format: table
         continue-on-error: true   # informational — findings print to log, job continues
 

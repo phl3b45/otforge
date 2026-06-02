@@ -1,0 +1,14 @@
+# Trivy false-positive suppressions for OTForge container images.
+#
+# Firefox CVEs — fixed in Firefox 97 (February 2022).
+# The workstation image installs Firefox from Mozilla's official apt repository
+# (packages.mozilla.org) which provides version 151+. However, Mozilla's package
+# version string (151.0.2~build1) lacks a Debian epoch prefix while Ubuntu's snap
+# stub uses epoch 1 (1:1snap1-0ubuntu1). Because Debian epoch comparison treats
+# any "1:x" as newer than any "x" without an epoch, Trivy incorrectly concludes
+# the fix is not applied — even though Firefox 151 >> Firefox 97 (the fix version).
+# All four CVEs were resolved in Firefox 97.0.2 (March 2022).
+CVE-2022-25235
+CVE-2022-25236
+CVE-2022-26485
+CVE-2022-26486
