@@ -752,13 +752,13 @@ describe('legacy protocol environment variable injection', () => {
           {
             category: 'legacy-plc',
             ipAddress: '10.200.10.10',
-            s7: { deviceType: 'S7-300', port: 102 }
+            s7: { deviceType: '300', rack: 0, slot: 2, port: 102 }
           }
         ]
       ])
     )
     const env = compose.services['s7-1'].environment ?? []
-    expect(env).toContain('S7_DEVICE_TYPE=S7-300')
+    expect(env).toContain('S7_DEVICE_TYPE=300')
     expect(env).toContain('S7_PORT=102')
   })
 
