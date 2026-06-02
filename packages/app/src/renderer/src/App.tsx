@@ -1574,13 +1574,12 @@ export default function App() {
            *   Author Mode  — builderModeActive = true; instructor can drag/drop/edit
            *   Student Mode — builderModeActive = false; default after any file import
            *
-           * For unlocked scenarios (meta.locked = false) the badge is a clickable
-           * button that toggles builderModeActive so students can switch between
-           * modes during a tutorial. For fully-locked scenarios it is a static <div>.
+           * Only scenarios with meta.allowModeToggle = true (e.g. the Navigation
+           * Tutorial) get a clickable toggle. All attack labs and regular Student
+           * Copies show a static badge so students cannot accidentally enter edit
+           * mode mid-lab. Fully-locked scenarios always show Student Mode.
            */}
-          {scenario.meta.locked ? (
-            <div className="mode-badge mode-badge-student">🔒 Student Mode</div>
-          ) : (
+          {scenario.meta.allowModeToggle && !scenario.meta.locked ? (
             <button
               className={`mode-badge mode-badge-toggle ${builderModeActive ? 'mode-badge-author' : 'mode-badge-student'}`}
               onClick={() => setBuilderModeActive(prev => !prev)}
@@ -1592,6 +1591,12 @@ export default function App() {
             >
               {builderModeActive ? '✎ Author Mode' : '🔒 Student Mode'}
             </button>
+          ) : (
+            <div
+              className={`mode-badge ${builderModeActive ? 'mode-badge-author' : 'mode-badge-student'}`}
+            >
+              {builderModeActive ? '✎ Author Mode' : '🔒 Student Mode'}
+            </div>
           )}
         </div>
       )}

@@ -234,6 +234,16 @@ export class DockerClient {
     const composeFile = join(this.workDir, projectName, 'docker-compose.yml')
     try {
       await run(`docker compose -p ${projectName} -f "${composeFile}" down --volumes`)
+      // Remove dangling images (<none>:<none>) left by --pull always on each start.
+      // When Docker pulls a newer digest for a tagged image it untags the old one,
+      // producing a dangling layer that consumes real disk space but is unreachable
+      // by name. Best-effort — if prune fails (e.g. another compose is running) the
+      // simulation stop itself still succeeds.
+      try {
+        await run('docker image prune -f')
+      } catch {
+        /* best-effort */
+      }
       return { ok: true }
     } catch (err) {
       return { ok: false, error: (err as Error).message }

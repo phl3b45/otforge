@@ -507,6 +507,15 @@ export interface OTForgeMeta {
   updatedAt: string
   appVersion: string // minimum OTForge version required
   locked: boolean
+  /**
+   * When true, the mode badge in the toolbar is a clickable toggle that lets
+   * the student switch between Student Mode and Author Mode. Only set on
+   * scenarios specifically designed to teach the OTForge interface (e.g. the
+   * Navigation Tutorial). All attack labs and regular Student Copy scenarios
+   * leave this unset (defaults to false) so the Student Mode badge is always
+   * static — students cannot accidentally enter edit mode mid-lab.
+   */
+  allowModeToggle?: boolean
   brief: string // Markdown — mission objectives shown in Student mode
   requirements: ResourceEstimate
   /**

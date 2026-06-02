@@ -9,6 +9,7 @@
     "updatedAt": "2026-05-31T00:00:00.000Z",
     "appVersion": "0.14.0",
     "locked": false,
+    "allowModeToggle": true,
     "brief": "## Learning to Navigate OTForge\n\nThis scenario starts with a single PLC and process unit already placed on the OT canvas. Follow the tutorial steps to explore every layer and feature of OTForge — adding devices across all five Purdue Reference Model zones, connecting them with industry-accurate ICS protocols, configuring firewall segmentation, and starting your first simulation.\n\n**By the end of this tutorial you will have:**\n- Navigated all five Purdue model layers (OT, Control, Plant DMZ, Enterprise, Internet DMZ)\n- Placed every major device category including Safety PLC, DCS Controller, VFD, IIoT Sensor, IoT Gateway, SCADA Server, Jump Server, and Data Diode\n- Drawn protocol connections (Modbus TCP/RTU, OPC-UA, MQTT, DNP3) with physical cable types (RS-485, Wi-Fi, Cat6, Fiber)\n- Experienced the protocol-cable enforcement system — OTForge rejects physically impossible connections\n- Configured a real nftables firewall with zone-based rules\n- Launched a simulation and explored the Monitor panel (Suricata + Zeek + Grafana)\n\n**Tip:** Save your work frequently using **Export → Author Copy** in the toolbar.",
     "requirements": {
       "estimatedRamMb": 2048,
