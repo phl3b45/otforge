@@ -80,7 +80,7 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   // STUB: IoT gateway — MQTT broker/bridge stub until otforge-iot-gateway is built.
   'iot-gateway': 'alpine:latest',
   // ── Control Center (Level 3) ────────────────────────────────────────────────
-  hmi: 'frangoteam/fuxa:latest',
+  hmi: 'ghcr.io/iburres/fuxa:latest',
   // OPC UA 1.04 server — asyncua Python server on Alpine (containers/opcua)
   'scada-server': 'ghcr.io/iburres/otforge-opcua:latest',
   historian: 'influxdb:1.8-alpine',
@@ -925,7 +925,7 @@ export function generateCompose(
   // Auth is disabled so protocol containers can write without credentials.
   volumes[`${projectName}-influxdb-data`] = {}
   services['influxdb'] = {
-    image: 'influxdb:1.8-alpine',
+    image: 'ghcr.io/iburres/influxdb:1.8-alpine',
     pull_policy: 'if_not_present',
     container_name: `${projectName}-influxdb`,
     restart: 'unless-stopped',
@@ -959,7 +959,7 @@ export function generateCompose(
   // Loki HTTP API directly for the native live-log panel (Phase 6).
   volumes[`${projectName}-loki-data`] = {}
   services['loki'] = {
-    image: 'grafana/loki:latest',
+    image: 'ghcr.io/iburres/loki:latest',
     pull_policy: 'if_not_present',
     container_name: `${projectName}-loki`,
     restart: 'unless-stopped',
@@ -1031,7 +1031,7 @@ export function generateCompose(
   }
 
   services['grafana'] = {
-    image: 'grafana/grafana:latest',
+    image: 'ghcr.io/iburres/grafana:latest',
     pull_policy: 'if_not_present',
     container_name: `${projectName}-grafana`,
     restart: 'unless-stopped',
@@ -1071,7 +1071,7 @@ export function generateCompose(
   if (scenarioDir) {
     const promtailConfigPath = `${scenarioDir}/promtail/config.yaml`.replace(/\\/g, '/')
     services['promtail'] = {
-      image: 'grafana/promtail:latest',
+      image: 'ghcr.io/iburres/promtail:latest',
       pull_policy: 'if_not_present',
       container_name: `${projectName}-promtail`,
       restart: 'unless-stopped',
@@ -1106,7 +1106,7 @@ export function generateCompose(
   // in a standalone BrowserWindow via the hmi:open IPC channel.
   volumes[`${projectName}-fuxa-data`] = {}
   services['fuxa'] = {
-    image: 'frangoteam/fuxa:latest',
+    image: 'ghcr.io/iburres/fuxa:latest',
     pull_policy: 'if_not_present',
     container_name: `${projectName}-fuxa`,
     restart: 'unless-stopped',
@@ -1123,7 +1123,7 @@ export function generateCompose(
     cap_add: undefined,
     volumes: [`${projectName}-fuxa-data:/usr/src/app/FUXA/server/_appdata`],
     // Healthcheck: FUXA's Node.js HTTP server responds once the process graphics engine
-    // is ready. wget is used since curl is not in the frangoteam/fuxa image.
+    // is ready. wget is used since curl is not in the fuxa image.
     healthcheck: {
       test: ['CMD-SHELL', 'wget --quiet --tries=1 --spider http://localhost:1881 || exit 1'],
       interval: '5s',
