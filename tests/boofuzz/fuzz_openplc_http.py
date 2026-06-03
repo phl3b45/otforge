@@ -18,7 +18,7 @@ Results are written to ./boofuzz-results/http/ and printed to stdout.
 import os
 import requests
 from boofuzz import Session, Target, TCPSocketConnection
-from boofuzz import s_initialize, s_block, s_byte, s_word, s_string, s_static, s_delim
+from boofuzz import s_initialize, s_block, s_byte, s_word, s_string, s_static, s_delim, s_get
 
 TARGET_IP   = os.environ.get("PLC_IP", "10.200.10.10")
 TARGET_PORT = 8080

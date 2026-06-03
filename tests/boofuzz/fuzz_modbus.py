@@ -19,7 +19,7 @@ Watch Suricata/Zeek logs during fuzzing for unexpected alerts.
 
 import os
 from boofuzz import Session, Target, TCPSocketConnection
-from boofuzz import s_initialize, s_block, s_byte, s_word, s_dword, s_string, s_static
+from boofuzz import s_initialize, s_block, s_byte, s_word, s_dword, s_string, s_static, s_get
 
 TARGET_IP   = os.environ.get("PLC_IP",   "10.200.10.10")
 TARGET_PORT = int(os.environ.get("PLC_PORT", "502"))

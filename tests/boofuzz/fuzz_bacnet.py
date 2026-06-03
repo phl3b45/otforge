@@ -24,7 +24,7 @@ BACnet/IP frame layout:
 import os
 import sys
 from boofuzz import Session, Target, UDPSocketConnection
-from boofuzz import s_initialize, s_block, s_byte, s_word, s_string, s_static
+from boofuzz import s_initialize, s_block, s_byte, s_word, s_string, s_static, s_get
 
 
 SENSOR_IP   = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("SENSOR_IP", "10.200.10.20")
