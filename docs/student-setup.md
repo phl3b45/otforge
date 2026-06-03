@@ -547,19 +547,24 @@ npm run dev
 
 Your instructor may push updates to the repository during the semester. To get the latest version:
 
-```bash
+```powershell
 # Windows (PowerShell in C:\OTForge)
 git pull
-npm ci
+npm install
 npm run build:packages
+```
 
+```bash
 # macOS (Terminal in ~/OTForge)
 git pull
-npm ci
+npm install
 npm run build:packages
 ```
 
 Then relaunch with `npm run dev`.
+
+> **Why `npm install` and not `npm ci`?**
+> `npm ci` does a full clean reinstall every time — it deletes `node_modules` and re-downloads everything, including the 90 MB Electron binary, even when the Electron version has not changed. `npm install` is incremental: it only downloads packages that actually changed since your last update. For ongoing updates this is much faster and avoids the Electron download errors students sometimes see on campus networks.
 
 ---
 
@@ -614,7 +619,7 @@ Remove-NetFirewallRule -DisplayName "OTForge — Block inbound lab ports"
 | Navigate to OTForge | `cd C:\OTForge` | `cd ~/OTForge` |
 | Start OTForge | `npm run dev` | `npm run dev` |
 | Scenarios folder | `C:\OTForge\scenarios\` | `~/OTForge/scenarios/` |
-| Update OTForge | `git pull && npm ci && npm run build:packages` | `git pull && npm ci && npm run build:packages` |
+| Update OTForge | `git pull && npm install && npm run build:packages` | `git pull && npm install && npm run build:packages` |
 
 ---
 
