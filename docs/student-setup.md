@@ -368,6 +368,90 @@ npm run dev
 
 If you get a permission error on `Remove-Item`, right-click PowerShell and choose **Run as Administrator**, run `Remove-Item -Recurse -Force node_modules`, then close that window and repeat `npm ci` and `npm run dev` in a regular (non-admin) PowerShell.
 
+### `Path.txt` missing in `node_modules\electron\` (Windows)
+
+OTForge launches Electron by reading `node_modules\electron\Path.txt` to locate the binary. If that file is missing, `npm run dev` will fail with a message like `Electron failed to install correctly` or `Cannot find module`.
+
+This happens when Electron's post-install download script runs but fails silently — usually caused by Windows Defender, a corporate firewall, or a flaky network connection interrupting the download.
+
+**Step 1 — Re-run the Electron installer script directly:**
+```powershell
+cd C:\OTForge
+node node_modules\electron\install.js
+```
+Wait for it to finish (it downloads the Electron binary — about 90 MB). Then check that `Path.txt` now exists:
+```powershell
+Test-Path node_modules\electron\Path.txt
+```
+If it prints `True`, run `npm run dev` and you are done.
+
+**Step 2 — If Step 1 fails, delete and re-download just the Electron package:**
+```powershell
+cd C:\OTForge
+Remove-Item -Recurse -Force node_modules\electron
+npm install
+```
+This reinstalls only the Electron package and re-runs its download script. If Windows Defender blocks the download, you may see a prompt — allow it.
+
+**Step 3 — If Steps 1 and 2 both fail, set an alternate download mirror and retry:**
+
+Some campus networks block GitHub releases (where Electron binaries are hosted by default). Setting a mirror tells npm to fetch from a different server:
+```powershell
+cd C:\OTForge
+$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
+Remove-Item -Recurse -Force node_modules\electron
+npm install
+```
+Once `Path.txt` appears, clear the variable and verify OTForge starts:
+```powershell
+Remove-Item Env:\ELECTRON_MIRROR
+npm run dev
+```
+
+---
+
+### `node_modules` folder does not exist after running `npm ci`
+
+If the entire `node_modules` folder is missing after `npm ci` completes (or `npm ci` exits with an error mid-way), the most common cause is Electron's binary download failing — Electron is a large download (~90 MB) and is the last major step of the install. A network timeout, antivirus block, or proxy interruption can abort the install and leave `node_modules` in a partial or missing state.
+
+**Step 1 — Clear the npm cache and retry:**
+```powershell
+cd C:\OTForge
+npm cache clean --force
+npm ci
+```
+The cache clean removes any corrupted partial downloads that would cause the same failure on the next attempt.
+
+**Step 2 — If `npm ci` fails again, increase the network timeout:**
+
+Default npm network timeout is 30 seconds — too short on slow or congested campus Wi-Fi:
+```powershell
+cd C:\OTForge
+npm ci --fetch-timeout=300000
+```
+This gives npm 5 minutes per request instead of 30 seconds.
+
+**Step 3 — If Electron specifically is still failing, set an alternate mirror:**
+```powershell
+cd C:\OTForge
+$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
+npm ci
+```
+Then clear the variable once the install succeeds:
+```powershell
+Remove-Item Env:\ELECTRON_MIRROR
+```
+
+**Step 4 — Verify the install completed correctly:**
+```powershell
+Test-Path node_modules\electron\Path.txt
+```
+If this prints `True`, the install is good. Run `npm run build:packages` and then `npm run dev`.
+
+> **Note:** Always run `npm ci` in a **regular** (non-Administrator) PowerShell window. Running as Administrator can cause file permission issues that prevent the install from completing correctly.
+
+---
+
 ### `npm run dev` opens no window
 
 Check that `npm run build:packages` completed without errors first. If it did, try closing and reopening your terminal, then run `npm run dev` again.
