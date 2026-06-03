@@ -489,6 +489,34 @@ Check that `npm run build:packages` completed without errors first. If it did, t
 
 Confirm you have an internet connection and that Docker Desktop is signed in (or that your network does not block `ghcr.io`). On campus networks, check with IT if container registry traffic is blocked.
 
+### "EOF" error while importing containers (simulation hangs on startup)
+
+You may see an error like:
+```
+failed to copy: httpReadSeeker: failed open: failed to do request:
+Get "https://production.cloudfront.docker.com/...": EOF
+```
+
+This means the connection to Docker's CDN was dropped mid-download — the image layer was interrupted before it finished. It is a network issue, not a problem with OTForge or your installation.
+
+**Step 1 — Simply retry.** Click **Stop Simulation** in OTForge (or close and reopen the app if it is stuck), then click **Run Simulation** again. Docker resumes interrupted downloads and usually succeeds on the second or third attempt.
+
+**Step 2 — Sign in to Docker Hub if you have not already.** Unauthenticated pulls have lower rate limits and are more likely to be dropped by Docker's CDN. Open PowerShell and run:
+```powershell
+docker login
+```
+Enter your Docker Hub username and password (free account at hub.docker.com). Then retry the simulation.
+
+**Step 3 — If it keeps failing on your network,** the issue is likely a campus firewall or VPN dropping large HTTPS downloads. Try:
+- Switching to a different Wi-Fi network (personal hotspot works well)
+- Disconnecting from any VPN before starting the simulation
+- Pulling the images manually one at a time so Docker can retry each layer:
+```powershell
+docker pull ghcr.io/iburres/otforge-suricata:latest
+docker pull ghcr.io/iburres/otforge-zeek:latest
+```
+Once the images are cached locally, OTForge's startup will be fast and will not need to re-download them.
+
 ### "Virtualization not supported" on Windows
 
 You need to enable virtualization in your computer's BIOS/UEFI firmware. The exact steps vary by manufacturer — search for your laptop model + "enable virtualization BIOS". Contact your instructor if you need help.
