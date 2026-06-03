@@ -408,6 +408,35 @@ Remove-Item Env:\ELECTRON_MIRROR
 npm run dev
 ```
 
+**Step 4 — Last resort: manually place the Electron binary (only if Steps 1–3 all failed)**
+
+If every automated approach has failed, you can download the Electron binary directly in your browser and install it by hand.
+
+1. Download this file in your browser and save it to your **Downloads** folder:
+   `https://github.com/electron/electron/releases/download/v42.0.1/electron-v42.0.1-win32-x64.zip`
+
+2. Right-click the zip → **Extract All** → extract to your Downloads folder.
+
+3. Open PowerShell (regular, not Administrator) and run these three commands in order:
+```powershell
+Copy-Item -Recurse "$env:USERPROFILE\Downloads\electron-v42.0.1-win32-x64\dist" `
+    "C:\OTForge\node_modules\electron\dist" -Force
+"electron.exe" | Out-File -FilePath "C:\OTForge\node_modules\electron\path.txt" `
+    -Encoding ascii -NoNewline
+```
+
+4. Verify it worked:
+```powershell
+cd C:\OTForge
+.\node_modules\.bin\electron --version
+```
+You should see `v42.0.1`.
+
+5. Run OTForge:
+```powershell
+npm run dev
+```
+
 ---
 
 ### `node_modules` folder does not exist after running `npm ci`
