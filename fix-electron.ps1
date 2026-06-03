@@ -18,32 +18,32 @@ $tempZip       = Join-Path $env:TEMP     "otforge-electron.zip"
 $tempExtract   = Join-Path $env:TEMP     "otforge-electron-extract"
 
 Write-Host ""
-Write-Host "OTForge — Electron repair script" -ForegroundColor Cyan
+Write-Host "OTForge - Electron repair script" -ForegroundColor Cyan
 Write-Host "=================================" -ForegroundColor Cyan
 Write-Host ""
 
-# ── Step 1: ensure path.txt is correct ────────────────────────────────────────
+# Step 1: ensure path.txt is correct
 Write-Host "Step 1  Checking path.txt..." -ForegroundColor Yellow
 
 if (-not (Test-Path $pathTxt)) {
-    Write-Host "        path.txt missing — creating it." -ForegroundColor Gray
+    Write-Host "        path.txt missing - creating it." -ForegroundColor Gray
     [System.IO.File]::WriteAllText($pathTxt, "electron.exe")
 } else {
     # ReadAllText + exact compare (no Trim) so CRLF trailing bytes are caught
     $content = [System.IO.File]::ReadAllText($pathTxt)
     if ($content -ne "electron.exe") {
-        Write-Host "        path.txt has wrong content — fixing." -ForegroundColor Gray
+        Write-Host "        path.txt has wrong content - fixing." -ForegroundColor Gray
         [System.IO.File]::WriteAllText($pathTxt, "electron.exe")
     } else {
         Write-Host "        path.txt OK." -ForegroundColor Green
     }
 }
 
-# ── Step 2: check if the binary already exists ────────────────────────────────
+# Step 2: check if the binary already exists
 Write-Host "Step 2  Checking for electron.exe in dist\..." -ForegroundColor Yellow
 
 if (Test-Path $electronExe) {
-    Write-Host "        electron.exe found — testing version..." -ForegroundColor Gray
+    Write-Host "        electron.exe found - testing version..." -ForegroundColor Gray
     $ver = & $electronExe --version 2>&1
     if ($ver -match $version) {
         Write-Host "        Electron v$version is installed correctly." -ForegroundColor Green
@@ -54,10 +54,10 @@ if (Test-Path $electronExe) {
         Write-Host "        Version mismatch ($ver). Re-installing." -ForegroundColor DarkYellow
     }
 } else {
-    Write-Host "        electron.exe not found — will download." -ForegroundColor DarkYellow
+    Write-Host "        electron.exe not found - will download." -ForegroundColor DarkYellow
 }
 
-# ── Step 3: try install.js (uses npm's cached download if available) ──────────
+# Step 3: try install.js (uses npm's cached download if available)
 Write-Host "Step 3  Trying install.js (uses local cache if available)..." -ForegroundColor Yellow
 
 $installJs = Join-Path $electronDir "install.js"
@@ -65,7 +65,7 @@ if (Test-Path $installJs) {
     try {
         & node $installJs
         if (Test-Path $electronExe) {
-            # install.js on Windows writes path.txt with CRLF — overwrite with clean copy
+            # install.js on Windows writes path.txt with CRLF - overwrite with clean copy
             [System.IO.File]::WriteAllText($pathTxt, "electron.exe")
             Write-Host "        install.js succeeded." -ForegroundColor Green
             Write-Host ""
@@ -73,22 +73,22 @@ if (Test-Path $installJs) {
             exit 0
         }
     } catch {
-        Write-Host "        install.js failed — falling back to manual download." -ForegroundColor DarkYellow
+        Write-Host "        install.js failed - falling back to manual download." -ForegroundColor DarkYellow
     }
 } else {
-    Write-Host "        install.js not found — skipping." -ForegroundColor Gray
+    Write-Host "        install.js not found - skipping." -ForegroundColor Gray
 }
 
-# ── Step 4: manual download and extract ───────────────────────────────────────
+# Step 4: manual download and extract
 Write-Host "Step 4  Downloading Electron v$version from GitHub..." -ForegroundColor Yellow
-Write-Host "        This is ~90 MB — please wait." -ForegroundColor Gray
+Write-Host "        This is ~90 MB - please wait." -ForegroundColor Gray
 
 try {
     Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip -UseBasicParsing
 } catch {
     Write-Host ""
     Write-Host "ERROR: Download failed. Check your internet connection and try again." -ForegroundColor Red
-    Write-Host "       If your campus network blocks GitHub, connect to a personal hotspot and re-run this script." -ForegroundColor Red
+    Write-Host "       If your campus network blocks GitHub, connect to a hotspot and re-run this script." -ForegroundColor Red
     exit 1
 }
 
@@ -105,13 +105,13 @@ if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | O
 # with no dist\ subfolder inside the zip. Copy everything into our dist\ folder.
 Copy-Item -Recurse "$tempExtract\*" "$distDir\" -Force
 
-# Write clean path.txt after manual extract — no CRLF
+# Write clean path.txt after manual extract - no CRLF
 [System.IO.File]::WriteAllText($pathTxt, "electron.exe")
 
 Write-Host "        Cleaning up temp files..." -ForegroundColor Gray
 Remove-Item -Recurse -Force $tempExtract, $tempZip
 
-# ── Step 5: verify ────────────────────────────────────────────────────────────
+# Step 5: verify
 Write-Host "Step 5  Verifying installation..." -ForegroundColor Yellow
 
 if (-not (Test-Path $electronExe)) {
@@ -125,7 +125,7 @@ $ver = & $electronExe --version 2>&1
 if ($ver -match $version) {
     Write-Host "        Electron $ver installed successfully." -ForegroundColor Green
 } else {
-    Write-Host "WARNING: Unexpected version '$ver' — expected v$version." -ForegroundColor DarkYellow
+    Write-Host "WARNING: Unexpected version '$ver' - expected v$version." -ForegroundColor DarkYellow
 }
 
 Write-Host ""
