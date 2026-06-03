@@ -27,12 +27,13 @@ Write-Host "Step 1  Checking path.txt..." -ForegroundColor Yellow
 
 if (-not (Test-Path $pathTxt)) {
     Write-Host "        path.txt missing — creating it." -ForegroundColor Gray
-    "electron.exe" | Out-File -FilePath $pathTxt -Encoding ascii -NoNewline
+    [System.IO.File]::WriteAllText($pathTxt, "electron.exe")
 } else {
-    $content = (Get-Content $pathTxt -Raw).Trim()
+    # ReadAllText + exact compare (no Trim) so CRLF trailing bytes are caught
+    $content = [System.IO.File]::ReadAllText($pathTxt)
     if ($content -ne "electron.exe") {
-        Write-Host "        path.txt has wrong content ('$content') — fixing." -ForegroundColor Gray
-        "electron.exe" | Out-File -FilePath $pathTxt -Encoding ascii -NoNewline
+        Write-Host "        path.txt has wrong content — fixing." -ForegroundColor Gray
+        [System.IO.File]::WriteAllText($pathTxt, "electron.exe")
     } else {
         Write-Host "        path.txt OK." -ForegroundColor Green
     }
@@ -64,6 +65,8 @@ if (Test-Path $installJs) {
     try {
         & node $installJs
         if (Test-Path $electronExe) {
+            # install.js on Windows writes path.txt with CRLF — overwrite with clean copy
+            [System.IO.File]::WriteAllText($pathTxt, "electron.exe")
             Write-Host "        install.js succeeded." -ForegroundColor Green
             Write-Host ""
             Write-Host "All good. Run: npm run dev" -ForegroundColor Cyan
@@ -101,6 +104,9 @@ if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | O
 # The Electron zip extracts files flat (electron.exe, resources.pak, locales\, etc.)
 # with no dist\ subfolder inside the zip. Copy everything into our dist\ folder.
 Copy-Item -Recurse "$tempExtract\*" "$distDir\" -Force
+
+# Write clean path.txt after manual extract — no CRLF
+[System.IO.File]::WriteAllText($pathTxt, "electron.exe")
 
 Write-Host "        Cleaning up temp files..." -ForegroundColor Gray
 Remove-Item -Recurse -Force $tempExtract, $tempZip
