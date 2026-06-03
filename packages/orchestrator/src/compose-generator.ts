@@ -195,6 +195,12 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
 /** Shape of a single service entry in the generated compose file. */
 interface ComposeService {
   image: string
+  /**
+   * Controls when Docker pulls the image. 'if_not_present' skips the registry
+   * check when the image is already cached locally — critical for students on
+   * metered or slow connections, and prevents Docker Hub rate-limit failures.
+   */
+  pull_policy?: string
   container_name: string
   restart: string
   /**
@@ -511,6 +517,7 @@ export function generateCompose(
 
     services[serviceName] = {
       image,
+      pull_policy: 'if_not_present',
       container_name: `${projectName}-${serviceName}`,
       restart: 'unless-stopped',
       networks: { [netName]: { ipv4_address: effectiveIp } },
@@ -854,6 +861,7 @@ export function generateCompose(
   volumes[`${projectName}-suricata-logs`] = {}
   services['suricata'] = {
     image: 'ghcr.io/iburres/otforge-suricata:latest',
+    pull_policy: 'if_not_present',
     container_name: `${projectName}-suricata`,
     restart: 'unless-stopped',
     // Host network mode: Suricata joins the Docker host's network namespace so it
@@ -893,6 +901,7 @@ export function generateCompose(
   volumes[`${projectName}-zeek-logs`] = {}
   services['zeek'] = {
     image: 'ghcr.io/iburres/otforge-zeek:latest',
+    pull_policy: 'if_not_present',
     container_name: `${projectName}-zeek`,
     restart: 'unless-stopped',
     networks: {
@@ -917,6 +926,7 @@ export function generateCompose(
   volumes[`${projectName}-influxdb-data`] = {}
   services['influxdb'] = {
     image: 'influxdb:1.8-alpine',
+    pull_policy: 'if_not_present',
     container_name: `${projectName}-influxdb`,
     restart: 'unless-stopped',
     // .240–.249 reserved for infrastructure/system services; user devices start at .10
@@ -950,6 +960,7 @@ export function generateCompose(
   volumes[`${projectName}-loki-data`] = {}
   services['loki'] = {
     image: 'grafana/loki:latest',
+    pull_policy: 'if_not_present',
     container_name: `${projectName}-loki`,
     restart: 'unless-stopped',
     networks: {
@@ -1021,6 +1032,7 @@ export function generateCompose(
 
   services['grafana'] = {
     image: 'grafana/grafana:latest',
+    pull_policy: 'if_not_present',
     container_name: `${projectName}-grafana`,
     restart: 'unless-stopped',
     networks: {
@@ -1060,6 +1072,7 @@ export function generateCompose(
     const promtailConfigPath = `${scenarioDir}/promtail/config.yaml`.replace(/\\/g, '/')
     services['promtail'] = {
       image: 'grafana/promtail:latest',
+      pull_policy: 'if_not_present',
       container_name: `${projectName}-promtail`,
       restart: 'unless-stopped',
       networks: { 'control-net': { ipv4_address: `${controlBase}.244` } },
@@ -1094,6 +1107,7 @@ export function generateCompose(
   volumes[`${projectName}-fuxa-data`] = {}
   services['fuxa'] = {
     image: 'frangoteam/fuxa:latest',
+    pull_policy: 'if_not_present',
     container_name: `${projectName}-fuxa`,
     restart: 'unless-stopped',
     networks: {
