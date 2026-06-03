@@ -417,13 +417,12 @@ If every automated approach has failed, you can download the Electron binary dir
 
 2. Right-click the zip → **Extract All** → extract to your Downloads folder.
 
-3. Open PowerShell (regular, not Administrator) and run these three commands in order:
+3. Open PowerShell (regular, not Administrator) and copy the `dist` folder into place:
 ```powershell
 Copy-Item -Recurse "$env:USERPROFILE\Downloads\electron-v42.0.1-win32-x64\dist" `
     "C:\OTForge\node_modules\electron\dist" -Force
-"electron.exe" | Out-File -FilePath "C:\OTForge\node_modules\electron\path.txt" `
-    -Encoding ascii -NoNewline
 ```
+> **Note:** `path.txt` should already exist and contain `electron.exe` — do **not** change it. The Electron module automatically prepends `dist\` when looking for the binary, so `electron.exe` in `path.txt` is correct.
 
 4. Verify it worked:
 ```powershell
