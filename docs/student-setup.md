@@ -417,19 +417,29 @@ If every automated approach has failed, you can download the Electron binary dir
 
 2. Right-click the zip → **Extract All** → extract to your Downloads folder.
 
-3. Open PowerShell (regular, not Administrator) and copy the `dist` folder into place:
+3. Open PowerShell (**regular window — do NOT run as Administrator**) and run each command one at a time:
+
+   First, confirm the extraction worked:
 ```powershell
-Copy-Item -Recurse "$env:USERPROFILE\Downloads\electron-v42.0.1-win32-x64\dist" `
-    "C:\OTForge\node_modules\electron\dist" -Force
+Test-Path "$env:USERPROFILE\Downloads\electron-v42.0.1-win32-x64\electron.exe"
 ```
-> **Note:** `path.txt` should already exist and contain `electron.exe` — do **not** change it. The Electron module automatically prepends `dist\` when looking for the binary, so `electron.exe` in `path.txt` is correct.
+   This should print `True`. If it prints `False`, the zip did not extract correctly — try again.
+
+   Copy all the Electron files into the `dist` folder:
+```powershell
+Copy-Item -Recurse "$env:USERPROFILE\Downloads\electron-v42.0.1-win32-x64\*" "C:\OTForge\node_modules\electron\dist\" -Force
+```
+
+> **Important:** The Electron zip extracts files directly into the folder — there is no `dist` subfolder inside the zip. The files (`electron.exe`, `resources.pak`, `locales\`, etc.) go directly into `node_modules\electron\dist\`.
+
+> **Note:** `path.txt` should already exist and contain `electron.exe` — do **not** change it.
 
 4. Verify it worked:
 ```powershell
 cd C:\OTForge
 .\node_modules\.bin\electron --version
 ```
-You should see `v42.0.1`.
+   You should see `v42.0.1` with no download message.
 
 5. Run OTForge:
 ```powershell
