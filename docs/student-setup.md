@@ -349,24 +349,17 @@ npm ci
 
 ### `npm run dev` fails with "Error: Electron uninstall"
 
-The Electron binary did not download correctly during `npm ci` — Windows Defender and some campus antivirus tools sometimes block or interrupt the download.
+The Electron binary did not download correctly. OTForge includes a repair script that fixes this automatically.
 
-**Step 1 — Try the manual Electron installer first (run from `C:\OTForge`):**
+**Run the repair script (regular PowerShell window — do NOT run as Administrator):**
 ```powershell
-node node_modules/electron/install.js
-npm run dev
+cd C:\OTForge
+.\fix-electron.ps1
 ```
 
-This downloads only the missing Electron binary and is faster than a full reinstall. If it works, you are done.
+The script checks `path.txt`, tries the built-in installer, and if that fails downloads and installs the Electron binary directly from GitHub. When it finishes, run `npm run dev`.
 
-**Step 2 — If Step 1 does not fix it, do a full reinstall (regular PowerShell window, not Run as Administrator):**
-```powershell
-Remove-Item -Recurse -Force node_modules
-npm ci
-npm run dev
-```
-
-If you get a permission error on `Remove-Item`, right-click PowerShell and choose **Run as Administrator**, run `Remove-Item -Recurse -Force node_modules`, then close that window and repeat `npm ci` and `npm run dev` in a regular (non-admin) PowerShell.
+If the script itself fails due to a network error, see the manual steps in the **`Path.txt` missing** section below.
 
 ### `Path.txt` missing in `node_modules\electron\` (Windows)
 
