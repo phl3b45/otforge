@@ -12,18 +12,29 @@ vars:
     HOME_NET: "[10.0.0.0/8]"
     # EXTERNAL_NET is set to "any" rather than "!$HOME_NET" because in this lab the
     # attacker container is on the same RFC-1918 range as the OT/control networks.
-    # With "!$HOME_NET", ET SCAN/EXPLOIT rules that match "$EXTERNAL_NET → $HOME_NET"
+    # With "!$HOME_NET", ET SCAN/EXPLOIT rules that match "$EXTERNAL_NET -> $HOME_NET"
     # would never fire since the attacker IP is always in HOME_NET.
     # "any" treats every source address as potentially external, which is the
     # standard configuration for IDS labs where attacker and victim share a /8.
     EXTERNAL_NET: "any"
+    # Standard Suricata server group variables required by Emerging Threats rulesets.
+    # Set to $HOME_NET so all ET rules referencing these groups fire on simulation
+    # traffic — fine for a lab environment where all servers are on internal networks.
+    HTTP_SERVERS:   "$HOME_NET"
+    SQL_SERVERS:    "$HOME_NET"
+    DNS_SERVERS:    "$HOME_NET"
+    SMTP_SERVERS:   "$HOME_NET"
+    TELNET_SERVERS: "$HOME_NET"
 
   port-groups:
     MODBUS_PORTS: "502"
     DNP3_PORTS:   "20000"
     OPCUA_PORTS:  "4840"
-    HTTP_PORTS:   "80"
+    HTTP_PORTS:   "80,8080"
     SHELLCODE_PORTS: "!80"
+    # Standard port group variables required by Emerging Threats rulesets.
+    SSH_PORTS:    "22"
+    ORACLE_PORTS: "1521"
 
 # Application-layer protocol detection
 app-layer:
