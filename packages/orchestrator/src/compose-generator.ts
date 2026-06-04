@@ -607,7 +607,11 @@ export function generateCompose(
     // NET_RAW is required for raw socket access (ICMP, packet capture).
     if (device.category === 'firewall') {
       services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
-      // Attach to OT (L0-2), Control (L3), and Plant DMZ (L3.5) at .254 (last usable host in /24).
+      // Attach to OT (L0-2), Control (L3), Plant DMZ (L3.5), and Internet DMZ (L5) at .254.
+      // Internet DMZ attachment is required so Kali (on internet-dmz-net) can route OT-bound
+      // traffic THROUGH the firewall — making nftables rules actually enforce zone boundaries.
+      // Without this leg, Kali's only path to OT was the direct extraNetworks bypass, which
+      // rendered deny rules ineffective.
       // Uses effectiveZones so the address stays inside the resolved (possibly auto-detected) subnet.
       services[serviceName].networks = {
         'ot-net': { ipv4_address: `${effectiveZones.ot.subnet.replace('.0/24', '.254')}` },
@@ -616,6 +620,9 @@ export function generateCompose(
         },
         'plant-dmz-net': {
           ipv4_address: `${effectiveZones['plant-dmz'].subnet.replace('.0/24', '.254')}`
+        },
+        'internet-dmz-net': {
+          ipv4_address: `${effectiveZones['internet-dmz'].subnet.replace('.0/24', '.254')}`
         }
       }
       // Inject scenario security config so the entrypoint can build the nftables ruleset.
@@ -686,6 +693,17 @@ export function generateCompose(
         attackEnv.push(`PLC_PORT=${plcPort}`)
         services[serviceName].environment = attackEnv
       }
+
+      // Inject firewall gateway IP and internal zone subnets so entrypoint.sh can
+      // add static routes routing OT/control/plant-dmz traffic through the firewall.
+      // FW_GW_IP is the firewall's internet-dmz-net address (.254 of that subnet).
+      // With these routes in place, nftables deny rules actually block the attack.
+      const attackEnvFw: string[] = services[serviceName].environment ?? []
+      attackEnvFw.push(`FW_GW_IP=${internetDmzBase}.254`)
+      attackEnvFw.push(`OT_SUBNET=${effectiveZones.ot.subnet}`)
+      attackEnvFw.push(`CONTROL_SUBNET=${effectiveZones.control.subnet}`)
+      attackEnvFw.push(`PLANT_DMZ_SUBNET=${effectiveZones['plant-dmz'].subnet}`)
+      services[serviceName].environment = attackEnvFw
 
       // Point Kali's resolver at the scenario's dns-server so exercise hostnames
       // (e.g., meridian-process.com) resolve inside the simulation without needing

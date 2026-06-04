@@ -67,6 +67,25 @@ except Exception:
 done
 echo ""
 
+# ── Firewall gateway route injection ─────────────────────────────────────────
+# When a firewall container is present on internet-dmz-net, inject static routes
+# for OT, control, and plant-dmz subnets so traffic routes THROUGH the firewall
+# container rather than being blocked. This makes nftables deny rules effective —
+# without these routes, the only path to OT was the extraNetworks bypass which
+# completely bypassed the firewall.
+# FW_GW_IP, OT_SUBNET, CONTROL_SUBNET, PLANT_DMZ_SUBNET are injected by
+# compose-generator.ts from the effective zone subnets.
+if [ -n "${FW_GW_IP}" ]; then
+    echo "[otforge-attack] Injecting routes via firewall gateway ${FW_GW_IP}..."
+    for SUBNET in "${OT_SUBNET}" "${CONTROL_SUBNET}" "${PLANT_DMZ_SUBNET}"; do
+        [ -z "${SUBNET}" ] && continue
+        ip route replace "${SUBNET}" via "${FW_GW_IP}" 2>/dev/null && \
+            echo "[otforge-attack]   Route added: ${SUBNET} via ${FW_GW_IP}" || \
+            echo "[otforge-attack]   Route failed: ${SUBNET} (NET_ADMIN required)"
+    done
+fi
+echo ""
+
 # ── Start TigerVNC server ─────────────────────────────────────────────────────
 echo "[otforge-attack] Starting TigerVNC server on display :1 (port 5901)..."
 
