@@ -85,7 +85,8 @@ def build_bacnet_requests():
         s_byte(0x00, name="invoke_id",     fuzzable=True)
         # Object identifier context tag 0 — fuzz object type and instance
         s_static(b'\x0c')                                   # context tag 0, length 4
-        s_dword(0x00C00001, name="object_id", fuzzable=True, endian=">")
+        s_word(0x00C0, name="object_id_hi", fuzzable=True, endian=">")
+        s_word(0x0001, name="object_id_lo", fuzzable=True, endian=">")
         # Property identifier context tag 1
         s_static(b'\x19')                                   # context tag 1, length 1
         s_byte(0x55, name="property_id",   fuzzable=True)   # 0x55 = Present-Value
