@@ -470,6 +470,7 @@ export function generateCompose(
   const otBase = effectiveZones.ot.subnet.replace('.0/24', '')
   const controlBase = effectiveZones.control.subnet.replace('.0/24', '')
   const internetDmzBase = effectiveZones['internet-dmz'].subnet.replace('.0/24', '')
+  const attackerBase = effectiveZones.attacker.subnet.replace('.0/24', '')
 
   /**
    * Returns a unique IP on netName for the given preferredIp.
@@ -621,8 +622,11 @@ export function generateCompose(
         'plant-dmz-net': {
           ipv4_address: `${effectiveZones['plant-dmz'].subnet.replace('.0/24', '.254')}`
         },
-        'internet-dmz-net': {
-          ipv4_address: `${effectiveZones['internet-dmz'].subnet.replace('.0/24', '.254')}`
+        // attacker-net attachment routes Kali's OT-bound traffic through the firewall
+        // so nftables rules see the source as the attacker zone IP (10.200.60.10),
+        // making deny rules actually effective for Tutorial 03 defense exercises.
+        'attacker-net': {
+          ipv4_address: `${effectiveZones.attacker.subnet.replace('.0/24', '.254')}`
         }
       }
       // Inject scenario security config so the entrypoint can build the nftables ruleset.
@@ -699,7 +703,7 @@ export function generateCompose(
       // FW_GW_IP is the firewall's internet-dmz-net address (.254 of that subnet).
       // With these routes in place, nftables deny rules actually block the attack.
       const attackEnvFw: string[] = services[serviceName].environment ?? []
-      attackEnvFw.push(`FW_GW_IP=${internetDmzBase}.254`)
+      attackEnvFw.push(`FW_GW_IP=${attackerBase}.254`)
       attackEnvFw.push(`OT_SUBNET=${effectiveZones.ot.subnet}`)
       attackEnvFw.push(`CONTROL_SUBNET=${effectiveZones.control.subnet}`)
       attackEnvFw.push(`PLANT_DMZ_SUBNET=${effectiveZones['plant-dmz'].subnet}`)
