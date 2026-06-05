@@ -2072,9 +2072,6 @@ function registerIPCHandlers(): void {
    *   1. Creates a native OS window loading terminal.html with the nodeId as a
    *      URL query parameter (?nodeId=attack-1).
    *   2. The terminal page calls terminal:open to start the docker exec session.
-   *   3. If pasteText is provided, it is stored in pendingTerminalPaste and
-   *      delivered to the PTY stdin ~800 ms after bash finishes initializing
-   *      (timed by the terminal:open handler after the process starts).
    *
    * Window re-use: if the window is already open for this session, it is brought
    * to the front. If a pasteText is provided and a PTY is already active, the
@@ -2143,7 +2140,6 @@ function registerIPCHandlers(): void {
 
       terminalWindow.on('closed', () => {
         terminalWindow = null
-        pendingTerminalPaste = null
       })
 
       return { ok: true }
