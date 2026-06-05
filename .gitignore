@@ -23,3 +23,5 @@ scenarios/ICS_Lab_02.otflab
 # Old tutorial filenames from before the rename — no longer tracked.
 scenarios/tutorial-01-modbus-coil-write.otflab
 scenarios/tutorial-02-scenario-builder.otflab
+# Test coverage reports — generated artifacts, not committed.
+packages/orchestrator/coverage/
