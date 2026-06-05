@@ -309,9 +309,9 @@ describe('firewall device', () => {
     expect(nets).toContain('plant-dmz-net')
   })
 
-  it('does NOT attach to attacker-net', () => {
+  it('attaches to attacker-net so Kali traffic is subject to nftables rules', () => {
     const nets = Object.keys(firewallCompose().services['fw-1'].networks)
-    expect(nets).not.toContain('attacker-net')
+    expect(nets).toContain('attacker-net')
   })
 
   it('does NOT attach to enterprise-net or internet-dmz-net', () => {
