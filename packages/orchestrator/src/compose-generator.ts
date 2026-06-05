@@ -210,6 +210,12 @@ interface ComposeService {
    * br-XXXX Docker bridge interfaces and see all inter-container traffic.
    */
   network_mode?: string
+  /**
+   * Overrides the Dockerfile ENTRYPOINT. Used on the attack machine to inject
+   * static routes via the firewall gateway before the main entrypoint runs,
+   * bypassing the need for an image rebuild when routing config changes.
+   */
+  entrypoint?: string[]
   /** Per-network IP assignments. Omitted when network_mode is set. */
   networks?: Record<string, { ipv4_address: string }>
   environment: string[] | undefined
@@ -698,12 +704,21 @@ export function generateCompose(
         services[serviceName].environment = attackEnv
       }
 
-      // Inject firewall gateway IP and internal zone subnets so entrypoint.sh can
-      // add static routes routing OT/control/plant-dmz traffic through the firewall.
-      // FW_GW_IP is the firewall's internet-dmz-net address (.254 of that subnet).
-      // With these routes in place, nftables deny rules actually block the attack.
+      // Inject static routes via the firewall gateway before the main entrypoint runs.
+      // Using compose entrypoint override avoids requiring an attack-base image rebuild
+      // when routing config changes. Routes OT/control/plant-dmz traffic through the
+      // firewall so nftables deny rules are effective for Tutorial 03 defense exercises.
+      const fwGwIp = `${attackerBase}.254`
+      services[serviceName].entrypoint = [
+        '/bin/sh',
+        '-c',
+        `ip route replace ${effectiveZones.ot.subnet} via ${fwGwIp} 2>/dev/null || true; ` +
+          `ip route replace ${effectiveZones.control.subnet} via ${fwGwIp} 2>/dev/null || true; ` +
+          `ip route replace ${effectiveZones['plant-dmz'].subnet} via ${fwGwIp} 2>/dev/null || true; ` +
+          `exec /entrypoint.sh`
+      ]
       const attackEnvFw: string[] = services[serviceName].environment ?? []
-      attackEnvFw.push(`FW_GW_IP=${attackerBase}.254`)
+      attackEnvFw.push(`FW_GW_IP=${fwGwIp}`)
       attackEnvFw.push(`OT_SUBNET=${effectiveZones.ot.subnet}`)
       attackEnvFw.push(`CONTROL_SUBNET=${effectiveZones.control.subnet}`)
       attackEnvFw.push(`PLANT_DMZ_SUBNET=${effectiveZones['plant-dmz'].subnet}`)
