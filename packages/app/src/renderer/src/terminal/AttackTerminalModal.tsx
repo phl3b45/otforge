@@ -1,33 +1,17 @@
 /**
  * AttackTerminalModal.tsx — Kali Linux terminal modal for the attack machine.
  *
- * Purpose:
- *   Provides a docker exec bash session (via xterm.js) inside the Kali attack
- *   container. Opened by the toolbar ⚔ Attack Machine button, which also:
- *     1. Auto-pastes the host clipboard into the terminal (pasteSignal)
- *     2. Silently launches the noVNC desktop window in the background
- *   so a single toolbar click gives the user a fully-ready attack environment.
- *
- * No tab bar — this modal shows only the terminal. The noVNC desktop window
- * (Xfce4 + Wireshark + Armitage + Firefox) is accessible via the "Open Desktop"
- * button in the header, but is already launched automatically on first open.
- *
  * Terminal data flow:
  *   Keystrokes → xterm onData → window.electronAPI.terminal.write(data)
  *                             → main process stdin of docker exec -i
  *   docker exec stdout/stderr → main process → 'terminal:data' IPC event
  *                             → on.terminalData listener → term.write(data)
  *
- * Clipboard paste (Ctrl+V, pasteSignal):
+ * Clipboard paste (Ctrl+V only):
  *   Uses window.electronAPI.terminal.write(text) NOT term.paste(text).
  *   term.paste() wraps text in \x1b[200~...\x1b[201~ (xterm bracketed-paste mode)
  *   which bash in the container echoes as literal "^[[200~" unless readline is
  *   configured. terminal.write() sends raw bytes to PTY stdin with no markers.
- *
- * pasteSignal auto-paste:
- *   App.tsx increments pasteSignal on each toolbar button click. This effect
- *   writes the clipboard to the PTY immediately if connected, or queues it
- *   via pendingPasteRef if terminal.open() has not yet resolved.
  *
  * Dismiss: × button, backdrop click, or Escape key.
  *   Closing calls terminal:close to kill the docker exec process.
@@ -66,18 +50,14 @@ const XTERM_THEME = {
 /**
  * AttackTerminalModal
  *
- * @param device       - The attack-machine DeviceConfig (node ID + display name).
- * @param pasteSignal  - Incrementing counter from App.tsx. Each increment pastes the
- *                       host clipboard into the xterm PTY. 0/undefined = no paste.
- * @param onClose      - Callback to unmount this modal and return to the canvas.
+ * @param device  - The attack-machine DeviceConfig (node ID + display name).
+ * @param onClose - Callback to unmount this modal and return to the canvas.
  */
 export function AttackTerminalModal({
   device,
-  pasteSignal,
   onClose
 }: {
   device: DeviceConfig
-  pasteSignal?: number
   onClose: () => void
 }) {
   const [termError, setTermError] = useState<string | null>(null)
@@ -90,13 +70,8 @@ export function AttackTerminalModal({
   const termRef = useRef<Terminal | null>(null)
   /** FitAddon resizes the terminal to fill its container div. */
   const fitAddonRef = useRef<FitAddon | null>(null)
-  /** True once docker exec has successfully attached — gates pending-paste delivery. */
+  /** True once docker exec has successfully attached. */
   const termConnectedRef = useRef<boolean>(false)
-  /**
-   * True if a pasteSignal fired before the terminal finished connecting.
-   * Cleared and delivered once terminal.open() resolves successfully.
-   */
-  const pendingPasteRef = useRef<boolean>(false)
 
   // ── Terminal initialization ──────────────────────────────────────────────────
   useEffect(() => {
@@ -154,21 +129,12 @@ export function AttackTerminalModal({
     term.writeln('')
 
     // Open the docker exec session in the main process.
-    // On success, mark connected and deliver any clipboard paste queued before ready.
     window.electronAPI.terminal.open(device.nodeId).then(result => {
       if (!result.ok) {
         term.writeln(`\x1b[31mError: ${result.error ?? 'Failed to open terminal'}\x1b[0m`)
         setTermError(result.error ?? 'Failed to open terminal')
       } else {
         termConnectedRef.current = true
-        if (pendingPasteRef.current) {
-          pendingPasteRef.current = false
-          // Brief delay so the bash prompt renders before writing to stdin
-          setTimeout(async () => {
-            const text = await window.electronAPI.clipboard.readText()
-            if (text) window.electronAPI.terminal.write(text)
-          }, 400)
-        }
       }
     })
 
@@ -194,26 +160,8 @@ export function AttackTerminalModal({
       termRef.current = null
       fitAddonRef.current = null
       termConnectedRef.current = false
-      pendingPasteRef.current = false
     }
   }, [device.nodeId])
-
-  // ── pasteSignal — auto-paste clipboard into the xterm PTY ───────────────
-  //
-  // Fired by App.tsx each time the toolbar ⚔ Attack Machine button is clicked.
-  // Writes raw clipboard text to PTY stdin (no bracketed-paste markers).
-  // If terminal.open() hasn't resolved yet, queues the paste via pendingPasteRef
-  // and delivers it once the exec session is ready.
-  useEffect(() => {
-    if (!pasteSignal) return
-    if (termConnectedRef.current) {
-      window.electronAPI.clipboard.readText().then(text => {
-        if (text) window.electronAPI.terminal.write(text)
-      })
-    } else {
-      pendingPasteRef.current = true
-    }
-  }, [pasteSignal])
 
   // ── Open Kali Xfce4 desktop in a separate OS window ──────────────────────
   //

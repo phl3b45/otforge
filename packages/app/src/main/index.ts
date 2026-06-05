@@ -433,16 +433,6 @@ let activeTerminalProcess: ChildProcess | null = null
  */
 let terminalWindow: BrowserWindow | null = null
 
-/**
- * Clipboard text to be auto-pasted into the terminal PTY stdin after the bash
- * session finishes initializing. Set by attack:openTerminalWindow when the
- * caller passes a pasteText argument, consumed and cleared by terminal:open.
- *
- * The delay between PTY open and paste delivery gives bash time to print its
- * PS1 prompt so the command lands at a clean prompt rather than mid-init output.
- */
-let pendingTerminalPaste: string | null = null
-
 // ── App lifecycle ──────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -1530,19 +1520,6 @@ function registerIPCHandlers(): void {
       if (activeTerminalProcess === proc) activeTerminalProcess = null
     })
 
-    // Deliver any auto-paste that attack:openTerminalWindow queued.
-    // 800 ms delay lets bash finish printing its startup output and PS1 prompt
-    // so the pasted command lands at a clean prompt rather than mid-init text.
-    if (pendingTerminalPaste) {
-      const text = pendingTerminalPaste
-      pendingTerminalPaste = null
-      setTimeout(() => {
-        if (activeTerminalProcess?.stdin) {
-          activeTerminalProcess.stdin.write(text)
-        }
-      }, 800)
-    }
-
     return { ok: true, containerName }
   })
 
@@ -2114,29 +2091,16 @@ function registerIPCHandlers(): void {
    */
   ipcMain.handle(
     'attack:openTerminalWindow',
-    async (
-      _e,
-      { nodeId, pasteText }: { nodeId: string; pasteText?: string }
-    ): Promise<{ ok: boolean; error?: string }> => {
+    async (_e, { nodeId }: { nodeId: string }): Promise<{ ok: boolean; error?: string }> => {
       if (!activeProjectName) {
         return { ok: false, error: 'No simulation is running — start a scenario first.' }
       }
 
-      // If the window already exists, bring it to the front and paste immediately
-      // (the PTY is already open so there is no startup delay to wait for).
+      // If the window already exists, just bring it to the front.
       if (terminalWindow && !terminalWindow.isDestroyed()) {
         if (terminalWindow.isMinimized()) terminalWindow.restore()
         terminalWindow.focus()
-        if (pasteText && activeTerminalProcess?.stdin) {
-          activeTerminalProcess.stdin.write(pasteText)
-        }
         return { ok: true }
-      }
-
-      // Store clipboard text for delivery after the PTY session opens.
-      // The terminal:open handler reads and clears this after spawning the process.
-      if (pasteText) {
-        pendingTerminalPaste = pasteText
       }
 
       // terminal.html is served by the Vite dev server in development, or loaded

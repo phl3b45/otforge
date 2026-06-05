@@ -522,15 +522,6 @@ export default function App() {
   /** Attack-machine device currently open in the terminal modal (canvas right-click path). Null when closed. */
   const [attackTerminalDevice, setAttackTerminalDevice] = useState<DeviceConfig | null>(null)
   /**
-   * Increments each time the toolbar ⚔ Attack Machine button is clicked while the
-   * simulation is running.  AttackTerminalModal watches this value and pastes the host
-   * clipboard into the xterm.js terminal whenever it changes.
-   *
-   * Reset to 0 when the modal closes or the simulation stops so the next open does not
-   * auto-paste unless the button was actually clicked.
-   */
-  const [pasteSignal, setPasteSignal] = useState<number>(0)
-  /**
    * True after the ⚔ Attack Machine toolbar button opens the standalone terminal
    * BrowserWindow via attack:openTerminalWindow. Used to switch the button to its
    * "launched" (red) style so the user can see the window is active.
@@ -817,7 +808,6 @@ export default function App() {
       // Close the attack terminal modal when the simulation stops so xterm.js
       // doesn't remain open against a dead docker exec session.
       setAttackTerminalDevice(null)
-      setPasteSignal(0)
       // Reset the standalone terminal window open indicator — the BrowserWindow
       // is destroyed by main when simulation stops and the PTY process is killed.
       setTerminalWindowOpen(false)
@@ -1186,44 +1176,20 @@ export default function App() {
     setAttackTerminalDevice(device)
   }, [])
 
-  /** Closes the attack terminal modal and resets paste signal. */
+  /** Closes the attack terminal modal. */
   const handleCloseAttackTerminal = useCallback(() => {
     setAttackTerminalDevice(null)
-    setPasteSignal(0)
   }, [])
 
   /**
    * Toolbar ⚔ Attack Machine button handler (sim running).
-   *
-   * Opens (or focuses) the standalone xterm.js terminal BrowserWindow for the
-   * attack machine and auto-pastes the current host clipboard into bash.
-   *
-   * Flow:
-   *   1. Reads the host clipboard via Electron's native module (no HTTPS required).
-   *   2. Calls attack:openTerminalWindow, which:
-   *        a. Opens a new OS window loading terminal.html with the nodeId.
-   *        b. The terminal page calls terminal:open to start a docker exec PTY session.
-   *        c. After ~800 ms (bash ready), writes the clipboard text to PTY stdin.
-   *   3. If the window is already open, the text is written to the active PTY immediately.
-   *
-   * This is a direct one-hop PTY write — zero intermediate protocol layers.
-   * The noVNC/xdotool path was abandoned because its 4-layer async chain was unreliable.
-   *
-   * @param device - DeviceConfig for the attack-machine canvas node.
+   * Opens the standalone terminal BrowserWindow, or focuses it if already open.
+   * Paste is handled by Ctrl+V inside the terminal — nothing is read from the
+   * host clipboard here.
    */
   const handleOpenAttackTerminalAndPaste = useCallback((device: DeviceConfig) => {
     setTerminalWindowOpen(true)
-    window.electronAPI.clipboard
-      .readText()
-      .then(text => {
-        window.electronAPI.attack
-          .openTerminalWindow(device.nodeId, text || undefined)
-          .catch(() => {})
-      })
-      .catch(() => {
-        // Clipboard read failed — open the window without paste
-        window.electronAPI.attack.openTerminalWindow(device.nodeId).catch(() => {})
-      })
+    window.electronAPI.attack.openTerminalWindow(device.nodeId).catch(() => {})
   }, [])
 
   /**
@@ -1457,7 +1423,7 @@ export default function App() {
              *   idle (no machine)  → "+ Attack Machine" teal outline — click to add
              *   idle (has machine) → "⚔ Attack Ready" solid teal — click to remove
              *   running (ready)    → "⚔ Kali Terminal" solid teal — click to open terminal
-             *   running (launched) → "⚔ Kali Terminal" solid red — click to re-open / paste
+             *   running (launched) → "⚔ Kali Terminal" solid red — click to re-open
              */}
             {simIsRunning && hasAttackMachine && firstAttackDevice ? (
               <>
@@ -1466,8 +1432,8 @@ export default function App() {
                   onClick={() => handleOpenAttackTerminalAndPaste(firstAttackDevice)}
                   title={
                     terminalWindowOpen
-                      ? 'Terminal open — click to paste clipboard into Kali'
-                      : 'Open Kali terminal and paste clipboard contents'
+                      ? 'Terminal open — click to bring it to the front'
+                      : 'Open Kali Linux terminal (use Ctrl+V to paste)'
                   }
                 >
                   ⚔ Kali Terminal
@@ -1701,11 +1667,7 @@ export default function App() {
       )}
       {/* Attack terminal + Desktop modal — opens when user clicks "Open Attack Terminal" */}
       {attackTerminalDevice && (
-        <AttackTerminalModal
-          device={attackTerminalDevice}
-          pasteSignal={pasteSignal}
-          onClose={handleCloseAttackTerminal}
-        />
+        <AttackTerminalModal device={attackTerminalDevice} onClose={handleCloseAttackTerminal} />
       )}
       {/*
        * Kali Desktop hint toast — appears for 6 seconds after the 🖥 Kali Desktop

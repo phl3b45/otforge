@@ -545,18 +545,13 @@ const api = {
      *      bash finishes initializing (startup prompt is ready), so the command
      *      appears at a clean bash prompt.
      *
-     * If the window is already open and a PTY is active, pasteText is written
-     * immediately without opening a new session.
+     * If the window is already open, it is focused without starting a new session.
      *
-     * @param nodeId    - Canvas node ID of the attack-machine device.
-     * @param pasteText - Optional clipboard text to auto-paste after bash is ready.
+     * @param nodeId - Canvas node ID of the attack-machine device.
      * @returns { ok: true } on success; { ok: false, error } if simulation is not running.
      */
-    openTerminalWindow: (
-      nodeId: string,
-      pasteText?: string
-    ): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke('attack:openTerminalWindow', { nodeId, pasteText })
+    openTerminalWindow: (nodeId: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('attack:openTerminalWindow', { nodeId })
   },
 
   // ── Engineering Workstation window ───────────────────────────────────────────
