@@ -100,7 +100,14 @@ if [ -n "${FW_RULES_JSON}" ] && [ "${FW_RULES_JSON}" != "[]" ]; then
     RULE_COUNT=$(echo "${FW_RULES_JSON}" | jq 'length')
     echo "[ics-firewall] Loading ${RULE_COUNT} ACL rule(s) from scenario..."
 
-    for i in $(seq 0 $((RULE_COUNT - 1))); do
+    # Process deny rules before allow rules so explicit denies always take
+    # precedence over existing allows — students adding a deny rule in the
+    # firewall panel will correctly override a pre-existing allow rule.
+    DENY_INDICES=$(echo "${FW_RULES_JSON}" | jq -r 'to_entries[] | select(.value.action == "deny") | .key')
+    ALLOW_INDICES=$(echo "${FW_RULES_JSON}" | jq -r 'to_entries[] | select(.value.action == "allow") | .key')
+    ORDERED_INDICES="${DENY_INDICES} ${ALLOW_INDICES}"
+
+    for i in ${ORDERED_INDICES}; do
         RULE=$(echo "${FW_RULES_JSON}" | jq ".[$i]")
         SRC_ZONE=$(echo "$RULE"  | jq -r '.sourceZone')
         DST_ZONE=$(echo "$RULE"  | jq -r '.destinationZone')
@@ -148,6 +155,17 @@ if [ -n "${FW_RULES_JSON}" ] && [ "${FW_RULES_JSON}" != "[]" ]; then
         echo "[ics-firewall] Rule[$i]: ${SRC_ZONE}→${DST_ZONE} proto=${PROTO} port=${PORT} action=${ACTION}${COMMENT:+ # ${COMMENT}}"
     done
 fi
+
+# ── NAT masquerade for attacker zone ───────────────────────────────────────────
+# Without masquerade, return traffic from OT devices back to Kali routes through
+# the Docker host kernel, which Docker's isolation rules block between bridges.
+# Masquerade rewrites the source IP to the firewall's ot-net IP (10.200.10.254)
+# so OT devices send replies to the firewall, which reverse-NATs them back to Kali.
+# The FORWARD chain still sees the original attacker source IP, so deny rules
+# for Tutorial 03 defense exercises work correctly.
+nft add table ip nat
+nft add chain ip nat postrouting "{ type nat hook postrouting priority 100; }"
+nft add rule ip nat postrouting ip saddr "${FW_ZONE_ATTACKER}" masquerade
 
 # ── Display final ruleset ───────────────────────────────────────────────────────
 echo "[ics-firewall] Active nftables ruleset:"

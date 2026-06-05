@@ -210,6 +210,12 @@ interface ComposeService {
    * br-XXXX Docker bridge interfaces and see all inter-container traffic.
    */
   network_mode?: string
+  /**
+   * Overrides the Dockerfile ENTRYPOINT. Used on the attack machine to inject
+   * static routes via the firewall gateway before the main entrypoint runs,
+   * bypassing the need for an image rebuild when routing config changes.
+   */
+  entrypoint?: string[]
   /** Per-network IP assignments. Omitted when network_mode is set. */
   networks?: Record<string, { ipv4_address: string }>
   environment: string[] | undefined
@@ -470,6 +476,7 @@ export function generateCompose(
   const otBase = effectiveZones.ot.subnet.replace('.0/24', '')
   const controlBase = effectiveZones.control.subnet.replace('.0/24', '')
   const internetDmzBase = effectiveZones['internet-dmz'].subnet.replace('.0/24', '')
+  const attackerBase = effectiveZones.attacker.subnet.replace('.0/24', '')
 
   /**
    * Returns a unique IP on netName for the given preferredIp.
@@ -607,7 +614,11 @@ export function generateCompose(
     // NET_RAW is required for raw socket access (ICMP, packet capture).
     if (device.category === 'firewall') {
       services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
-      // Attach to OT (L0-2), Control (L3), and Plant DMZ (L3.5) at .254 (last usable host in /24).
+      // Attach to OT (L0-2), Control (L3), Plant DMZ (L3.5), and Internet DMZ (L5) at .254.
+      // Internet DMZ attachment is required so Kali (on internet-dmz-net) can route OT-bound
+      // traffic THROUGH the firewall — making nftables rules actually enforce zone boundaries.
+      // Without this leg, Kali's only path to OT was the direct extraNetworks bypass, which
+      // rendered deny rules ineffective.
       // Uses effectiveZones so the address stays inside the resolved (possibly auto-detected) subnet.
       services[serviceName].networks = {
         'ot-net': { ipv4_address: `${effectiveZones.ot.subnet.replace('.0/24', '.254')}` },
@@ -616,6 +627,12 @@ export function generateCompose(
         },
         'plant-dmz-net': {
           ipv4_address: `${effectiveZones['plant-dmz'].subnet.replace('.0/24', '.254')}`
+        },
+        // attacker-net attachment routes Kali's OT-bound traffic through the firewall
+        // so nftables rules see the source as the attacker zone IP (10.200.60.10),
+        // making deny rules actually effective for Tutorial 03 defense exercises.
+        'attacker-net': {
+          ipv4_address: `${effectiveZones.attacker.subnet.replace('.0/24', '.254')}`
         }
       }
       // Inject scenario security config so the entrypoint can build the nftables ruleset.
@@ -686,6 +703,26 @@ export function generateCompose(
         attackEnv.push(`PLC_PORT=${plcPort}`)
         services[serviceName].environment = attackEnv
       }
+
+      // Inject static routes via the firewall gateway before the main entrypoint runs.
+      // Using compose entrypoint override avoids requiring an attack-base image rebuild
+      // when routing config changes. Routes OT/control/plant-dmz traffic through the
+      // firewall so nftables deny rules are effective for Tutorial 03 defense exercises.
+      const fwGwIp = `${attackerBase}.254`
+      services[serviceName].entrypoint = [
+        '/bin/sh',
+        '-c',
+        `ip route replace ${effectiveZones.ot.subnet} via ${fwGwIp} 2>/dev/null || true; ` +
+          `ip route replace ${effectiveZones.control.subnet} via ${fwGwIp} 2>/dev/null || true; ` +
+          `ip route replace ${effectiveZones['plant-dmz'].subnet} via ${fwGwIp} 2>/dev/null || true; ` +
+          `exec /entrypoint.sh`
+      ]
+      const attackEnvFw: string[] = services[serviceName].environment ?? []
+      attackEnvFw.push(`FW_GW_IP=${fwGwIp}`)
+      attackEnvFw.push(`OT_SUBNET=${effectiveZones.ot.subnet}`)
+      attackEnvFw.push(`CONTROL_SUBNET=${effectiveZones.control.subnet}`)
+      attackEnvFw.push(`PLANT_DMZ_SUBNET=${effectiveZones['plant-dmz'].subnet}`)
+      services[serviceName].environment = attackEnvFw
 
       // Point Kali's resolver at the scenario's dns-server so exercise hostnames
       // (e.g., meridian-process.com) resolve inside the simulation without needing

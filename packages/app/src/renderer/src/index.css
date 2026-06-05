@@ -21,6 +21,9 @@
   --accent-red: #f85149;
   --accent-orange: #d29922;
   --accent-teal: #39d0b0;
+  --bg-input: #0d1117;
+  --bg-hover: #222831;
+  --bg-canvas: #161b22;
   font-family:
     'Segoe UI',
     system-ui,
@@ -184,6 +187,15 @@ select {
 }
 .btn-danger:not(:disabled):hover {
   background: rgba(248, 81, 73, 0.1);
+}
+
+.btn-success {
+  background: transparent;
+  color: var(--accent-green);
+  border-color: var(--accent-green);
+}
+.btn-success:not(:disabled):hover {
+  background: rgba(63, 185, 80, 0.1);
 }
 
 /* ── Logo mark ────────────────────────────────────────────────────────────────── */
@@ -2154,6 +2166,12 @@ code.prop-value {
   min-width: 36px;
 }
 
+/* Force option list colors so dark-theme backgrounds don't render invisible text. */
+.fw-select option {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+}
+
 .fw-arrow {
   color: var(--text-muted);
   font-size: 0.7rem;
@@ -2183,6 +2201,22 @@ code.prop-value {
 .fw-add-btn {
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* ── Apply Rules row ─────────────────────────────────────────── */
+.fw-apply-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fw-apply-btn {
+  white-space: nowrap;
+}
+
+.fw-apply-hint {
+  font-size: 0.62rem;
+  color: var(--text-muted);
 }
 
 /* ── IDS/IPS Panel (IDSPanel) ─────────────────────────────────── */

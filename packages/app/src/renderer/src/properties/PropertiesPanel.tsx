@@ -342,7 +342,12 @@ export function PropertiesPanel({
           {/* ── Firewall panel (Phase 5) ──────────────────────────────────────── */}
           {/* Hidden in Student mode — security config is stripped from locked exports. */}
           {!readOnly && device.category === 'firewall' && security && (
-            <FirewallPanel security={security} onSecurityChange={onSecurityChange} />
+            <FirewallPanel
+              security={security}
+              onSecurityChange={onSecurityChange}
+              nodeId={device.nodeId}
+              simRunning={simRunning}
+            />
           )}
           {!readOnly && device.category === 'firewall' && !security && (
             <section className="prop-section">

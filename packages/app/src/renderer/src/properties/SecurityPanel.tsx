@@ -38,6 +38,10 @@ interface SecurityPanelProps {
   security: SecurityLayer
   /** Updater callback — same (prev => next) pattern used across the app. */
   onSecurityChange: (updater: (s: SecurityLayer) => SecurityLayer) => void
+  /** Canvas node ID of the selected device — used by FirewallPanel for runtime reload. */
+  nodeId?: string
+  /** True when a simulation is actively running — enables the Apply Rules button. */
+  simRunning?: boolean
 }
 
 // ── Firewall Panel ─────────────────────────────────────────────────────────────
@@ -82,9 +86,17 @@ const EMPTY_FORM = {
  * Saved rules are written to FW_RULES_JSON by compose-generator.ts and applied
  * one-for-one as `nft add rule inet ics_fw forward …` lines in entrypoint.sh.
  */
-export function FirewallPanel({ security, onSecurityChange }: SecurityPanelProps) {
+export function FirewallPanel({
+  security,
+  onSecurityChange,
+  nodeId,
+  simRunning
+}: SecurityPanelProps) {
   /** Local form state for the "add rule" inputs — not committed until Add is clicked. */
   const [form, setForm] = useState(EMPTY_FORM)
+
+  /** Tracks the in-progress / success / error state of the Apply Rules IPC call. */
+  const [applyState, setApplyState] = useState<'idle' | 'applying' | 'ok' | 'error'>('idle')
 
   /** Flip the default policy between deny-by-default and allow-by-default. */
   const togglePolicy = useCallback(() => {
@@ -122,6 +134,26 @@ export function FirewallPanel({ security, onSecurityChange }: SecurityPanelProps
     },
     [onSecurityChange]
   )
+
+  /**
+   * Pushes the current rules to the running firewall container via IPC so
+   * students don't need to restart the simulation after each rule change.
+   */
+  const applyRules = useCallback(async () => {
+    if (!nodeId || !simRunning) return
+    setApplyState('applying')
+    try {
+      const result = await window.electronAPI.firewall.reload({
+        nodeId,
+        rules: security.firewallRules,
+        defaultPolicy: security.defaultFirewallPolicy === 'deny' ? 'drop' : 'accept'
+      })
+      setApplyState(result.ok ? 'ok' : 'error')
+    } catch {
+      setApplyState('error')
+    }
+    setTimeout(() => setApplyState('idle'), 3000)
+  }, [nodeId, simRunning, security.firewallRules, security.defaultFirewallPolicy])
 
   const isDeny = security.defaultFirewallPolicy === 'deny'
 
@@ -269,6 +301,39 @@ export function FirewallPanel({ security, onSecurityChange }: SecurityPanelProps
               + Add
             </button>
           </div>
+        </div>
+      </section>
+
+      {/* ── Apply Rules ────────────────────────────────────────────────────────── */}
+      {/* Pushes the current ruleset to the running firewall container so students */}
+      {/* can reconfigure without restarting the simulation.                       */}
+      <section className="prop-section">
+        <div className="fw-apply-row">
+          <button
+            className={`btn btn-sm fw-apply-btn ${
+              applyState === 'ok'
+                ? 'btn-success'
+                : applyState === 'error'
+                  ? 'btn-danger'
+                  : 'btn-secondary'
+            }`}
+            onClick={applyRules}
+            disabled={!simRunning || applyState === 'applying'}
+            title={
+              simRunning
+                ? 'Apply current rules to the running firewall container'
+                : 'Start the simulation to apply rules'
+            }
+          >
+            {applyState === 'applying'
+              ? 'Applying…'
+              : applyState === 'ok'
+                ? '✓ Applied'
+                : applyState === 'error'
+                  ? '✗ Failed'
+                  : 'Apply Rules'}
+          </button>
+          {!simRunning && <span className="fw-apply-hint">Start simulation to apply</span>}
         </div>
       </section>
     </>

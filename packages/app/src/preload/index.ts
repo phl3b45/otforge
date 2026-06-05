@@ -40,7 +40,8 @@ import type {
   PlcImportResult,
   PackInstallResult,
   PackListResult,
-  PackUninstallResult
+  PackUninstallResult,
+  ACLRule
 } from '@otforge/schema'
 
 /**
@@ -138,6 +139,25 @@ const api = {
      */
     meminfo: (): Promise<{ totalMb: number; freeMb: number; cpus: number }> =>
       ipcRenderer.invoke('system:meminfo')
+  },
+
+  // ── Firewall runtime reload ───────────────────────────────────────────────────
+  firewall: {
+    /**
+     * Rebuilds the nftables forward chain in the running firewall container.
+     * Called when a student adds or removes rules and clicks "Apply Rules".
+     * Generates nft commands in the main process and pipes them to the container
+     * via stdin — no image rebuild required.
+     *
+     * @param nodeId        - Canvas node ID of the firewall device.
+     * @param rules         - Current ACLRule array.
+     * @param defaultPolicy - "drop" or "accept".
+     */
+    reload: (args: {
+      nodeId: string
+      rules: ACLRule[]
+      defaultPolicy: string
+    }): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('firewall:reload', args)
   },
 
   // ── Attack terminal ───────────────────────────────────────────────────────────
