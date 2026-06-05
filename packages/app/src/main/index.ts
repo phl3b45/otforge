@@ -64,7 +64,7 @@ import {
   findFreeSubnets,
   ZONE_DEFAULTS
 } from '@otforge/orchestrator'
-import type { NetworkZone } from '@otforge/schema'
+import type { NetworkZone, ACLRule } from '@otforge/schema'
 import { initDb, saveActiveScenario, loadActiveScenario, clearActiveScenario } from './db'
 import { parsePlcFile } from './plc-import'
 
@@ -357,6 +357,13 @@ let dockerClient: DockerClient
  * Null when no simulation is active. Used by stop/status IPC handlers.
  */
 let activeProjectName: string | null = null
+
+/**
+ * Zone → CIDR subnet map captured at simulation start.
+ * Needed by firewall:reload to generate nft address-match rules without
+ * re-running zone resolution. Cleared when the simulation stops.
+ */
+let activeZones: Record<NetworkZone, string> | null = null
 
 /**
  * Maps PLC device nodeIds to their published host ports for the OpenPLC web
@@ -836,6 +843,11 @@ function registerIPCHandlers(): void {
 
         const composeYaml = generateCompose(scenario, projectName, scenarioDir, zones)
 
+        // Capture zone subnets so firewall:reload can generate nft rules at runtime.
+        activeZones = Object.fromEntries(
+          Object.entries(zones).map(([z, cfg]) => [z, cfg.subnet])
+        ) as Record<NetworkZone, string>
+
         // Pass a callback that fires if docker image inspect reveals missing images.
         // The renderer listens for simulation:pullStatus { pulling: true } and shows
         // an "Importing Containers" overlay so the user knows why startup is slow.
@@ -902,6 +914,7 @@ function registerIPCHandlers(): void {
     if (result.ok) {
       await clearActiveScenario()
       activeProjectName = null
+      activeZones = null
       activePlcPorts.clear()
       activePlcModbusPorts.clear()
       activeAttackPorts.clear()
@@ -918,6 +931,55 @@ function registerIPCHandlers(): void {
     if (!activeProjectName) return []
     return dockerClient.getStatus(activeProjectName)
   })
+
+  // ── Firewall runtime reload ───────────────────────────────────────────────────
+
+  /**
+   * Rebuilds the nftables forward chain in the running firewall container without
+   * restarting the simulation. Students add/remove rules in the UI then click
+   * "Apply Rules" to push them live.
+   *
+   * How it works — no image rebuild required:
+   *   buildNftScript() converts the typed ACLRule array into a sequence of plain
+   *   `nft` shell commands. That script is piped via stdin to
+   *   `docker exec -i <container> sh` — the container already has sh and nft.
+   *   Zone subnets come from activeZones, captured when the simulation started.
+   *
+   * @param nodeId        - Canvas node ID of the firewall device.
+   * @param rules         - Current ACLRule array from scenario.security.firewallRules.
+   * @param defaultPolicy - "drop" (deny-by-default) or "accept" (allow-by-default).
+   */
+  ipcMain.handle(
+    'firewall:reload',
+    (
+      _e,
+      { nodeId, rules, defaultPolicy }: { nodeId: string; rules: ACLRule[]; defaultPolicy: string }
+    ): Promise<{ ok: boolean; error?: string }> => {
+      if (!activeProjectName || !activeZones) {
+        return Promise.resolve({ ok: false, error: 'No simulation running.' })
+      }
+      const sanitized = nodeId.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+      const containerName = `${activeProjectName}-${sanitized}`
+      const script = buildNftScript(rules, defaultPolicy, activeZones)
+
+      return new Promise(resolve => {
+        const proc = spawn('docker', ['exec', '-i', containerName, 'sh'], {
+          env: buildDockerEnv(),
+          stdio: 'pipe'
+        })
+        let stderr = ''
+        proc.stderr?.on('data', chunk => {
+          stderr += chunk.toString()
+        })
+        proc.stdin?.write(script)
+        proc.stdin?.end()
+        proc.on('close', code =>
+          resolve(code === 0 ? { ok: true } : { ok: false, error: stderr || `exit ${code}` })
+        )
+        proc.on('error', err => resolve({ ok: false, error: err.message }))
+      })
+    }
+  )
 
   // ── Monitoring — Loki log query proxy (Phase 6) ───────────────────────────────
 
@@ -2614,6 +2676,69 @@ async function buildInstalledPack(
   }
 
   return { manifest, installPath: packPath, installedAt, deviceTypes, scenarioMetas }
+}
+
+// ── Firewall nft script generator ─────────────────────────────────────────────
+
+/**
+ * Builds a POSIX sh script that rebuilds the nftables forward chain from the
+ * given ACL rules and default policy. The script is piped via stdin into the
+ * running firewall container — no image change or pre-installed reload script
+ * is required because the container already has `sh` and `nft`.
+ *
+ * All values are inlined from TypeScript data so the script contains no shell
+ * variables and is safe to pipe without any escaping concerns.
+ *
+ * @param rules         - Current ACL rule list (deny rules applied before allow).
+ * @param defaultPolicy - "drop" or "accept".
+ * @param zones         - Zone name → CIDR map captured at simulation start.
+ */
+function buildNftScript(
+  rules: ACLRule[],
+  defaultPolicy: string,
+  zones: Record<string, string>
+): string {
+  const lines: string[] = [
+    'set -e',
+    '# Flush only the forward chain — preserves NAT masquerade and other tables.',
+    'nft flush chain inet ics_fw forward',
+    `nft chain inet ics_fw forward "{ policy ${defaultPolicy}; }"`,
+    '# Baseline: always allow established/related connections and ICMP.',
+    'nft add rule inet ics_fw forward ct state established,related accept',
+    'nft add rule inet ics_fw forward ip protocol icmp accept',
+    'nft add rule inet ics_fw forward ip6 nexthdr icmpv6 accept'
+  ]
+
+  // Deny rules first so explicit denies take precedence over any allow rule.
+  const ordered = [
+    ...rules.filter(r => r.action === 'deny'),
+    ...rules.filter(r => r.action === 'allow')
+  ]
+
+  for (const rule of ordered) {
+    const parts = ['nft', 'add', 'rule', 'inet', 'ics_fw', 'forward']
+
+    const srcSubnet = rule.sourceZone !== 'any' ? zones[rule.sourceZone] : undefined
+    const dstSubnet = rule.destinationZone !== 'any' ? zones[rule.destinationZone] : undefined
+    if (srcSubnet) parts.push('ip', 'saddr', srcSubnet)
+    if (dstSubnet) parts.push('ip', 'daddr', dstSubnet)
+
+    if (rule.protocol === 'tcp') {
+      if (rule.destinationPort !== 'any') parts.push('tcp', 'dport', String(rule.destinationPort))
+    } else if (rule.protocol === 'udp') {
+      if (rule.destinationPort !== 'any') parts.push('udp', 'dport', String(rule.destinationPort))
+    } else if (rule.protocol === 'icmp') {
+      parts.push('ip', 'protocol', 'icmp')
+    }
+
+    parts.push(rule.action === 'allow' ? 'accept' : 'drop')
+    lines.push(parts.join(' '))
+  }
+
+  lines.push(
+    'echo "[ics-firewall] Reload complete — $(nft list chain inet ics_fw forward | grep -c rule) rule(s) active"'
+  )
+  return lines.join('\n') + '\n'
 }
 
 // ── TCP port connectivity helper ──────────────────────────────────────────────

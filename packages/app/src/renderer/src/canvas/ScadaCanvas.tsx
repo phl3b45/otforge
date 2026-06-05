@@ -873,7 +873,12 @@ export function ScadaCanvas({
         50
       )
     }
-  }, [scenario, activeLayer, setNodes, setEdges])
+    // Only re-sync when visual layout or device graph changes — security updates
+    // (firewallRules, IDS config) share the same scenario object but don't affect
+    // canvas nodes, and triggering setNodes on every security edit clears the
+    // React Flow selection, kicking the user out of the firewall panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenario?.visual, scenario?.devices, activeLayer, setNodes, setEdges])
 
   /*
    * Re-fit whenever the browser window is resized or maximized.
