@@ -149,6 +149,17 @@ if [ -n "${FW_RULES_JSON}" ] && [ "${FW_RULES_JSON}" != "[]" ]; then
     done
 fi
 
+# ── NAT masquerade for attacker zone ───────────────────────────────────────────
+# Without masquerade, return traffic from OT devices back to Kali routes through
+# the Docker host kernel, which Docker's isolation rules block between bridges.
+# Masquerade rewrites the source IP to the firewall's ot-net IP (10.200.10.254)
+# so OT devices send replies to the firewall, which reverse-NATs them back to Kali.
+# The FORWARD chain still sees the original attacker source IP, so deny rules
+# for Tutorial 03 defense exercises work correctly.
+nft add table ip nat
+nft add chain ip nat postrouting "{ type nat hook postrouting priority 100; }"
+nft add rule ip nat postrouting ip saddr "${FW_ZONE_ATTACKER}" masquerade
+
 # ── Display final ruleset ───────────────────────────────────────────────────────
 echo "[ics-firewall] Active nftables ruleset:"
 nft list ruleset
