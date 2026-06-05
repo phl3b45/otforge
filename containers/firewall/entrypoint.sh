@@ -100,7 +100,14 @@ if [ -n "${FW_RULES_JSON}" ] && [ "${FW_RULES_JSON}" != "[]" ]; then
     RULE_COUNT=$(echo "${FW_RULES_JSON}" | jq 'length')
     echo "[ics-firewall] Loading ${RULE_COUNT} ACL rule(s) from scenario..."
 
-    for i in $(seq 0 $((RULE_COUNT - 1))); do
+    # Process deny rules before allow rules so explicit denies always take
+    # precedence over existing allows — students adding a deny rule in the
+    # firewall panel will correctly override a pre-existing allow rule.
+    DENY_INDICES=$(echo "${FW_RULES_JSON}" | jq -r 'to_entries[] | select(.value.action == "deny") | .key')
+    ALLOW_INDICES=$(echo "${FW_RULES_JSON}" | jq -r 'to_entries[] | select(.value.action == "allow") | .key')
+    ORDERED_INDICES="${DENY_INDICES} ${ALLOW_INDICES}"
+
+    for i in ${ORDERED_INDICES}; do
         RULE=$(echo "${FW_RULES_JSON}" | jq ".[$i]")
         SRC_ZONE=$(echo "$RULE"  | jq -r '.sourceZone')
         DST_ZONE=$(echo "$RULE"  | jq -r '.destinationZone')
