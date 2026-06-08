@@ -156,6 +156,16 @@ if [ -n "${FW_RULES_JSON}" ] && [ "${FW_RULES_JSON}" != "[]" ]; then
     done
 fi
 
+# ── Terminal reject rule ───────────────────────────────────────────────────────
+# Unmatched forwarded packets are rejected with ICMP admin-prohibited rather than
+# silently dropped. This lets network scanners (nmap) receive an immediate response
+# for non-allowed traffic instead of waiting for a TCP timeout per host, which makes
+# /24 scans hang for minutes.
+#
+# Explicit student-added deny rules still use 'drop' (silent) so defense exercises
+# work as intended. This rule only fires when no other rule has already matched.
+nft add rule inet ics_fw forward reject with icmp type admin-prohibited
+
 # ── NAT masquerade for attacker zone ───────────────────────────────────────────
 # Without masquerade, return traffic from OT devices back to Kali routes through
 # the Docker host kernel, which Docker's isolation rules block between bridges.

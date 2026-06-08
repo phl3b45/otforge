@@ -2695,6 +2695,11 @@ function buildNftScript(
     lines.push(parts.join(' '))
   }
 
+  // Terminal reject: unmatched traffic gets ICMP admin-prohibited (immediate response)
+  // rather than a silent drop. Explicit deny rules above still use 'drop'.
+  // This prevents nmap /24 scans from hanging on TCP probe timeouts.
+  lines.push('nft add rule inet ics_fw forward reject with icmp type admin-prohibited')
+
   lines.push(
     'echo "[ics-firewall] Reload complete — $(nft list chain inet ics_fw forward | grep -c rule) rule(s) active"'
   )
