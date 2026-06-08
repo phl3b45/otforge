@@ -101,5 +101,9 @@ else
     echo "[ics-firewall] No ACL rules — default policy (${POLICY}) applies to all traffic."
 fi
 
+# Terminal reject: unmatched traffic gets ICMP admin-prohibited (fast response for
+# scanners) rather than a silent drop. Explicit deny rules still use 'drop'.
+nft add rule inet ics_fw forward reject with icmp type admin-prohibited
+
 echo "[ics-firewall] Reload complete."
 nft list chain inet ics_fw forward
