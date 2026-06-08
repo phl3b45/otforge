@@ -96,10 +96,8 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   // ── Plant DMZ (Level 3.5) ───────────────────────────────────────────────────
   firewall: 'ghcr.io/iburres/otforge-firewall:latest',
   'ids-ips': 'ghcr.io/iburres/otforge-suricata:latest',
-  // STUB: alpine with NET_ADMIN cap acts as a placeholder network device.
-  // Replace with otforge-switch / otforge-router once published.
-  switch: 'ghcr.io/iburres/alpine:latest',
-  router: 'ghcr.io/iburres/alpine:latest',
+  switch: 'ghcr.io/iburres/otforge-switch:latest',
+  router: 'ghcr.io/iburres/otforge-router:latest',
   // STUB: Jump server — OpenSSH on Alpine until otforge-jump-server is built.
   'jump-server': 'ghcr.io/iburres/alpine:latest',
   // STUB: Data diode — Alpine network container; unidirectional routing enforced by nftables.
@@ -607,6 +605,12 @@ export function generateCompose(
       }
       workstationServiceNames.push(serviceName)
       workstationPortIndex++
+    }
+
+    // Switch and router containers need NET_ADMIN for iproute2 / ip_forward sysctl
+    // and NET_RAW for tcpdump packet capture by students during traffic analysis labs.
+    if (device.category === 'switch' || device.category === 'router') {
+      services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
     }
 
     // Firewall bridges OT, Control Center, and Plant DMZ to enforce inter-zone ACLs.
