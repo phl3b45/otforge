@@ -429,9 +429,15 @@ export function generateCompose(
       }
     } else {
       // Direct edge fallback: one endpoint is PLC, other is process-unit
-      if (srcDevice.category === 'plc' && tgtDevice.category === 'process-unit') {
+      if (
+        (srcDevice.category === 'plc' || srcDevice.category === 'safety-plc') &&
+        tgtDevice.category === 'process-unit'
+      ) {
         plcToProcessUnitNodeId.set(edge.source, edge.target)
-      } else if (srcDevice.category === 'process-unit' && tgtDevice.category === 'plc') {
+      } else if (
+        srcDevice.category === 'process-unit' &&
+        (tgtDevice.category === 'plc' || tgtDevice.category === 'safety-plc')
+      ) {
         plcToProcessUnitNodeId.set(edge.target, edge.source)
       }
     }
@@ -543,22 +549,17 @@ export function generateCompose(
     // NOTE: the ports: binding only works because we also attach PLCs to the
     // non-internal monitoring-net below — ot-net is internal: true and Docker
     // silently drops port bindings on internal-only networks.
-    if (device.category === 'plc') {
+    // Both plc and safety-plc run the OpenPLC runtime — same port layout,
+    // same PROCESS_SIM_IP wiring, same IDE access. safety-plc additionally
+    // receives SIS-specific env vars for display in logs and the properties panel.
+    if (device.category === 'plc' || device.category === 'safety-plc') {
       const hostWebPort = PLC_WEB_PORT_BASE + plcPortIndex
       const hostModbusPort = PLC_MODBUS_PORT_BASE + plcPortIndex
-      // Publish both the OpenPLC web IDE (8080) and the Modbus TCP server (502).
-      // Modbus is published so the Electron renderer can poll coil states directly
-      // via Node.js raw TCP sockets (modbus:readCoils IPC channel) for the
-      // live pipe-flow animation without needing docker exec or extra containers.
       services[serviceName].ports = [`${hostWebPort}:8080`, `${hostModbusPort}:502`]
       plcServiceNames.push(serviceName)
       plcPortIndex++
 
-      // If this PLC is connected to a process-unit, inject PROCESS_SIM_IP so the
-      // OpenPLC entrypoint generates a Modbus master config (mbconfig.cfg) pointing
-      // at the physics simulator. The simulator's IP is resolved from the scenario
-      // the same way all device IPs are — using the effective (post-dedup) address
-      // from claimedDeviceIps if already processed, or resolveDeviceIp otherwise.
+      // Inject PROCESS_SIM_IP when connected to a physics simulator.
       const processUnitNodeId = plcToProcessUnitNodeId.get(nodeId)
       if (processUnitNodeId) {
         const procSimIp =
@@ -571,6 +572,22 @@ export function generateCompose(
         const plcEnv: string[] = services[serviceName].environment ?? []
         plcEnv.push(`PROCESS_SIM_IP=${procSimIp}`)
         services[serviceName].environment = plcEnv
+      }
+
+      // SIS-specific env vars — injected for safety-plc devices only.
+      // These are informational (OpenPLC logs them at startup) and reinforce
+      // IEC 61511 concepts without implying any SIL certification.
+      if (device.category === 'safety-plc' && device.safetyPlc) {
+        const sisEnv: string[] = services[serviceName].environment ?? []
+        if (device.safetyPlc.sisFunction)
+          sisEnv.push(`SIS_FUNCTION=${device.safetyPlc.sisFunction}`)
+        if (device.safetyPlc.votingConfig)
+          sisEnv.push(`SIS_VOTING=${device.safetyPlc.votingConfig}`)
+        if (device.safetyPlc.proofTestIntervalHr !== undefined) {
+          sisEnv.push(`SIS_PROOF_TEST_INTERVAL_HR=${device.safetyPlc.proofTestIntervalHr}`)
+        }
+        if (device.safetyPlc.safeState) sisEnv.push(`SIS_SAFE_STATE=${device.safetyPlc.safeState}`)
+        services[serviceName].environment = sisEnv
       }
     }
 
@@ -788,7 +805,7 @@ export function generateCompose(
   if (workstationServiceNames.length > 0) {
     const plcWebUiEntries: string[] = []
     for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
-      if (device.category === 'plc') {
+      if (device.category === 'plc' || device.category === 'safety-plc') {
         const plcIp = claimedDeviceIps.get(nodeId)
         if (plcIp) {
           plcWebUiEntries.push(`${sanitizeServiceName(nodeId)}|http://${plcIp}:8080`)
