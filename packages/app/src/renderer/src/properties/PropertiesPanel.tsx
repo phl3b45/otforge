@@ -160,8 +160,8 @@ export function PropertiesPanel({
         </div>
       </div>
 
-      {/* PLC devices: identity rows + prominent IDE launch button */}
-      {device.category === 'plc' && (
+      {/* PLC and Safety PLC: identity rows + IDE launch button */}
+      {(device.category === 'plc' || device.category === 'safety-plc') && (
         <div className="properties-body">
           {/* Identity section — same fields as non-PLC devices */}
           <section className="prop-section">
@@ -196,6 +196,37 @@ export function PropertiesPanel({
               )}
             </div>
           </section>
+
+          {/* SIS parameters — shown for safety-plc devices */}
+          {device.category === 'safety-plc' && device.safetyPlc && (
+            <section className="prop-section">
+              <div className="prop-section-title">Safety Instrumented System</div>
+              {device.safetyPlc.sisFunction && (
+                <div className="prop-row">
+                  <span className="prop-label">Function</span>
+                  <span className="prop-value">{device.safetyPlc.sisFunction}</span>
+                </div>
+              )}
+              {device.safetyPlc.votingConfig && (
+                <div className="prop-row">
+                  <span className="prop-label">Voting</span>
+                  <code className="prop-value">{device.safetyPlc.votingConfig}</code>
+                </div>
+              )}
+              {device.safetyPlc.proofTestIntervalHr !== undefined && (
+                <div className="prop-row">
+                  <span className="prop-label">Proof test</span>
+                  <span className="prop-value">{device.safetyPlc.proofTestIntervalHr} hr</span>
+                </div>
+              )}
+              {device.safetyPlc.safeState && (
+                <div className="prop-row">
+                  <span className="prop-label">Safe state</span>
+                  <span className="prop-value">{device.safetyPlc.safeState}</span>
+                </div>
+              )}
+            </section>
+          )}
 
           {/* PLC controls — hidden in Student mode (read-only); instructors only */}
           {!readOnly && (
@@ -235,7 +266,7 @@ export function PropertiesPanel({
       )}
 
       {/* Standard property rows for all non-PLC devices */}
-      {device.category !== 'plc' && (
+      {device.category !== 'plc' && device.category !== 'safety-plc' && (
         <div className="properties-body">
           {/* ── Identity section ─────────────────────────────────────────────── */}
           <section className="prop-section">

@@ -790,7 +790,7 @@ function registerIPCHandlers(): void {
         let attackIdx = 0
         let workstationIdx = 0
         for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
-          if (device.category === 'plc') {
+          if (device.category === 'plc' || device.category === 'safety-plc') {
             activePlcPorts.set(nodeId, 18080 + plcIdx)
             // 18550 matches PLC_MODBUS_PORT_BASE in compose-generator.ts
             activePlcModbusPorts.set(nodeId, 18550 + plcIdx)
@@ -2849,7 +2849,10 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     if (edge.data.protocol !== 'modbus-tcp') continue
     for (const candidateId of [edge.source, edge.target]) {
       const device = scenario.devices.devices[candidateId]
-      if (device && (device.category === 'plc' || device.category === 'rtu')) {
+      if (
+        device &&
+        (device.category === 'plc' || device.category === 'safety-plc' || device.category === 'rtu')
+      ) {
         modbusNodeIds.add(candidateId)
       }
     }

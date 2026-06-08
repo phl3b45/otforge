@@ -368,6 +368,42 @@ export interface DnsConfig {
   upstream?: string
 }
 
+/**
+ * Safety Instrumented System configuration for safety-plc devices (IEC 61511).
+ *
+ * These fields are informational — they are injected as environment variables
+ * into the OpenPLC container so students can see the SIS parameters in the
+ * properties panel and in container logs, reinforcing SIS design concepts.
+ * The underlying runtime is OpenPLC; no SIL certification is implied.
+ */
+export interface SafetyPlcConfig {
+  /**
+   * Plain-language description of the safety function this SIS performs.
+   * Displayed in the properties panel and injected as SIS_FUNCTION env var.
+   * Example: "High Pressure Shutdown — reactor feed isolation"
+   */
+  sisFunction?: string
+  /**
+   * Voting architecture for redundant sensor inputs (IEC 61511 terminology).
+   * Injected as SIS_VOTING env var.
+   *   1oo1 = single sensor, trip on fault
+   *   2oo3 = two-out-of-three (most common for SIL 2 applications)
+   */
+  votingConfig?: '1oo1' | '1oo2' | '2oo2' | '2oo3' | '1oo3'
+  /**
+   * Proof-test interval in hours — how often the SIS is functionally tested.
+   * Injected as SIS_PROOF_TEST_INTERVAL_HR env var for display purposes.
+   * Typical values: 8760 (annual), 4380 (semi-annual), 2190 (quarterly).
+   */
+  proofTestIntervalHr?: number
+  /**
+   * Human-readable description of the safe state this SIS drives to on trip.
+   * Injected as SIS_SAFE_STATE env var.
+   * Example: "Close SDV-101, de-energize ESD relay K1"
+   */
+  safeState?: string
+}
+
 export interface DeviceConfig {
   nodeId: string // matches CanvasNode.id
   category: DeviceCategory
@@ -383,6 +419,7 @@ export interface DeviceConfig {
   processUnit?: ProcessUnitConfig // Physics process simulation config (Phase 11)
   dns?: DnsConfig // DNS server config (dns-server devices, Phase 12)
   plcProgram?: PLCProgramConfig
+  safetyPlc?: SafetyPlcConfig // SIS config for safety-plc devices
   dockerImage?: string // override default image for this device type
   /**
    * Additional Purdue Model zone networks to attach this device to, beyond the
