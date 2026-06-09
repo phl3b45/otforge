@@ -69,6 +69,11 @@ jobs:
           # on Alpine. Logs all queries so students observe reconnaissance in real time.
           - image: otforge-dns
             context: containers/dns-server
+          # Phase 12: Corporate mail server — open-relay SMTP (aiosmtpd on Alpine).
+          # Accepts all inbound mail without authentication; logs every message so
+          # students verify spear-phishing delivery in 'docker logs'.
+          - image: otforge-mail
+            context: containers/mail-server
           # Engineering workstation: Ubuntu 22.04 Xfce4 desktop with Wireshark, nmap,
           # and Python ICS protocol tools, served via TigerVNC + noVNC on port 6080.
           - image: otforge-workstation
