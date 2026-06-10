@@ -16,6 +16,9 @@ git pull
 Write-Host "[otforge] Installing dependencies..."
 npm ci
 
+Write-Host "[otforge] Installing Electron binary..."
+node node_modules/electron/install.js
+
 Write-Host "[otforge] Building packages..."
 npm run build:packages
 

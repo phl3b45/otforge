@@ -125,12 +125,13 @@ Real protocol packets flow on Docker virtual networks — scanner tools and expl
 
 ## Quick Start
 
-### Run from source
+### First-time setup
 
 ```bash
 git clone https://github.com/iburres/otforge.git
 cd otforge
 npm ci
+node node_modules/electron/install.js   # macOS only — downloads the Electron binary
 npm run build:packages
 npm run dev
 ```
@@ -140,6 +141,22 @@ Docker Desktop must be running before launching the app.
 > **Node.js 22+ required.** Vite 8 uses `crypto.hash()`, which was added in Node 21.7. Node 20 will throw `TypeError: crypto.hash is not a function`.
 
 **First-time students:** see [`docs/student-setup.md`](docs/student-setup.md) (also available as [`docs/student-setup.html`](docs/student-setup.html)) for a full step-by-step walkthrough covering Docker, Git, Node.js, and OTForge setup on both Windows and macOS.
+
+### Getting updates
+
+Do **not** use bare `git pull` after the first setup. npm rewrites `package-lock.json` with platform-specific native binary entries (different on macOS vs Windows), causing a conflict whenever the upstream lock file changes. Use the provided update script instead — it resets the lock file, pulls, reinstalls, and rebuilds in one step.
+
+**macOS / Linux:**
+```bash
+bash get-updates.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+.\get-updates.ps1
+```
+
+Then run `npm run dev` to launch.
 
 ### Build a distributable
 
