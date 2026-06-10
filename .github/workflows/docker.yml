@@ -164,22 +164,36 @@ jobs:
           exit-code: '1'
           format: table
 
-# ── OpenPLC — longer timeout, separate job ────────────────────────────────────
-# Building OpenPLC Runtime from source takes ~20 minutes.
+# ── OpenPLC — native multi-platform build ─────────────────────────────────────
+# OpenPLC Runtime is a large C++ compile (~20 min). QEMU cross-compilation times
+# out at 30+ min on the ARM64 leg, so we use GitHub's native ARM64 runner instead.
+# Pattern: each platform builds independently and pushes by digest; the merge job
+# assembles both digests into a single multi-platform manifest list.
 
   build-openplc:
-    name: Build otforge-openplc
-    runs-on: ubuntu-latest
+    name: Build otforge-openplc (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
 
     permissions:
       contents: read
       packages: write
 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v4
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
       - uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -218,6 +232,53 @@ jobs:
             exit 1
           fi
 
+      - name: Prepare platform slug
+        run: echo "PLATFORM_SLUG=$(echo '${{ matrix.platform }}' | tr '/' '-')" >> $GITHUB_ENV
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: containers/openplc
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.OWNER }}/otforge-openplc,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=otforge-openplc-${{ env.PLATFORM_SLUG }}
+          cache-to: type=gha,mode=max,scope=otforge-openplc-${{ env.PLATFORM_SLUG }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-openplc-${{ env.PLATFORM_SLUG }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge-openplc:
+    name: Merge otforge-openplc manifest
+    needs: build-openplc
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-openplc-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -228,16 +289,18 @@ jobs:
             type=sha,prefix=sha-,format=short
             type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
 
-      - name: Build and push otforge-openplc
-        uses: docker/build-push-action@v7
+      - uses: docker/login-action@v4
         with:
-          context: containers/openplc
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=otforge-openplc
-          cache-to: type=gha,mode=max,scope=otforge-openplc
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifest list
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ env.OWNER }}/otforge-openplc@sha256:%s ' *)
 
 # ── Attack base — Kali rolling, only on main push or release ──────────────────
 # Largest image (~800MB). Built separately to avoid blocking the matrix.

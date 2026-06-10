@@ -528,10 +528,11 @@ export function generateCompose(
     // Record so attack-machine DNS lookup can reference the actual assigned IP
     claimedDeviceIps.set(nodeId, effectiveIp)
 
-    // Images built for linux/amd64 only (no ARM64 wheel or source build available).
+    // Images built for linux/amd64 only (no ARM64 wheels available for Python deps).
     // Docker Desktop on Apple Silicon runs these via Rosetta 2 emulation automatically
     // when platform is set — without it, Docker refuses to pull on ARM64 hosts.
-    const AMD64_ONLY_CATEGORIES = new Set(['plc', 'safety-plc', 'engineering-workstation'])
+    // plc/safety-plc are now multi-platform (native ARM64 build in CI).
+    const AMD64_ONLY_CATEGORIES = new Set(['engineering-workstation'])
     const platformOverride = AMD64_ONLY_CATEGORIES.has(device.category)
       ? { platform: 'linux/amd64' as const }
       : {}
