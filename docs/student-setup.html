@@ -413,15 +413,14 @@ npm run dev</code></pre>
   <!-- ── Getting Updates ── -->
   <h2 id="updating">Getting Updates</h2>
 
-  <p><strong>Do not use bare <code>git pull</code></strong> &mdash; use the provided update script instead. npm records platform-specific information in <code>package-lock.json</code> that differs between macOS and Windows, causing a conflict whenever the lock file changes upstream. The script handles the reset, pull, reinstall, and rebuild automatically.</p>
-
   <p class="platform-label">Windows &mdash; PowerShell (from <code>C:\OTForge</code>)</p>
-<pre><code>.\get-updates.ps1</code></pre>
+<pre><code>git pull
+npm run dev</code></pre>
+  <p>Do <strong>not</strong> run <code>npm ci</code> on updates &mdash; it wipes <code>node_modules</code> and breaks the Electron installation. Only run <code>npm ci</code> once during initial setup.</p>
 
   <p class="platform-label">macOS &mdash; Terminal (from <code>~/OTForge</code>)</p>
 <pre><code>bash get-updates.sh</code></pre>
-
-  <p>Then run <code>npm run dev</code> to launch.</p>
+  <p>The script handles resetting <code>package-lock.json</code>, pulling, reinstalling, and rebuilding automatically. Then run <code>npm run dev</code>.</p>
 
   <hr>
 
@@ -520,7 +519,7 @@ npm run dev</code></pre>
         <tr><td>Navigate to OTForge</td><td><code>cd C:\OTForge</code></td><td><code>cd ~/OTForge</code></td></tr>
         <tr><td>Launch OTForge</td><td><code>npm run dev</code></td><td><code>npm run dev</code></td></tr>
         <tr><td>Scenarios folder</td><td><code>C:\OTForge\scenarios\</code></td><td><code>~/OTForge/scenarios/</code></td></tr>
-        <tr><td>Get updates</td><td><code>.\get-updates.ps1</code></td><td><code>bash get-updates.sh</code></td></tr>
+        <tr><td>Get updates</td><td><code>git pull &amp;&amp; npm run dev</code></td><td><code>bash get-updates.sh</code></td></tr>
       </tbody>
     </table>
   </div>

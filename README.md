@@ -144,19 +144,19 @@ Docker Desktop must be running before launching the app.
 
 ### Getting updates
 
-Do **not** use bare `git pull` after the first setup. npm rewrites `package-lock.json` with platform-specific native binary entries (different on macOS vs Windows), causing a conflict whenever the upstream lock file changes. Use the provided update script instead — it resets the lock file, pulls, reinstalls, and rebuilds in one step.
+**Windows (PowerShell in `C:\OTForge`):**
+```powershell
+git pull
+npm run dev
+```
 
 **macOS / Linux:**
 ```bash
 bash get-updates.sh
 ```
 
-**Windows (PowerShell):**
-```powershell
-.\get-updates.ps1
-```
-
-Then run `npm run dev` to launch.
+> **Windows:** do not run `npm ci` on updates — it wipes `node_modules` and breaks Electron. Only run it once during initial setup.
+> **macOS:** `git pull` alone causes a `package-lock.json` conflict (npm rewrites it with platform-specific entries). The script handles the reset automatically.
 
 ### Build a distributable
 
