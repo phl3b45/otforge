@@ -47,7 +47,7 @@
         "id": "step-04-nmap",
         "title": "Step 4 — Network Scan: Discover OT Devices",
         "body": "Now scan the OT subnet discovered in Step 1 to identify live hosts and exposed ICS protocol ports.\n\n**Caution:** In real ICS environments, aggressive scanning can freeze or crash PLCs, causing physical process disruptions. Always use slow timing templates (`-T2` polite or `-T1` sneaky) and target only relevant ports. The `-T2` flag used here limits packet rates to avoid overwhelming OT devices.\n\n**ICS ports being checked:**\n- **502** — Modbus TCP (most common OT protocol)\n- **20000** — DNP3 (electric utility substations)\n- **4840** — OPC-UA (historian / HMI data exchange)\n- **102** — S7comm / IEC 61850 (Siemens PLCs)\n- **2404** — IEC 60870-5-104 (telecontrol)\n\nCopy the command and press **Ctrl+V** in the **⚔ Kali Terminal**.",
-        "command": "nmap -T2 -p 502,20000,4840,102,2404 --open {{plc-1.subnet}}",
+        "command": "nmap -T4 -Pn --host-timeout 2s -p 502,20000,4840,102,2404 --open {{plc-1.subnet}}",
         "successCheck": "At least one host should respond with port 502 open: the PLC controller at {{plc-1.ip}}. Port 502 open means Modbus TCP is listening. No authentication is required to connect — Modbus TCP was designed for closed networks and has no built-in access control."
       },
       {
