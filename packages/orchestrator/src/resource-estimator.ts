@@ -22,7 +22,61 @@
  */
 
 import os from 'os'
+import { execSync } from 'child_process'
 import type { OTForgeScenario, ResourceEstimate } from '@otforge/schema'
+
+/**
+ * Returns truly available memory in bytes.
+ *
+ * macOS `os.freemem()` only counts pages with no content at all — it ignores
+ * inactive and speculative pages that the kernel will reclaim instantly under
+ * pressure. On a healthy Mac this makes freemem look critically low even when
+ * gigabytes are available.  We parse `vm_stat` to get the real picture.
+ *
+ * Linux exposes `MemAvailable` in /proc/meminfo (kernel 3.14+), which already
+ * accounts for reclaimable caches.
+ *
+ * Windows: `os.freemem()` calls GlobalMemoryStatusEx, which returns available
+ * physical memory — already the right metric.
+ */
+function availableMemBytes(): number {
+  try {
+    if (process.platform === 'darwin') {
+      // vm_stat output (excerpt):
+      //   Mach Virtual Memory Statistics: (page size of 16384 bytes)
+      //   Pages free:                           1234.
+      //   Pages inactive:                       5678.
+      //   Pages speculative:                     900.
+      //   Pages purgeable:                       200.
+      const raw = execSync('vm_stat', { encoding: 'utf8', timeout: 2000 })
+      const pageMatch = raw.match(/page size of (\d+) bytes/)
+      const pageBytes = pageMatch ? parseInt(pageMatch[1], 10) : 4096
+      const pages = (label: string): number => {
+        const m = raw.match(new RegExp(`${label}:\\s+([\\d]+)\\.`))
+        return m ? parseInt(m[1], 10) : 0
+      }
+      const available =
+        (pages('Pages free') +
+          pages('Pages inactive') +
+          pages('Pages speculative') +
+          pages('Pages purgeable')) *
+        pageBytes
+      return available > 0 ? available : os.freemem()
+    }
+
+    if (process.platform === 'linux') {
+      const meminfo = execSync('grep MemAvailable /proc/meminfo', {
+        encoding: 'utf8',
+        timeout: 2000
+      })
+      const m = meminfo.match(/MemAvailable:\s+(\d+)\s+kB/)
+      if (m) return parseInt(m[1], 10) * 1024
+    }
+  } catch {
+    // Fall through to os.freemem() if the platform command fails
+  }
+  return os.freemem()
+}
 
 // ── Per-container RAM budgets (MB) ────────────────────────────────────────────
 // These match the `deploy.resources.limits.memory` values in the compose generator.
@@ -121,7 +175,7 @@ export interface SystemMemory {
  */
 export function checkSystemMemory(estimate: ResourceEstimate): SystemMemory {
   const totalMb = Math.round(os.totalmem() / 1024 / 1024)
-  const freeMb = Math.round(os.freemem() / 1024 / 1024)
+  const freeMb = Math.round(availableMemBytes() / 1024 / 1024)
   const ratio = estimate.estimatedRamMb / freeMb
 
   return {
@@ -131,4 +185,9 @@ export function checkSystemMemory(estimate: ResourceEstimate): SystemMemory {
     warningThreshold: ratio >= 0.6, // ≥60% of free RAM: show advisory notice
     criticalThreshold: ratio >= 0.85 // ≥85% of free RAM: show danger warning, default to Cancel
   }
+}
+
+/** Returns available system memory in MB using the platform-aware availableMemBytes(). */
+export function getAvailableMemMb(): number {
+  return Math.round(availableMemBytes() / 1024 / 1024)
 }

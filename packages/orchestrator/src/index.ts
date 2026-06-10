@@ -1,6 +1,6 @@
 export { generateCompose } from './compose-generator'
 export { DockerClient } from './docker-client'
-export { estimateResources, checkSystemMemory } from './resource-estimator'
+export { estimateResources, checkSystemMemory, getAvailableMemMb } from './resource-estimator'
 export { validateScenario, toProjectName } from './schema-validator'
 export { ZONE_DEFAULTS, dockerNetworkName, zoneIpPrefix, findFreeSubnets } from './network-config'
 export { writeGrafanaProvisioning } from './grafana-provisioning'

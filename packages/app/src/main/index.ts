@@ -58,6 +58,7 @@ import {
   DockerClient,
   estimateResources,
   checkSystemMemory,
+  getAvailableMemMb,
   validateScenario,
   toProjectName,
   writeGrafanaProvisioning,
@@ -1629,7 +1630,7 @@ function registerIPCHandlers(): void {
   /** Returns host memory and CPU count for the resource estimator display. */
   ipcMain.handle('system:meminfo', async () => ({
     totalMb: Math.round(os.totalmem() / 1024 / 1024),
-    freeMb: Math.round(os.freemem() / 1024 / 1024),
+    freeMb: getAvailableMemMb(),
     cpus: os.cpus().length
   }))
 
