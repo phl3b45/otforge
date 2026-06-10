@@ -28,8 +28,6 @@ Environment variables:
 """
 
 import asyncio
-import email
-import email.policy
 import logging
 import os
 import time
@@ -71,25 +69,36 @@ class OpenRelayHandler:
         """Receive message, log it, and save it to disk."""
         raw = envelope.content  # bytes
 
-        # Parse with Python's email library for structured access
-        msg = email.message_from_bytes(raw, policy=email.policy.default)
-
         sender = envelope.mail_from
         recipients = envelope.rcpt_tos
-        subject = msg.get("Subject", "(no subject)")
 
-        # Extract plain-text body for logging
-        body = ""
-        if msg.is_multipart():
-            for part in msg.walk():
-                if part.get_content_type() == "text/plain":
-                    body = part.get_content()
-                    break
-        else:
-            try:
-                body = msg.get_content()
-            except Exception:
-                body = raw.decode("utf-8", errors="replace")
+        # Parse everything from the raw message bytes directly.
+        # curl sends minimal SMTP messages that often lack Content-Type and other
+        # MIME headers, causing the email library's structured parser to misidentify
+        # headers as body content. Raw line-by-line scanning is more reliable and
+        # handles malformed messages (indented headers, mixed line endings, etc.).
+        raw_str = raw.decode("utf-8", errors="replace")
+
+        # Scan line by line — the first line that is empty or whitespace-only
+        # marks the boundary between headers and body (RFC 5322 section 2.1).
+        header_lines: list[str] = []
+        body_lines: list[str] = []
+        in_body = False
+        for line in raw_str.splitlines():
+            if not in_body and line.strip() == "":
+                in_body = True
+                continue
+            (body_lines if in_body else header_lines).append(line)
+
+        body = "\n".join(body_lines)
+
+        # Extract Subject from headers (strip leading whitespace to handle
+        # indented or folded header lines produced by some mail clients/scripts).
+        subject = "(no subject)"
+        for line in header_lines:
+            if line.strip().lower().startswith("subject:"):
+                subject = line.strip()[8:].strip()
+                break
 
         # Log to stdout so students see it in 'docker logs'
         sep = "=" * 62
