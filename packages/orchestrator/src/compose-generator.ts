@@ -199,6 +199,8 @@ interface ComposeService {
    * metered or slow connections, and prevents Docker Hub rate-limit failures.
    */
   pull_policy?: string
+  /** Target platform for images that only publish linux/amd64 (e.g. openplc, workstation). */
+  platform?: string
   container_name: string
   restart: string
   /**
