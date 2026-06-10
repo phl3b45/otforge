@@ -1,23 +1,6 @@
 # OTForge Student Setup Guide
 
-This guide walks you through installing everything you need to run OTForge on your personal computer. By the end you will have Docker Desktop and OTForge running, and your computer will be ready to load lab scenario files.
-
-**Your instructor will distribute Lab 01 (`.otflab` file) through Canvas. You do not need it before completing this setup — just make sure your `scenarios` folder is ready when it arrives.**
-
----
-
-## What You Are Installing
-
-| Component | Purpose |
-|---|---|
-| **Docker Desktop** | Runs the virtual ICS/OT devices (PLCs, sensors, network equipment) as containers |
-| **Git** | Downloads the OTForge source code from GitHub |
-| **Node.js 22** | Builds and runs the OTForge desktop application |
-| **OTForge** | The SCADA canvas application you will use for all labs |
-
-**Estimated time:** 30–45 minutes, depending on download speed.
-
-**Disk space needed:** ~8 GB total (Docker, Node.js, Docker images).
+Install three tools, clone the repository, and run a few commands. The whole process takes about 30–45 minutes (most of that is download time).
 
 ---
 
@@ -25,567 +8,132 @@ This guide walks you through installing everything you need to run OTForge on yo
 
 | | Windows | macOS |
 |---|---|---|
-| **OS version** | Windows 10 22H2 (build 19045) or later; Windows 11 23H2 (build 22631) or later | macOS 12 Monterey or later |
-| **RAM** | 8 GB minimum, 16 GB recommended | 8 GB minimum, 16 GB recommended |
+| **OS** | Windows 10 22H2 or later; Windows 11 | macOS 12 Monterey or later |
+| **RAM** | 8 GB minimum (16 GB recommended) | 8 GB minimum (16 GB recommended) |
 | **Disk** | 20 GB free | 20 GB free |
-| **CPU** | 64-bit, virtualization enabled in BIOS | Intel or Apple Silicon (M1/M2/M3/M4) |
+| **CPU** | 64-bit with virtualization enabled | Intel or Apple Silicon (M1/M2/M3/M4) |
 
-> **Windows only — Virtualization check:**  
-> Open Task Manager → Performance → CPU. Confirm "Virtualization: Enabled". If it says Disabled, ask your instructor for BIOS help before proceeding.
+> **Windows — verify virtualization is enabled:**
+> Open Task Manager → Performance → CPU. Confirm "Virtualization: Enabled". If it says Disabled, ask your instructor for BIOS help before continuing.
 
 ---
 
-## Windows Setup
+## Step 1 — Install Docker Desktop
 
-### Step 1 — Install Docker Desktop
+Go to **https://www.docker.com/products/docker-desktop** and download the installer for your platform.
 
-1. Go to **https://www.docker.com/products/docker-desktop** and click **Download for Windows**.
-2. Run the installer (`Docker Desktop Installer.exe`).
-3. When prompted, leave **Use WSL 2 instead of Hyper-V** checked (recommended for most systems).
-4. Click **OK** and let the installer finish. Your computer may restart.
-5. After restart, Docker Desktop launches automatically and shows a whale icon in your taskbar.
-6. Wait for the status to say **"Engine running"** (green circle) before continuing.
+> **Apple Silicon Mac (M1/M2/M3/M4):** Choose "Mac with Apple Silicon" — not the Intel version.
+> To check: Apple menu → About This Mac. Look for "Chip" (Apple Silicon) or "Processor" (Intel).
 
-> **First-time Docker sign-in is not required.** You can skip account creation by clicking "Continue without signing in."
+Run the installer and launch Docker Desktop. Wait until the status shows **"Engine running"** (green indicator) before continuing.
 
-**Verify Docker works:**
+Sign-in is not required — click "Continue without signing in" if prompted.
 
-Open **PowerShell** (search the Start menu) and run:
+**Verify:**
 ```
 docker --version
 ```
-You should see something like `Docker version 27.x.x`. If you get an error, restart Docker Desktop and try again.
 
 ---
 
-### Step 2 — Install Git
+## Step 2 — Install Git
 
-1. Go to **https://git-scm.com/download/win** and download the latest **64-bit** installer.
-2. Run the installer. Accept all defaults — the standard options work fine.
-3. When the installer finishes, close and reopen PowerShell.
+Go to **https://git-scm.com/downloads** and download the installer for your platform. Accept all defaults.
 
-**Verify Git works:**
+**Verify:**
 ```
 git --version
 ```
-You should see `git version 2.x.x`.
 
 ---
 
-### Step 3 — Install Node.js 22
+## Step 3 — Install Node.js 22
 
-1. Go to **https://nodejs.org** and click the **LTS** download button (Long Term Support).  
-   Make sure it says **v22.x.x** — if the site shows a different major version, click "Other Downloads" and select v22.
-2. Run the installer. When you reach each screen, do the following:
+Go to **https://nodejs.org** and download the **LTS** release. Make sure the major version is **22** — if the site shows a different version, click "Other Downloads" and select v22.
 
-   | Installer screen | What to do |
-   |---|---|
-   | **End-User License Agreement** | Accept and click Next |
-   | **Destination Folder** | Leave the default path (`C:\Program Files\nodejs\`) and click Next |
-   | **Custom Setup** | Leave all four items checked (Node.js runtime, npm package manager, Add to PATH, Online documentation) — these are the defaults. Click Next. |
-   | **Tools for Native Modules** | **Leave the checkbox unchecked.** This screen offers to install Chocolatey and Visual Studio Build Tools — OTForge does not need them. Checking it triggers a separate 1 GB download that is not required. Click Next. |
-   | **Ready to Install** | Click Install. Windows may ask for administrator permission — click Yes. |
+Run the installer and accept all defaults.
 
-> **Node.js 20 will not work.** OTForge uses Vite 8, which requires Node.js 22 or later. If you have Node.js 20 installed, uninstall it first (Windows Settings → Apps → search "Node.js" → Uninstall), then install v22 from the link above.
+> **Node.js 20 will not work.** OTForge requires Node.js 22 or later.
 
-**Verify Node.js works:**
+**Verify:**
 ```
 node --version
 npm --version
 ```
-Both commands should return version numbers (e.g., `v22.x.x` and `10.x.x`).
 
 ---
 
-### Step 4 — Configure PowerShell Script Execution
+## Step 4 — Clone OTForge
 
-Windows blocks PowerShell scripts by default. Running `npm` commands requires scripts to be allowed. This is a one-time change — you will not need to repeat it.
-
-In PowerShell, run:
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-Type **Y** and press Enter when prompted. This does not require administrator access and only affects your user account.
-
-> **What this does:** Sets PowerShell to allow locally created scripts and signed remote scripts to run. Without this, `npm` commands will fail with a message saying scripts are disabled on your system.
-
----
-
-### Step 5 — Clone the OTForge Repository
-
-You will create a dedicated folder on your `C:` drive and download the project into it.
-
-In PowerShell, run these commands **one at a time**:
-
+**Windows (PowerShell):**
 ```powershell
 mkdir C:\OTForge
 cd C:\OTForge
 git clone https://github.com/iburres/otforge.git .
 ```
 
-> The final `.` (period) tells Git to clone into the current folder instead of creating a subfolder. Make sure you include it.
-
-When the clone finishes, you will see a list of files and folders inside `C:\OTForge`.
-
----
-
-### Step 6 — Install OTForge Dependencies
-
-Still in PowerShell (inside `C:\OTForge`), run:
-
-```powershell
-npm ci
-```
-
-This downloads all the JavaScript packages OTForge needs. It may take a few minutes. You will see a lot of output — that is normal. Wait for the prompt to return.
-
----
-
-### Step 7 — Build the Support Packages
-
-```powershell
-npm run build:packages
-```
-
-This compiles two internal packages (`schema` and `orchestrator`) that the main app depends on. It takes about 30 seconds.
-
----
-
-### Step 8 — Launch OTForge
-
-```powershell
-npm run dev
-```
-
-The OTForge window will open. The first time you run it, you may see a Windows Defender prompt asking to allow network access — click **Allow**.
-
-You are now ready for lab work.
-
----
-
-### Step 9 — Prepare Your Scenarios Folder
-
-Your scenario files (`.otflab`) live in:
-
-```
-C:\OTForge\scenarios\
-```
-
-This folder already exists after cloning. When your instructor releases a lab file through Canvas, download it and save it to that folder.
-
----
-
-## macOS Setup
-
-### Step 1 — Install Docker Desktop
-
-1. Go to **https://www.docker.com/products/docker-desktop** and click **Download for Mac**.
-2. **Important:** On the download page, choose the correct version for your chip:
-   - **Apple Silicon (M1/M2/M3/M4):** Choose "Mac with Apple Silicon"
-   - **Intel Mac:** Choose "Mac with Intel chip"
-   
-   *To check your chip: Apple menu () → About This Mac. Look for "Chip" (Apple M-series) or "Processor" (Intel).*
-
-3. Open the downloaded `.dmg` file and drag Docker to your Applications folder.
-4. Open Docker from Applications. macOS will ask for your password to allow the Docker helper to install.
-5. Wait for the Docker menu bar icon (whale) to show **"Docker Desktop is running"**.
-
-> **Sign-in is not required.** Click "Continue without signing in" if prompted.
-
-**Verify Docker works:**
-
-Open **Terminal** (Applications → Utilities → Terminal) and run:
-```bash
-docker --version
-```
-You should see `Docker version 27.x.x`.
-
----
-
-### Step 2 — Install Homebrew (Package Manager)
-
-Homebrew makes installing Git and Node.js much easier on macOS. If you already have it, skip to Step 3.
-
-In Terminal, run:
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-Follow the prompts. You will need your macOS password. On Apple Silicon, the installer may ask you to add Homebrew to your PATH — copy and run the two commands it shows before continuing.
-
-**Verify Homebrew works:**
-```bash
-brew --version
-```
-
----
-
-### Step 3 — Install Git
-
-macOS often includes a system Git, but installing a newer version through Homebrew is recommended:
-
-```bash
-brew install git
-```
-
-**Verify:**
-```bash
-git --version
-```
-
----
-
-### Step 4 — Install Node.js 22
-
-```bash
-brew install node@22
-```
-
-After installation, Homebrew may ask you to add Node 22 to your PATH. If so, run the commands it prints (they look like `echo 'export PATH=...' >> ~/.zshrc`).
-
-Then reload your shell configuration:
-```bash
-source ~/.zshrc
-```
-
-**Verify:**
-```bash
-node --version
-npm --version
-```
-Both should return version numbers (`v22.x.x` and `10.x.x`).
-
-> **Node.js 20 will not work.** OTForge uses Vite 8, which requires Node.js 22 or later. If you already have Node.js 20 via Homebrew, run `brew unlink node@20 && brew link --overwrite node@22` to switch.
-
-> **Already have a different Node version?** You can use `nvm` (Node Version Manager) to switch versions. Run `nvm install 22 && nvm use 22` if you have nvm installed.
-
----
-
-### Step 5 — Clone the OTForge Repository
-
-In Terminal, run these commands **one at a time**:
-
+**macOS (Terminal):**
 ```bash
 mkdir ~/OTForge
 cd ~/OTForge
 git clone https://github.com/iburres/otforge.git .
 ```
 
-> The final `.` (period) clones into the current folder. Do not omit it.
+> The `.` at the end of the `git clone` command clones into the current folder — do not omit it.
 
 ---
 
-### Step 6 — Install OTForge Dependencies
+## Step 5 — Install and Launch
 
-```bash
+**Windows (PowerShell — from `C:\OTForge`):**
+
+First, allow PowerShell scripts to run (one-time, your account only):
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+Type **Y** when prompted.
+
+Then install and launch:
+```powershell
 npm ci
-```
-
-Wait for it to finish (a few minutes). You will see package installation output — that is normal.
-
----
-
-### Step 7 — Install the Electron Binary
-
-On macOS, the Electron desktop runtime binary needs to be downloaded separately after `npm ci`:
-
-```bash
-node node_modules/electron/install.js
-```
-
-This downloads a single ~90 MB file from GitHub. Wait for it to complete before continuing.
-
-> **Windows users:** You do not need this step — Electron downloads automatically during `npm ci` on Windows.
-
----
-
-### Step 8 — Build the Support Packages
-
-```bash
 npm run build:packages
+npm run dev
 ```
-
-This takes about 30 seconds.
 
 ---
 
-### Step 9 — Launch OTForge
-
+**macOS (Terminal — from `~/OTForge`):**
 ```bash
+npm ci
+node node_modules/electron/install.js
+npm run build:packages
 npm run dev
 ```
 
-The OTForge window opens. On first launch, macOS may show a security dialog — click **Open** to allow the Electron application to run.
+> The `node node_modules/electron/install.js` step downloads the Electron desktop runtime (~90 MB). It is only required on macOS — Windows handles this automatically during `npm ci`.
 
 ---
 
-### Step 10 — Prepare Your Scenarios Folder
-
-Your scenario files live in:
-
-```
-~/OTForge/scenarios/
-```
-
-(This is `/Users/yourname/OTForge/scenarios/` — the `~` is shorthand for your home folder.)
-
-When your instructor releases a lab file through Canvas, download it and save it here.
+OTForge will open. The first time you run a scenario and click **Start Simulation**, Docker will pull the required container images (~2–4 GB one-time download). This takes several minutes — subsequent launches are fast.
 
 ---
 
-## What Happens on First Simulation Run
+## Step 6 — Scenarios Folder
 
-When you open a lab scenario and click **Start Simulation** for the first time, OTForge will automatically pull the required Docker container images from GitHub's container registry. This is a **one-time download of approximately 2–4 GB** and may take several minutes depending on your internet connection. You will see a progress overlay in the application while this happens.
+Your lab files (`.otflab`) go in:
 
-Subsequent runs use the cached images and start in seconds.
+| Platform | Path |
+|---|---|
+| Windows | `C:\OTForge\scenarios\` |
+| macOS | `~/OTForge/scenarios/` |
 
----
-
-## Troubleshooting
-
-### "Docker Desktop is not running" error in OTForge
-
-Make sure Docker Desktop is open and the taskbar/menu bar icon shows a running state (green indicator). OTForge cannot start simulations if Docker is not running.
-
-### `npm ci` fails with permission errors (Windows)
-
-Right-click PowerShell in the Start menu and choose **Run as Administrator**, then retry the command from `C:\OTForge`.
-
-### `npm ci` fails with permission errors (macOS)
-
-Run `sudo npm ci` and enter your password, or fix npm permissions:
-```bash
-sudo chown -R $(whoami) ~/.npm
-npm ci
-```
-
-### `npm run dev` fails with "Error: Electron uninstall"
-
-The Electron binary did not download correctly. OTForge includes a repair script that fixes this automatically.
-
-**Run the repair script (regular PowerShell window — do NOT run as Administrator):**
-```powershell
-cd C:\OTForge
-.\fix-electron.ps1
-```
-
-The script checks `path.txt`, tries the built-in installer, and if that fails downloads and installs the Electron binary directly from GitHub. When it finishes, run `npm run dev`.
-
-If the script itself fails due to a network error, see the manual steps in the **`Path.txt` missing** section below.
-
-### `Path.txt` missing in `node_modules\electron\` (Windows)
-
-OTForge launches Electron by reading `node_modules\electron\Path.txt` to locate the binary. If that file is missing, `npm run dev` will fail with a message like `Electron failed to install correctly` or `Cannot find module`.
-
-This happens when Electron's post-install download script runs but fails silently — usually caused by Windows Defender, a corporate firewall, or a flaky network connection interrupting the download.
-
-**Step 1 — Re-run the Electron installer script directly:**
-```powershell
-cd C:\OTForge
-node node_modules\electron\install.js
-```
-Wait for it to finish (it downloads the Electron binary — about 90 MB). Then check that `Path.txt` now exists:
-```powershell
-Test-Path node_modules\electron\Path.txt
-```
-If it prints `True`, run `npm run dev` and you are done.
-
-**Step 2 — If Step 1 fails, delete and re-download just the Electron package:**
-```powershell
-cd C:\OTForge
-Remove-Item -Recurse -Force node_modules\electron
-npm install
-```
-This reinstalls only the Electron package and re-runs its download script. If Windows Defender blocks the download, you may see a prompt — allow it.
-
-**Step 3 — If Steps 1 and 2 both fail, set an alternate download mirror and retry:**
-
-Some campus networks block GitHub releases (where Electron binaries are hosted by default). Setting a mirror tells npm to fetch from a different server:
-```powershell
-cd C:\OTForge
-$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
-Remove-Item -Recurse -Force node_modules\electron
-npm install
-```
-Once `Path.txt` appears, clear the variable and verify OTForge starts:
-```powershell
-Remove-Item Env:\ELECTRON_MIRROR
-npm run dev
-```
-
-**Step 4 — Last resort: manually place the Electron binary (only if Steps 1–3 all failed)**
-
-If every automated approach has failed, you can download the Electron binary directly in your browser and install it by hand.
-
-1. Download this file in your browser and save it to your **Downloads** folder:
-   `https://github.com/electron/electron/releases/download/v42.0.1/electron-v42.0.1-win32-x64.zip`
-
-2. Right-click the zip → **Extract All** → extract to your Downloads folder.
-
-3. Open PowerShell (**regular window — do NOT run as Administrator**) and run each command one at a time:
-
-   First, confirm the extraction worked:
-```powershell
-Test-Path "$env:USERPROFILE\Downloads\electron-v42.0.1-win32-x64\electron.exe"
-```
-   This should print `True`. If it prints `False`, the zip did not extract correctly — try again.
-
-   Copy all the Electron files into the `dist` folder:
-```powershell
-Copy-Item -Recurse "$env:USERPROFILE\Downloads\electron-v42.0.1-win32-x64\*" "C:\OTForge\node_modules\electron\dist\" -Force
-```
-
-> **Important:** The Electron zip extracts files directly into the folder — there is no `dist` subfolder inside the zip. The files (`electron.exe`, `resources.pak`, `locales\`, etc.) go directly into `node_modules\electron\dist\`.
-
-> **Note:** `path.txt` should already exist and contain `electron.exe` — do **not** change it.
-
-4. Verify it worked:
-```powershell
-cd C:\OTForge
-.\node_modules\.bin\electron --version
-```
-   You should see `v42.0.1` with no download message.
-
-5. Run OTForge:
-```powershell
-npm run dev
-```
+This folder is created automatically when you clone the repository. When your instructor releases a lab file through Canvas, save it here.
 
 ---
 
-### `node_modules` folder does not exist after running `npm ci`
+## Getting Updates
 
-If the entire `node_modules` folder is missing after `npm ci` completes (or `npm ci` exits with an error mid-way), the most common cause is Electron's binary download failing — Electron is a large download (~90 MB) and is the last major step of the install. A network timeout, antivirus block, or proxy interruption can abort the install and leave `node_modules` in a partial or missing state.
-
-**Step 1 — Clear the npm cache and retry:**
-```powershell
-cd C:\OTForge
-npm cache clean --force
-npm ci
-```
-The cache clean removes any corrupted partial downloads that would cause the same failure on the next attempt.
-
-**Step 2 — If `npm ci` fails again, increase the network timeout:**
-
-Default npm network timeout is 30 seconds — too short on slow or congested campus Wi-Fi:
-```powershell
-cd C:\OTForge
-npm ci --fetch-timeout=300000
-```
-This gives npm 5 minutes per request instead of 30 seconds.
-
-**Step 3 — If Electron specifically is still failing, set an alternate mirror:**
-```powershell
-cd C:\OTForge
-$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
-npm ci
-```
-Then clear the variable once the install succeeds:
-```powershell
-Remove-Item Env:\ELECTRON_MIRROR
-```
-
-**Step 4 — Verify the install completed correctly:**
-```powershell
-Test-Path node_modules\electron\Path.txt
-```
-If this prints `True`, the install is good. Run `npm run build:packages` and then `npm run dev`.
-
-> **Note:** Always run `npm ci` in a **regular** (non-Administrator) PowerShell window. Running as Administrator can cause file permission issues that prevent the install from completing correctly.
-
----
-
-### `npm run dev` opens no window
-
-Check that `npm run build:packages` completed without errors first. If it did, try closing and reopening your terminal, then run `npm run dev` again.
-
-### Docker images fail to pull
-
-Confirm you have an internet connection and that Docker Desktop is signed in (or that your network does not block `ghcr.io`). On campus networks, check with IT if container registry traffic is blocked.
-
-### "EOF" error while importing containers (simulation hangs on startup)
-
-You may see an error like:
-```
-failed to copy: httpReadSeeker: failed open: failed to do request:
-Get "https://production.cloudfront.docker.com/...": EOF
-```
-
-This means the connection to Docker's CDN was dropped mid-download — the image layer was interrupted before it finished. It is a network issue, not a problem with OTForge or your installation.
-
-**Step 1 — Simply retry.** Click **Stop Simulation** in OTForge (or close and reopen the app if it is stuck), then click **Run Simulation** again. Docker resumes interrupted downloads and usually succeeds on the second or third attempt.
-
-**Step 2 — Sign in to Docker Hub if you have not already.** Unauthenticated pulls have lower rate limits and are more likely to be dropped by Docker's CDN. Open PowerShell and run:
-```powershell
-docker login
-```
-Enter your Docker Hub username and password (free account at hub.docker.com). Then retry the simulation.
-
-**Step 3 — If it keeps failing on your network,** the issue is likely a campus firewall or VPN dropping large HTTPS downloads. Try:
-- Switching to a different Wi-Fi network (personal hotspot works well)
-- Disconnecting from any VPN before starting the simulation
-- Pulling the images manually one at a time so Docker can retry each layer:
-```powershell
-docker pull ghcr.io/iburres/otforge-suricata:latest
-docker pull ghcr.io/iburres/otforge-zeek:latest
-```
-Once the images are cached locally, OTForge's startup will be fast and will not need to re-download them.
-
-### "Pool overlaps with other one on this address space" on simulation start
-
-You may see an error like:
-```
-failed to create network otforge-...-attacker-net: Error response from daemon:
-invalid pool request: Pool overlaps with other one on this address space
-```
-
-This means Docker is trying to create a virtual network for your lab but the IP address range it needs is already claimed by a leftover network from a previous session that was not cleanly shut down. It is not caused by a git pull or code change.
-
-**Fix — remove stale Docker networks:**
-```powershell
-docker network prune
-```
-Type `y` when prompted. This removes all unused Docker networks, including any ghost OTForge networks from the previous session. Then launch the simulation again normally.
-
-**If the error persists** (e.g. a VPN is also using that address range), list all current networks and remove the specific one by name:
-```powershell
-docker network ls
-docker network rm <network-name-from-the-error>
-```
-
-> **Prevention:** always click **Stop Simulation** in OTForge before closing the app. This lets Docker Compose tear down the virtual networks cleanly. If you close OTForge without stopping first, the networks linger and will conflict on the next launch.
-
-### "Virtualization not supported" on Windows
-
-You need to enable virtualization in your computer's BIOS/UEFI firmware. The exact steps vary by manufacturer — search for your laptop model + "enable virtualization BIOS". Contact your instructor if you need help.
-
-### Apple Silicon Mac — "image not found" or architecture mismatch
-
-Make sure you downloaded the **Apple Silicon** version of Docker Desktop (not the Intel version). Check Docker Desktop → Settings → General → confirm "Use Virtualization Framework" is enabled.
-
-### `TypeError: crypto.hash is not a function` (Mac or Windows)
-
-You are running Node.js 20, which is too old. OTForge uses Vite 8, which requires Node.js 22 or later.
-
-**Fix (macOS):**
-```bash
-brew install node@22
-brew unlink node@20
-brew link --overwrite node@22
-node --version   # should print v22.x.x
-npm ci
-npm run dev
-```
-
-**Fix (Windows):** Uninstall Node.js from Windows Settings → Apps → search "Node.js" → Uninstall. Then install Node.js 22 LTS from **https://nodejs.org** and repeat the setup from Step 6.
-
----
-
-## Keeping OTForge Updated
-
-Your instructor may push updates to the repository during the semester. **Do not use bare `git pull`** — npm records platform-specific information in `package-lock.json` that differs between macOS and Windows, causing a conflict on every pull that touches that file. Use the provided update script instead — it handles everything in one step.
+**Do not use bare `git pull`** — use the provided update script instead. npm records platform-specific information in `package-lock.json` that differs between macOS and Windows, causing a conflict whenever the lock file changes upstream. The script handles the reset, pull, reinstall, and rebuild automatically.
 
 **Windows (PowerShell in `C:\OTForge`):**
 ```powershell
@@ -597,16 +145,64 @@ Your instructor may push updates to the repository during the semester. **Do not
 bash get-updates.sh
 ```
 
-The script resets `package-lock.json`, pulls the latest code, reinstalls dependencies, downloads the Electron binary (macOS), and rebuilds the packages. When it finishes, run `npm run dev` to launch.
+Then run `npm run dev` to launch.
 
 ---
 
-## Network Isolation — Protect Your Lab Ports
+## Troubleshooting
 
-When OTForge is running, Docker publishes several local ports so the app can open the Grafana dashboard, FUXA HMI, OpenPLC IDE, and VNC desktops in browser windows. On Windows, Docker binds these ports to **all network interfaces** (`0.0.0.0`), which means anyone on the same Wi-Fi network as your laptop could connect to your simulated devices while a lab is running.
+### "Docker Desktop is not running"
+Open Docker Desktop and wait for the green "Engine running" status before launching OTForge.
 
-Add a single Windows Firewall rule to block inbound connections to all OTForge ports. Open **PowerShell as Administrator** and paste:
+### `npm run dev` fails — Electron not installed (macOS)
+```bash
+node node_modules/electron/install.js
+npm run dev
+```
 
+### `npm run dev` fails — Electron not installed (Windows)
+```powershell
+node node_modules\electron\install.js
+npm run dev
+```
+If that fails, try:
+```powershell
+$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
+node node_modules\electron\install.js
+Remove-Item Env:\ELECTRON_MIRROR
+npm run dev
+```
+
+### `TypeError: crypto.hash is not a function`
+You are running Node.js 20. Uninstall it and install Node.js 22 from **https://nodejs.org**, then rerun from Step 5.
+
+### Docker images fail to pull / EOF errors during simulation start
+This is a network interruption — Docker's CDN dropped the connection mid-download. Click **Stop Simulation**, then **Start Simulation** again. Docker resumes interrupted downloads and usually succeeds on the second attempt.
+
+If it keeps failing, try:
+- Disconnecting from any VPN
+- Switching to a different Wi-Fi network
+- Signing in to Docker Hub (`docker login`) — authenticated pulls are more stable
+
+### "Pool overlaps with other one on this address space"
+A leftover Docker network from a previous session is blocking the new one. Remove stale networks:
+```
+docker network prune
+```
+Type `y` when prompted, then relaunch the simulation.
+
+> **Prevention:** always click **Stop Simulation** in OTForge before closing the app.
+
+### Windows — virtualization not enabled
+Search your laptop model + "enable virtualization BIOS" for instructions specific to your hardware. Contact your instructor if you need help.
+
+---
+
+## Windows — Firewall Rule (Recommended)
+
+When OTForge is running, Docker publishes lab ports to all network interfaces on Windows. Add a firewall rule to block them from being reachable by others on the same Wi-Fi.
+
+Open **PowerShell as Administrator** and run:
 ```powershell
 New-NetFirewallRule `
   -DisplayName "OTForge — Block inbound lab ports" `
@@ -617,30 +213,7 @@ New-NetFirewallRule `
   -Profile Any
 ```
 
-This blocks the following ports from being reachable by anyone other than your own machine:
-
-| Port(s) | Service |
-|---|---|
-| 1881 | FUXA process HMI |
-| 3000 | Grafana dashboards |
-| 3100 | Loki log API |
-| 6800–6899 | Engineering workstation VNC desktops |
-| 6900–6999 | Kali Linux attack machine VNC desktop |
-| 18080–18199 | OpenPLC web IDE and Modbus ports (per PLC) |
-
-To verify the rule was created:
-
-```powershell
-Get-NetFirewallRule -DisplayName "OTForge*"
-```
-
-To remove the rule if you ever need to (e.g., for a collaborative demo):
-
-```powershell
-Remove-NetFirewallRule -DisplayName "OTForge — Block inbound lab ports"
-```
-
-> **macOS:** Docker Desktop for Mac binds published ports to `127.0.0.1` (localhost only) by default — they are not reachable from your network without custom configuration. No firewall rule is needed on macOS.
+> **macOS:** Docker Desktop binds published ports to `127.0.0.1` (localhost only) by default — no firewall rule needed.
 
 ---
 
@@ -650,9 +223,9 @@ Remove-NetFirewallRule -DisplayName "OTForge — Block inbound lab ports"
 |---|---|---|
 | Open terminal | Start → PowerShell | Applications → Utilities → Terminal |
 | Navigate to OTForge | `cd C:\OTForge` | `cd ~/OTForge` |
-| Start OTForge | `npm run dev` | `npm run dev` |
+| Launch OTForge | `npm run dev` | `npm run dev` |
 | Scenarios folder | `C:\OTForge\scenarios\` | `~/OTForge/scenarios/` |
-| Update OTForge | `.\get-updates.ps1` | `bash get-updates.sh` |
+| Get updates | `.\get-updates.ps1` | `bash get-updates.sh` |
 
 ---
 
