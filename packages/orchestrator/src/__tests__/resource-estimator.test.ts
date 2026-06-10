@@ -25,6 +25,16 @@ import os from 'os'
 import { estimateResources, checkSystemMemory } from '../resource-estimator'
 import type { OTForgeScenario, ResourceEstimate } from '@otforge/schema'
 
+// Force availableMemBytes() to fall back to os.freemem() so checkSystemMemory
+// tests remain deterministic — vm_stat / /proc/meminfo would return the CI
+// runner's actual memory instead of the mocked values.
+vi.mock('child_process', () => ({
+  execSync: vi.fn().mockImplementation(() => {
+    throw new Error('mocked — tests must not rely on platform memory commands')
+  }),
+  default: { execSync: vi.fn() }
+}))
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /** Sum of all fixed infrastructure container RAM budgets (MB). */
