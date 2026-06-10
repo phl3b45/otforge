@@ -532,11 +532,13 @@ export function generateCompose(
     // Docker Desktop on Apple Silicon runs these via Rosetta 2 emulation automatically
     // when platform is set — without it, Docker refuses to pull on ARM64 hosts.
     const AMD64_ONLY_CATEGORIES = new Set(['plc', 'safety-plc', 'engineering-workstation'])
-    const platform = AMD64_ONLY_CATEGORIES.has(device.category) ? 'linux/amd64' : undefined
+    const platformOverride = AMD64_ONLY_CATEGORIES.has(device.category)
+      ? { platform: 'linux/amd64' as const }
+      : {}
 
     services[serviceName] = {
       image,
-      platform,
+      ...platformOverride,
       pull_policy: 'if_not_present',
       container_name: `${projectName}-${serviceName}`,
       restart: 'unless-stopped',
