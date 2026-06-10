@@ -5,7 +5,6 @@
   ],
   "compilerOptions": {
     "composite": true,
-    "ignoreDeprecations": "6.0",
     "paths": {
       "@renderer/*": ["./src/renderer/src/*"],
       "@schema/*": ["../schema/src/*"]

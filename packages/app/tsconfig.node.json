@@ -7,7 +7,6 @@
   ],
   "compilerOptions": {
     "composite": true,
-    "ignoreDeprecations": "6.0",
     "types": ["electron-vite/node"],
     "paths": {
       "@schema/*": ["../schema/src/*"]
