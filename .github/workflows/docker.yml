@@ -80,6 +80,21 @@ jobs:
           - image: otforge-workstation
             context: containers/workstation
             platforms: linux/amd64
+          # Infrastructure images — mirrored from upstream registries so all platforms
+          # are available in GHCR and students avoid Docker Hub rate limits.
+          # influxdb:1.8 has no official ARM64 image; built from release tarballs here.
+          - image: influxdb
+            context: containers/influxdb
+          # fuxa, loki, grafana, promtail: upstream images already support ARM64;
+          # single-FROM Dockerfiles re-publish both variants into GHCR.
+          - image: fuxa
+            context: containers/fuxa
+          - image: loki
+            context: containers/loki
+          - image: grafana
+            context: containers/grafana
+          - image: promtail
+            context: containers/promtail
 
     steps:
       - uses: actions/checkout@v6

@@ -83,7 +83,7 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   hmi: 'ghcr.io/iburres/fuxa:latest',
   // OPC UA 1.04 server — asyncua Python server on Alpine (containers/opcua)
   'scada-server': 'ghcr.io/iburres/otforge-opcua:latest',
-  historian: 'ghcr.io/iburres/influxdb:1.8-alpine',
+  historian: 'ghcr.io/iburres/influxdb:latest',
   // STUB: nginx:alpine serves HTTP so the container appears "up" on the network.
   // Replace with otforge-appserver once published.
   'application-server': 'nginx:alpine',
@@ -1021,7 +1021,7 @@ export function generateCompose(
   // Auth is disabled so protocol containers can write without credentials.
   volumes[`${projectName}-influxdb-data`] = {}
   services['influxdb'] = {
-    image: 'ghcr.io/iburres/influxdb:1.8-alpine',
+    image: 'ghcr.io/iburres/influxdb:latest',
     pull_policy: 'if_not_present',
     container_name: `${projectName}-influxdb`,
     restart: 'unless-stopped',
