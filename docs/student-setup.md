@@ -519,6 +519,30 @@ docker pull ghcr.io/iburres/otforge-zeek:latest
 ```
 Once the images are cached locally, OTForge's startup will be fast and will not need to re-download them.
 
+### "Pool overlaps with other one on this address space" on simulation start
+
+You may see an error like:
+```
+failed to create network otforge-...-attacker-net: Error response from daemon:
+invalid pool request: Pool overlaps with other one on this address space
+```
+
+This means Docker is trying to create a virtual network for your lab but the IP address range it needs is already claimed by a leftover network from a previous session that was not cleanly shut down. It is not caused by a git pull or code change.
+
+**Fix — remove stale Docker networks:**
+```powershell
+docker network prune
+```
+Type `y` when prompted. This removes all unused Docker networks, including any ghost OTForge networks from the previous session. Then launch the simulation again normally.
+
+**If the error persists** (e.g. a VPN is also using that address range), list all current networks and remove the specific one by name:
+```powershell
+docker network ls
+docker network rm <network-name-from-the-error>
+```
+
+> **Prevention:** always click **Stop Simulation** in OTForge before closing the app. This lets Docker Compose tear down the virtual networks cleanly. If you close OTForge without stopping first, the networks linger and will conflict on the next launch.
+
 ### "Virtualization not supported" on Windows
 
 You need to enable virtualization in your computer's BIOS/UEFI firmware. The exact steps vary by manufacturer — search for your laptop model + "enable virtualization BIOS". Contact your instructor if you need help.
