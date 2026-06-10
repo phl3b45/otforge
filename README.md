@@ -200,7 +200,9 @@ otforge/
 │   ├── zeek/                 # Zeek network monitor
 │   └── firewall/             # nftables firewall
 ├── scenarios/                # Bundled .otflab scenario files
-│   └── tutorial-01-modbus-coil-write.otflab   # Tutorial 01: Modbus Coil Write
+│   ├── ICS_Lab_01.otflab                      # ICS Lab 01: Modbus Coil Write Attack
+│   ├── ICS_Lab_02.otflab                      # ICS Lab 02: ICS Protocol Survey
+│   └── tutorial-01-modbus-coil-write.otflab   # Tutorial 01 (guided overlay)
 └── .github/
     └── workflows/            # CI: build, Docker image publish, CodeQL, secret scan
 ```
@@ -259,6 +261,35 @@ Install packs via **Toolbar → Packs → Install Pack** (Author mode). Installe
 
 ---
 
+## Bundled Labs
+
+Two instructor-ready labs are included in the `scenarios/` folder and load directly from the OTForge canvas.
+
+| Lab | Scenario | Description |
+|---|---|---|
+| **ICS Lab 01** | `ICS_Lab_01.otflab` | Full ICS attack chain — OSINT recon against a fictitious industrial company website, DNS enumeration, network scanning, and a Modbus TCP coil write that closes an outlet valve and causes a water tank overflow. Includes a guided tutorial overlay with step-by-step instructions and success checks. |
+| **ICS Lab 02** | `ICS_Lab_02.otflab` | ICS protocol survey — students connect from the engineering workstation to each field device and read live process values using Modbus TCP, DNP3, OPC UA, and BACnet/IP. Prerequisite protocol literacy lab before the attack scenarios. |
+
+Additional labs and scenario packs will be published in the [otforge-scenarios](https://github.com/iburres/otforge-scenarios) repository (coming soon).
+
+---
+
+## Recent Additions
+
+### Apple Silicon (ARM64) Native Support
+All container images now build and run natively on Apple Silicon Macs (M1/M2/M3/M4) — no QEMU emulation, no architecture mismatch warnings in Docker Desktop.
+
+- **OpenPLC Runtime** — compiled natively on a `ubuntu-24.04-arm` GitHub Actions runner; eliminates the Rosetta 2 crash caused by the snap7 S7comm library
+- **Infrastructure images** (InfluxDB 1.8, FUXA, Grafana, Loki, Promtail) — multi-platform manifests published to GHCR covering both `linux/amd64` and `linux/arm64`
+- **Engineering workstation** remains `amd64` only — `dnp3-python` and `python-snap7` have no ARM64 wheels on PyPI
+
+### Platform-Aware Update Workflow
+- **Windows:** `git pull && npm run dev` — no `npm ci` on updates (it wipes `node_modules` and breaks Electron)
+- **macOS:** `bash get-updates.sh` — resets `package-lock.json` before pulling to avoid the platform-specific lock file conflict, then reinstalls and rebuilds
+- **`fix-electron.ps1`** — checks the local `%LOCALAPPDATA%\electron\Cache` before downloading from GitHub; eliminates the ~90 MB re-download on machines that have previously installed Electron
+
+---
+
 ## Development Status
 
 | Phase | Feature | Status |
@@ -283,6 +314,7 @@ Install packs via **Toolbar → Packs → Install Pack** (Author mode). Installe
 | 11 | Physical process simulation (water tank, pipeline, generator dynamics) | ✅ Complete |
 | 12 | Attack infrastructure — company website (Meridian Process Controls), DNS server, Kali noVNC desktop | ✅ Complete |
 | 13 | Guided tutorial system — TutorialPanel overlay, Tutorial 01 (Modbus Coil Write), DnsConfig schema | ✅ Complete |
+| — | Apple Silicon native ARM64 support — all container images multi-platform, OpenPLC native build | ✅ Complete |
 | 14 | macOS + Linux packaging and distribution | 🔜 Planned |
 
 ---
