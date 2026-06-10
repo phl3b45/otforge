@@ -1,10 +1,18 @@
 # fix-electron.ps1
-# Run this script from C:\OTForge if you see the "Electron uninstall" error
-# after npm run dev. It checks, repairs, or re-downloads the Electron binary.
+# Repairs a missing or broken Electron binary installation.
+# Works from any drive (C:\OTForge, D:\OTForge, etc.) -- all paths are
+# resolved dynamically from $PSScriptRoot and $env:LOCALAPPDATA.
 #
-# Usage:
-#   cd C:\OTForge
+# Usage (run from your OTForge folder, NOT as Administrator):
 #   .\fix-electron.ps1
+#
+# Recovery sequence:
+#   Step 1 -- Ensure path.txt contains the correct value
+#   Step 2 -- Check whether electron.exe is already present and valid
+#   Step 3 -- Try install.js (uses npm network cache if available)
+#   Step 4 -- Check the local AppData electron cache (no download needed)
+#   Step 5 -- Download from GitHub as a last resort (~90 MB)
+#   Step 6 -- Verify the installation
 
 $ErrorActionPreference = 'Stop'
 
@@ -13,13 +21,20 @@ $distDir       = Join-Path $electronDir  "dist"
 $electronExe   = Join-Path $distDir      "electron.exe"
 $pathTxt       = Join-Path $electronDir  "path.txt"
 $version       = "42.0.1"
-$zipUrl        = "https://github.com/electron/electron/releases/download/v$version/electron-v$version-win32-x64.zip"
+$zipName       = "electron-v$version-win32-x64.zip"
+$zipUrl        = "https://github.com/electron/electron/releases/download/v$version/$zipName"
 $tempZip       = Join-Path $env:TEMP     "otforge-electron.zip"
 $tempExtract   = Join-Path $env:TEMP     "otforge-electron-extract"
+
+# AppData cache written by @electron/get (the downloader used by install.js).
+# If Electron was ever downloaded on this machine the zip lives here -- no
+# internet required to recover from it.
+$appdataCache  = Join-Path $env:LOCALAPPDATA "electron\Cache\$zipName"
 
 Write-Host ""
 Write-Host "OTForge - Electron repair script" -ForegroundColor Cyan
 Write-Host "=================================" -ForegroundColor Cyan
+Write-Host "Working directory: $PSScriptRoot"
 Write-Host ""
 
 # Step 1: ensure path.txt is correct
@@ -29,7 +44,6 @@ if (-not (Test-Path $pathTxt)) {
     Write-Host "        path.txt missing - creating it." -ForegroundColor Gray
     [System.IO.File]::WriteAllText($pathTxt, "electron.exe")
 } else {
-    # ReadAllText + exact compare (no Trim) so CRLF trailing bytes are caught
     $content = [System.IO.File]::ReadAllText($pathTxt)
     if ($content -ne "electron.exe") {
         Write-Host "        path.txt has wrong content - fixing." -ForegroundColor Gray
@@ -39,7 +53,7 @@ if (-not (Test-Path $pathTxt)) {
     }
 }
 
-# Step 2: check if the binary already exists
+# Step 2: check if the binary already exists and is the right version
 Write-Host "Step 2  Checking for electron.exe in dist\..." -ForegroundColor Yellow
 
 if (Test-Path $electronExe) {
@@ -54,18 +68,17 @@ if (Test-Path $electronExe) {
         Write-Host "        Version mismatch ($ver). Re-installing." -ForegroundColor DarkYellow
     }
 } else {
-    Write-Host "        electron.exe not found - will download." -ForegroundColor DarkYellow
+    Write-Host "        electron.exe not found - will attempt repair." -ForegroundColor DarkYellow
 }
 
-# Step 3: try install.js (uses npm's cached download if available)
-Write-Host "Step 3  Trying install.js (uses local cache if available)..." -ForegroundColor Yellow
+# Step 3: try install.js (uses npm's network cache if available)
+Write-Host "Step 3  Trying install.js..." -ForegroundColor Yellow
 
 $installJs = Join-Path $electronDir "install.js"
 if (Test-Path $installJs) {
     try {
         & node $installJs
         if (Test-Path $electronExe) {
-            # install.js on Windows writes path.txt with CRLF - overwrite with clean copy
             [System.IO.File]::WriteAllText($pathTxt, "electron.exe")
             Write-Host "        install.js succeeded." -ForegroundColor Green
             Write-Host ""
@@ -73,14 +86,45 @@ if (Test-Path $installJs) {
             exit 0
         }
     } catch {
-        Write-Host "        install.js failed - falling back to manual download." -ForegroundColor DarkYellow
+        Write-Host "        install.js failed - trying local cache." -ForegroundColor DarkYellow
     }
 } else {
     Write-Host "        install.js not found - skipping." -ForegroundColor Gray
 }
 
-# Step 4: manual download and extract
-Write-Host "Step 4  Downloading Electron v$version from GitHub..." -ForegroundColor Yellow
+# Step 4: check the AppData electron cache (no internet required)
+# @electron/get stores downloaded zips at %LOCALAPPDATA%\electron\Cache\.
+# This catches the common classroom scenario where npm previously installed
+# Electron on the same machine (another drive, another clone, etc.).
+Write-Host "Step 4  Checking local AppData cache..." -ForegroundColor Yellow
+Write-Host "        Looking for: $appdataCache" -ForegroundColor Gray
+
+if (Test-Path $appdataCache) {
+    Write-Host "        Cache hit! Extracting $zipName from AppData..." -ForegroundColor Green
+
+    if (Test-Path $tempExtract) { Remove-Item -Recurse -Force $tempExtract }
+    Expand-Archive -Path $appdataCache -DestinationPath $tempExtract -Force
+
+    if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | Out-Null }
+    Copy-Item -Recurse "$tempExtract\*" "$distDir\" -Force
+    [System.IO.File]::WriteAllText($pathTxt, "electron.exe")
+
+    Remove-Item -Recurse -Force $tempExtract
+
+    if (Test-Path $electronExe) {
+        Write-Host "        Extracted from cache successfully." -ForegroundColor Green
+        Write-Host ""
+        Write-Host "All good. Run: npm run dev" -ForegroundColor Cyan
+        exit 0
+    } else {
+        Write-Host "        Cache extract failed - falling back to download." -ForegroundColor DarkYellow
+    }
+} else {
+    Write-Host "        No cache found - will download from GitHub." -ForegroundColor Gray
+}
+
+# Step 5: download from GitHub (~90 MB)
+Write-Host "Step 5  Downloading Electron v$version from GitHub..." -ForegroundColor Yellow
 Write-Host "        This is ~90 MB - please wait." -ForegroundColor Gray
 
 try {
@@ -97,22 +141,15 @@ Write-Host "        Download complete. Extracting..." -ForegroundColor Gray
 if (Test-Path $tempExtract) { Remove-Item -Recurse -Force $tempExtract }
 Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
 
-Write-Host "        Copying files into node_modules\electron\dist\..." -ForegroundColor Gray
-
 if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | Out-Null }
-
-# The Electron zip extracts files flat (electron.exe, resources.pak, locales\, etc.)
-# with no dist\ subfolder inside the zip. Copy everything into our dist\ folder.
 Copy-Item -Recurse "$tempExtract\*" "$distDir\" -Force
-
-# Write clean path.txt after manual extract - no CRLF
 [System.IO.File]::WriteAllText($pathTxt, "electron.exe")
 
 Write-Host "        Cleaning up temp files..." -ForegroundColor Gray
 Remove-Item -Recurse -Force $tempExtract, $tempZip
 
-# Step 5: verify
-Write-Host "Step 5  Verifying installation..." -ForegroundColor Yellow
+# Step 6: verify
+Write-Host "Step 6  Verifying installation..." -ForegroundColor Yellow
 
 if (-not (Test-Path $electronExe)) {
     Write-Host ""

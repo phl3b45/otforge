@@ -72,6 +72,8 @@ cd C:\OTForge
 git clone https://github.com/iburres/otforge.git .
 ```
 
+> **D:\ drive:** If your C:\ drive is full, use `D:\OTForge` instead — substitute `D:` for `C:` everywhere in this guide. All scripts auto-detect the drive they are run from.
+
 **macOS (Terminal):**
 ```bash
 mkdir ~/OTForge
