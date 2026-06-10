@@ -633,24 +633,26 @@ echo "[otforge-attack]   /root/Desktop/Attack_Scripts/monitor_level.py — live 
 
 # ── PLC Modbus baseline initialization ────────────────────────────────────────
 # Runs in the background so VNC/noVNC startup is not delayed.
-# Polls PLC_IP:PLC_PORT every 2 s for up to 30 s, then writes the baseline
+# Polls PLC_IP:PLC_PORT every 2 s for up to 60 s, then writes the baseline
 # state once the PLC's Modbus listener is accepting connections.
 # This is necessary because OpenPLC zeros all AT-mapped I/O at container start,
 # overriding any initial values in the ST program.
+# 60 s window covers ARM64 (Mac Apple Silicon) where OpenPLC startup is slower
+# than on x86-64 Windows even with a native ARM64 image.
 (
     _PLC_IP="${PLC_IP:-10.200.10.10}"
     _PLC_PORT="${PLC_PORT:-502}"
     echo "[otforge-attack] [plc-init] Waiting for PLC at ${_PLC_IP}:${_PLC_PORT}..."
-    for i in $(seq 1 15); do
+    for i in $(seq 1 30); do
         if nc -z -w1 "${_PLC_IP}" "${_PLC_PORT}" 2>/dev/null; then
             echo "[otforge-attack] [plc-init] PLC reachable (attempt ${i}) — seeding baseline..."
             python3 /root/Desktop/Attack_Scripts/plc_init.py
             exit $?
         fi
-        echo "[otforge-attack] [plc-init] Not reachable yet (attempt ${i}/15) — waiting 2 s..."
+        echo "[otforge-attack] [plc-init] Not reachable yet (attempt ${i}/30) — waiting 2 s..."
         sleep 2
     done
-    echo "[otforge-attack] [plc-init] PLC did not become reachable within 30 s — skipping baseline seed."
+    echo "[otforge-attack] [plc-init] PLC did not become reachable within 60 s — skipping baseline seed."
     exit 1
 ) &
 
