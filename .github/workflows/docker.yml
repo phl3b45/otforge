@@ -76,8 +76,10 @@ jobs:
             context: containers/mail-server
           # Engineering workstation: Ubuntu 22.04 Xfce4 desktop with Wireshark, nmap,
           # and Python ICS protocol tools, served via TigerVNC + noVNC on port 6080.
+          # amd64 only: dnp3-python and python-snap7 have no ARM64 wheels on PyPI.
           - image: otforge-workstation
             context: containers/workstation
+            platforms: linux/amd64
 
     steps:
       - uses: actions/checkout@v6
@@ -109,7 +111,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platforms || 'linux/amd64,linux/arm64' }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -230,7 +232,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: containers/openplc
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
