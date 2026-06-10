@@ -1,0 +1,378 @@
+{
+  "meta": {
+    "formatVersion": "1.0",
+    "name": "ICS Lab 02 — ICS Protocol Survey",
+    "description": "A guided hands-on survey of the four ICS/SCADA protocols supported by OTForge — Modbus TCP, DNP3, OPC UA, and BACnet/IP. Students use the Engineering Workstation to connect to each field device or server, read live process values, and compare protocol behaviors. Designed for ICS/SCADA cybersecurity courses at UTSA as the prerequisite protocol literacy lab before the attack scenario labs.",
+    "sector": "water-treatment",
+    "author": "Ian Burres — UTSA",
+    "createdAt": "2026-05-27T00:00:00.000Z",
+    "updatedAt": "2026-05-27T00:00:00.000Z",
+    "appVersion": "0.13.0",
+    "locked": false,
+    "brief": "## Mission: Understand ICS Protocols\n\nBefore attacking or defending industrial control systems, you must understand how those systems communicate. This lab connects you directly to four different OT devices using four different protocols:\n\n1. **Modbus TCP** — Read holding registers from a PLC and an RTU (the most common OT protocol, used in water, oil/gas, and manufacturing)\n2. **DNP3** — Poll an IED (Intelligent Electronic Device) used in electric substations and water infrastructure\n3. **OPC UA** — Browse the address space of a SCADA server (the modern OT data-exchange standard)\n4. **BACnet/IP** — Discover and read a building/process sensor (dominant in HVAC and building automation)\n\nAll commands run from the **Engineering Workstation** desktop — a Linux machine pre-loaded with Wireshark, nmap, and Python protocol scripts. You will access it via the **🖥 Workstation** button in the OTForge toolbar once the simulation is running.\n\n**Rules of Engagement:** This is an isolated Docker lab environment. All traffic stays within your local machine.",
+    "requirements": {
+      "estimatedRamMb": 2048,
+      "estimatedCpuCores": 3,
+      "containerCount": 14
+    },
+    "tutorialSteps": [
+      {
+        "id": "step-00-welcome",
+        "title": "Welcome to Lab 02 — ICS Protocol Survey",
+        "body": "## Overview\n\nThis lab introduces the four most important protocols used in industrial control systems and critical infrastructure:\n\n| Protocol | Port | Transport | Typical Use |\n|---|---|---|---|\n| **Modbus TCP** | 502 | TCP | PLCs, RTUs — water, oil/gas, manufacturing |\n| **DNP3** | 20000 | TCP | IEDs — electric substations, water utilities |\n| **OPC UA** | 4840 | TCP | SCADA servers, historians, modern HMIs |\n| **BACnet/IP** | 47808 | UDP | Sensors, building automation, HVAC |\n\n### Why This Matters for Security\n\n- Most ICS protocols were designed **before cybersecurity was a concern** — Modbus (1979), DNP3 (1993), BACnet (1995), and OPC UA (2008, the only one with built-in security options)\n- **None require authentication by default** in most deployments\n- Understanding the protocols lets you read what attackers see when they scan an OT network\n\n### Lab Environment\n\nThe scenario includes five devices:\n- **PLC** (`10.200.10.10`) — Modbus TCP on port 502\n- **RTU** (`10.200.10.11`) — Modbus TCP on port 502\n- **IED** (`10.200.10.12`) — DNP3 on port 20000\n- **Sensor** (`10.200.10.13`) — BACnet/IP on UDP port 47808\n- **SCADA Server** (`10.200.20.10`) — OPC UA on port 4840\n\nAll commands run from the **Engineering Workstation** desktop. Protocol scripts are pre-installed at `/root/Desktop/Protocols/`.\n\n---\n\n**To begin:** Click **Run Simulation** in the toolbar and wait for all containers to show as running. Then click **Next →**.",
+        "successCheck": "The simulation is running and all containers show a healthy status in the status bar. The OTForge canvas shows the OT layer with the PLC, RTU, IED, and Sensor nodes. Click **Next →** to open the Engineering Workstation."
+      },
+      {
+        "id": "step-01-open-workstation",
+        "title": "Step 1 — Open the Engineering Workstation",
+        "body": "## Opening the Engineering Workstation\n\nThe **Engineering Workstation** is a Linux machine (Ubuntu 22.04 + Xfce4 desktop) with ICS protocol tools pre-installed. It represents an operator's machine on the Control Center network — the kind of workstation a process engineer would use to check field device values, run diagnostics, or configure instruments.\n\n**Pre-installed tools:**\n- `wireshark`, `tshark`, `tcpdump` — packet capture and protocol analysis\n- `nmap` with ICS NSE scripts (`enip-info`, `modbus-discover`, `bacnet-info`)\n- Python3 with `pymodbus`, `asyncua`, `bacpypes3`, `dnp3-python`\n- Protocol scripts on the Desktop: `modbus_read.py`, `dnp3_poll.py`, `opcua_browse.py`, `bacnet_discover.py`\n\n**Steps:**\n1. Click the **🖥 Workstation** button in the OTForge toolbar (visible once the simulation is running).\n2. A browser-like window opens showing the Xfce4 desktop via noVNC.\n3. Right-click anywhere on the desktop and select **Open Terminal Here** to open a terminal.\n4. Leave this window open for the rest of the lab — you will run all protocol commands from here.\n\n**Note:** The workstation starts a VNC server at container startup. If the desktop looks blank, wait 10–15 seconds for TigerVNC to finish initializing, then click inside the window.",
+        "successCheck": "The Xfce4 desktop is visible in the Workstation window. A terminal is open at the desktop. You can see the Protocols folder on the Desktop with the four Python scripts. Type `ls /root/Desktop/Protocols/` in the terminal to confirm all four scripts are present."
+      },
+      {
+        "id": "step-02-modbus-plc",
+        "title": "Step 2 — Modbus TCP: Read the PLC",
+        "body": "## Modbus TCP — The Dominant OT Protocol\n\nModbus was invented in 1979 by Modicon for serial communication between PLCs and their I/O modules. It was never designed with security in mind:\n- **No authentication** — any host can read or write any register\n- **No encryption** — all register values are plaintext\n- **No authorization** — reading coils and writing coils are the same privilege level\n\n**Function Codes used in this lab:**\n- FC01 — Read Coils (discrete outputs like pump_run, valve_open)\n- FC03 — Read Holding Registers (INT values like temperature, pressure)\n\n**Running the script from the Workstation terminal:**\n\nThe `modbus_read.py` script reads 10 holding registers starting at address 0 and prints a formatted table.\n\nThe PLC has two holding registers defined in its ST program:\n- HR 0 — `temp_value` = 250 (25.0°C, scaled ×10)\n- HR 1 — `pressure` = 1013 (101.3 kPa, scaled ×10)\n\nOutput columns: `Register`, `Value (raw)`, `Value (/10)` — the /10 column shows the scaled engineering unit value.",
+        "command": "python3 /root/Desktop/Protocols/modbus_read.py 10.200.10.10 --count 5",
+        "successCheck": "HR0 shows 250 (25.0 scaled) and HR1 shows 1013 (101.3 scaled). If you see all zeros, the PLC may still be compiling its ST program — wait 15 seconds and re-run the command. HR2–HR4 will show 0 (unused registers)."
+      },
+      {
+        "id": "step-03-modbus-rtu",
+        "title": "Step 3 — Modbus TCP: Read the RTU",
+        "body": "## RTU vs PLC — Same Protocol, Different Device\n\nA **Remote Terminal Unit (RTU)** is a simpler field device than a PLC. RTUs are commonly found at remote, unmanned sites (pump stations, substations, pipeline valves) and report process data back to a SCADA master station.\n\nIn this scenario, the RTU runs a Modbus server with **simulated drift** — register values change by a small random amount every 2 seconds, simulating the natural variation in a real process measurement. This is different from the PLC, which holds fixed values written by its ST program.\n\n**RTU Modbus register map:**\n- HR 0 — Temperature (°C × 10)\n- HR 1 — Pressure (kPa × 10)\n- HR 2 — Flow Rate (L/min × 10)\n- HR 3 — (reserved)\n- HR 4 — (reserved)\n\n> **Note:** The Workstation VNC window does not support clipboard paste. **Type the command below manually** into the terminal.\n\nRun the command twice with a 5-second gap between runs — the drifting simulation means HR0–HR2 values will differ slightly between reads, just as a real sensor would.",
+        "command": "python3 /root/Desktop/Protocols/modbus_read.py 10.200.10.11 --count 5",
+        "successCheck": "HR0 shows approximately 250 (25°C), HR1 approximately 1013 (101.3 kPa), HR2 approximately 150 (15 L/min). Running the command a second time 5 seconds later should show slightly different values — this is the drift simulation showing the live process changing."
+      },
+      {
+        "id": "step-04-dnp3",
+        "title": "Step 4 — DNP3: Poll the IED",
+        "body": "## DNP3 — The Electric Utility Protocol\n\nDNP3 (Distributed Network Protocol 3) was standardized in 1993 for **electric utility SCADA systems** — specifically for substation automation and remote terminal communication. It is also widely used in water utilities and oil pipelines.\n\n**Key differences from Modbus:**\n- DNP3 has a **three-layer architecture**: link layer + transport layer + application layer, each with its own headers and CRC checksums\n- Data is organized by **object groups**: Group 30 = Analog Inputs, Group 1 = Binary Inputs, Group 10 = Binary Outputs\n- Supports **Class-based polling** — Class 0 = all static data (analogous to a Modbus Read Holding Registers covering all registers at once)\n- Supports **unsolicited responses** — an IED can push data to the master without being asked (Modbus has no equivalent)\n- **DNP3 Secure Authentication (SA)** exists but is rarely deployed in practice\n\n**Addressing:**\n- Each IED has an **outstation address** (like a Modbus unit ID) — this IED uses address 10\n- The polling software is the **master** with address 1\n\nThe DNP3 script sends one Class 0 Data Read request and prints the Group 30 Var 5 (IEEE float) analog input values: Temperature, Pressure, Flow Rate, and a Secondary value.",
+        "command": "python3 /root/Desktop/Protocols/dnp3_poll.py 10.200.10.12 --outstation 10",
+        "successCheck": "The script prints a table showing 4 Analog Input values (indices 0–3) with ONLINE flags and floating-point readings. Temperature should be near 25°C, Pressure near 101.3 kPa, Flow Rate near 0 L/min (the IED category defaults). Run the command a second time — the values will have drifted slightly."
+      },
+      {
+        "id": "step-05-opcua",
+        "title": "Step 5 — OPC UA: Browse the SCADA Server",
+        "body": "## OPC UA — The Modern OT Standard\n\nOPC Unified Architecture (OPC UA) was published in 2008 by the OPC Foundation as a **platform-independent, service-oriented** successor to the older OPC DA/HDA/A&E standards. It is now the primary data-exchange protocol between:\n- SCADA servers and historians\n- PLCs with OPC UA firmware and engineering workstations\n- Industrial edge devices and cloud IoT platforms\n\n**Key characteristics:**\n- **Address space model** — data is organized as a browsable namespace tree (like a file system), not a flat register map\n- **Multiple transports** — primarily TCP binary (`opc.tcp://`), but also HTTPS and WebSockets\n- **Built-in security** — certificate-based authentication and message encryption (though most deployments use `None` security in practice)\n- **Rich data types** — floats, strings, arrays, structures — not just 16-bit integers\n- **Subscriptions** — clients subscribe to nodes and receive change notifications instead of polling\n\n**This SCADA server exposes:**\n```\nObjects/\n  Process/\n    Temperature   (Float, °C)\n    Pressure      (Float, kPa)\n    FlowRate      (Float, L/min)\n    TankLevel     (Float, mm)\n    ValvePosition (Float, %)\n    PumpRunning   (Boolean)\n    EmergencyStop (Boolean)\n```\n\nThe browse script walks `Objects/` and reads every node it finds — this is equivalent to reading all registers in a single Modbus poll, but the response includes names and data types, not just raw numbers.",
+        "command": "python3 /root/Desktop/Protocols/opcua_browse.py 10.200.20.10",
+        "successCheck": "The script prints the namespace array, then lists the `Process` folder and all seven variables with their current float/bool values. Temperature should be near 25.0, Pressure near 101.3, PumpRunning = True. Notice that the OPC UA response tells you the variable name, data type, and value — Modbus only gives you a raw number."
+      },
+      {
+        "id": "step-06-bacnet",
+        "title": "Step 6 — BACnet/IP: Discover the Sensor",
+        "body": "## BACnet/IP — Building and Process Automation\n\nBACnet (Building Automation and Control Networks) was standardized in 1995 by ASHRAE (the building engineers' standards body). It is dominant in:\n- **HVAC** systems (air handlers, chillers, VAV boxes)\n- **Building automation** (lighting, access control, fire alarm panels)\n- **Industrial processes** that interface with building systems (water treatment, food processing)\n\n**Key concepts:**\n- Every BACnet device has a **Device Instance** (a unique 22-bit integer) and exposes **BACnet Objects** — each object represents one physical or logical point\n- The most common objects are: **Analog Input** (sensor reading), **Analog Output** (actuator position), **Binary Input** (contact state), **Binary Output** (relay), **Analog Value** (setpoint)\n- Each object has **Properties**: Present Value, Object Name, Units, Description, etc.\n- **Who-Is / I-Am** are broadcast discovery messages — a master sends Who-Is and all devices on the subnet reply with I-Am, revealing their device instance and network address\n- **ReadProperty** and **ReadPropertyMultiple** are the Modbus FC03 equivalents — they request specific property values from a known device\n\n**This sensor (Device Instance 1001) exposes:**\n- Analog Input 0 — Temperature (°C)\n- Analog Input 1 — Pressure (kPa)\n- Analog Input 2 — Flow Rate (L/hr)\n- Analog Input 3 — Tank Level (mm)\n- Binary Input 0 — Pump Running\n- Binary Input 1 — Valve Open\n\nThe discover script reads the Object List from the device, then iterates each analog-input and binary-input object to read its Present Value and Object Name.",
+        "command": "python3 /root/Desktop/Protocols/bacnet_discover.py 10.200.10.13 --instance 1001",
+        "successCheck": "The script prints a table of analog-input and binary-input objects with their names and present values. Temperature near 25, Pressure near 101, Pump Running showing 'active'. Notice the output includes object names (not just indices) — this is a BACnet advantage over Modbus raw registers."
+      },
+      {
+        "id": "step-07-wireshark",
+        "title": "Step 7 — Capture Protocol Traffic with Wireshark",
+        "body": "## Comparing Protocols on the Wire\n\nNow capture actual network traffic from the workstation desktop to see how each protocol looks in a packet capture. This is the same view a defender using Wireshark in a SOC would have.\n\n**Step 1 — Start a tshark capture in the second terminal:**\n\nOpen a second terminal tab (right-click → Open Terminal Here) and run tshark in the **foreground**:\n\n```\ntshark -i any -w /tmp/protocols.pcap\n```\n\nThe `-i any` flag captures all network interfaces simultaneously. The Engineering Workstation is connected to both the **Control network** (OPC UA traffic) and the **OT network** (Modbus, DNP3, BACnet traffic) — capturing on a single interface would miss half the protocols. Leave this terminal running — tshark will print a packet count as traffic arrives.\n\n**Step 2 — Generate traffic from the first terminal:**\n\nSwitch back to your first terminal and run all four protocol scripts:\n\n```\npython3 /root/Desktop/Protocols/modbus_read.py 10.200.10.10 --count 5\npython3 /root/Desktop/Protocols/dnp3_poll.py 10.200.10.12 --outstation 10\npython3 /root/Desktop/Protocols/opcua_browse.py 10.200.20.10\npython3 /root/Desktop/Protocols/bacnet_discover.py 10.200.10.13 --instance 1001\n```\n\n**Step 3 — Stop the capture and analyze:**\n\nSwitch back to the second terminal and press **Ctrl+C** to stop tshark. Then read the summary:\n\n```\ntshark -r /tmp/protocols.pcap -qz io,phs\n```\n\nThis prints the Protocol Hierarchy Statistics — a breakdown of what protocols were captured, the packet count, and byte totals. You should see entries for `modbus`, `dnp3`, `opcua.binary`, and `bacapp` (BACnet Application Layer).",
+        "command": "tshark -r /tmp/protocols.pcap -qz io,phs 2>/dev/null || echo 'Run the capture first — see Step 1 above'",
+        "successCheck": "The Protocol Hierarchy Statistics output shows distinct entries for modbus, dnp3, opcua.binary (or just tcp for OPC UA if Wireshark lacks OPC UA dissector), and bacapp. The byte counts differ significantly — OPC UA tends to be the most verbose due to its XML-like binary encoding. Modbus is the smallest (fixed 6-byte header + data)."
+      },
+      {
+        "id": "step-07b-phs",
+        "title": "Step 7b — Reading the Protocol Hierarchy Statistics",
+        "body": "## Interpreting the tshark Output\n\nThe `io,phs` command prints a protocol tree showing every layer observed in the capture. Here is representative output from running all four protocol scripts:\n\n```\nProtocol Hierarchy Statistics\n\neth                                  frames:162 bytes:31240\n  ip                                 frames:162 bytes:31240\n    tcp                              frames:148 bytes:28680\n      modbus                         frames:4   bytes:492\n      dnp3                           frames:6   bytes:726\n      opcua.binary                   frames:138 bytes:27462\n    udp                              frames:14  bytes:2560\n      bacapp                         frames:14  bytes:2560\n```\n\n**Reading the tree:**\n\n- Indentation shows encapsulation — `modbus` lives inside `tcp` which lives inside `ip`\n- `frames` = number of packets at that layer; `bytes` = total payload bytes\n- Protocols missing from the tree were not captured (check `tshark -i any` is running)\n\n**What the byte counts reveal about protocol design:**\n\n`modbus` — fewest bytes per transaction. A Read Holding Registers request is 12 bytes total (6-byte MBAP header + 6-byte PDU). Modbus was designed for 9600-baud serial lines in 1979 — every byte was expensive.\n\n`dnp3` — larger than Modbus because each frame carries a link-layer header, a transport-layer byte, and 2-byte CRC blocks appended to every 16 bytes of payload. DNP3 has integrity checking that Modbus lacks — but still no authentication or encryption.\n\n`opcua.binary` — dominates the byte count. A single Browse response includes every node's NodeId, BrowseName, DisplayName, NodeClass, and TypeDefinition in a binary-encoded structure. OPC UA was designed for rich data exchange, not bandwidth efficiency.\n\n`bacapp` — moderate size UDP datagrams. Each ReadProperty response encodes a BVLC header (4 bytes), NPCI (2 bytes), and an APDU with typed property values. More structured metadata than Modbus, far less verbose than OPC UA.\n\n**Security observation — what is missing from all four entries:**\n\nNone of these protocol layers shows a TLS or authentication sub-layer. An attacker capturing this traffic gets:\n- Modbus: raw register values and function codes in plaintext\n- DNP3: analog input values and IIN status flags in plaintext\n- OPC UA: full namespace tree and variable values in plaintext (security mode = None)\n- BACnet: object names, present values, and device instance in plaintext\n\nIf OPC UA were configured with `SignAndEncrypt` security mode, the `opcua.binary` entry would still appear but the payload bytes would be ciphertext — variable names and values would be invisible to Wireshark.",
+        "successCheck": "Your phs output shows modbus, dnp3, opcua.binary (or tcp if the OPC UA dissector is absent), and bacapp. The opcua.binary byte count should be 30–50x larger than modbus for the same number of variable reads. If any protocol is missing, re-run that protocol script and capture again."
+      },
+      {
+        "id": "step-07c-wireshark",
+        "title": "Step 7c — Examining Individual Packets in Wireshark",
+        "body": "## Opening the Capture in Wireshark\n\nOpen the pcap file in the Wireshark GUI:\n\n```\nwireshark /tmp/protocols.pcap &\n```\n\nWireshark opens with the full packet list. Use the **display filter bar** at the top to isolate each protocol. Type one of the filters below and press Enter:\n\n```\nmodbus\ndnp3\nopcua\nbacapp\n```\n\n---\n\n**Modbus TCP — filter: `modbus`**\n\nThe Info column shows entries like `Read Holding Registers Request` and `Read Holding Registers Response`. Click a **response** packet and expand the `Modbus` tree in the packet detail pane. You will see:\n- `Function Code: Read Holding Registers (3)` — plaintext function code\n- `Register 0 (UINT16): 250` — the raw register value, readable by anyone on the network\n- No authentication field, no session ID, no checksum in the MBAP header\n\nThis is what an attacker sees when they connect to port 502. There is nothing to distinguish a legitimate engineering workstation from an attacker — the protocol carries no identity information.\n\n---\n\n**DNP3 — filter: `dnp3`**\n\nExpand the packet detail for a response frame. You will see three distinct layers:\n- `DNP 3.0 Link Layer` — start bytes `05 64`, destination address, source address, CRC\n- `DNP 3.0 Transport Layer` — FIR/FIN flags and sequence number\n- `DNP 3.0 Application Layer` — function code `Response (0x81)`, IIN bytes, and Group 30 Var 5 analog input objects\n\nThe CRC field confirms DNP3 has **integrity checking** — a corrupted frame is detected. But there is **no authentication**: the master address field is a plain integer that any host can forge. DNP3 Secure Authentication (SA) adds a challenge-response mechanism but is rarely deployed in practice.\n\n---\n\n**OPC UA — filter: `opcua`**\n\nOPC UA packets are large. Click a big `OpcUa Binary Protocol` response and expand the tree. You will see:\n- `MessageType: MSG` and `SecurityMode: None` — confirms this connection has no encryption\n- `BrowseResponse` or `ReadResponse` containing node names (`Temperature`, `PumpRunning`, etc.) and their current float/bool values — all in plaintext\n\nIf security were enabled, the `MessageType` would be `MSG` with an encrypted body — the node names and values would appear as raw bytes with no readable content. OPC UA is the **only** protocol in this lab with a working encrypted mode; the others have no encryption option at all.\n\n---\n\n**BACnet/IP — filter: `bacapp`**\n\nBACnet rides over UDP. Click a response packet and expand `Building Automation and Control Network APDU`. You will see:\n- `BVLC Type: BACnet/IP` and `Function: Original-Unicast-NPDU` — the IP wrapper\n- `PDU Type: Complex-ACK` — the reply to a ReadProperty request\n- `Object Identifier: analog-input, 1` and `Property: present-value`\n- `Real: 25.3` — the temperature reading in plaintext\n\nThere is no authentication, no session, and no encryption in BACnet/IP. Each UDP packet is a self-contained, anonymous request — an attacker can craft and send ReadProperty (or WriteProperty) packets with no prior handshake.",
+        "command": "wireshark /tmp/protocols.pcap &",
+        "successCheck": "Wireshark opens the pcap. Apply the `modbus` filter and confirm you can read a raw register value in the response. Apply `opcua` and find the SecurityMode field — it should say None. Apply `bacapp` and locate a ReadProperty ACK with a float present-value. Apply `dnp3` and expand the three-layer stack to see the Link, Transport, and Application layers."
+      },
+      {
+        "id": "step-08-nmap",
+        "title": "Step 8 — Discover Protocols with nmap",
+        "body": "## Protocol Discovery from an Attacker's Perspective\n\nAn attacker who gains access to a network does not know in advance which devices are present or which protocols they speak. The standard discovery technique is to run nmap with ICS-specific scripts and port ranges.\n\nnmap ships with **ICS NSE scripts** that go beyond port scanning to probe the protocol application layer:\n- `modbus-discover` — Sends a Modbus Read Device Identification request (FC43/MEI) and reports device ID strings\n- `bacnet-info` — Sends a BACnet Who-Is broadcast and reports Device Instance, Object Name, vendor, and model\n- `enip-info` — Sends an EtherNet/IP List Identity request and parses CIP response\n\nRun this from the **Workstation terminal** to scan the OT subnet for all ICS protocol ports:\n\n```\nnmap -T2 -p 502,20000,4840,47808 --script modbus-discover,bacnet-info --open 10.200.10.0/24\n```\n\nAnd scan the control subnet for OPC UA:\n\n```\nnmap -T2 -p 4840 --open 10.200.20.0/24\n```\n\nCompare the nmap output to what you found manually in Steps 2–6. nmap sees the same open ports, but its protocol scripts can extract additional information (vendor, model, firmware version) that individual Modbus/BACnet requests return in identification fields.",
+        "command": "nmap -T2 -p 502,20000,4840,47808 --script modbus-discover,bacnet-info --open 10.200.10.0/24",
+        "successCheck": "nmap discovers 4 hosts: 10.200.10.10 (Modbus 502), 10.200.10.11 (Modbus 502), 10.200.10.12 (port 20000 — DNP3, no NSE script covers it), and 10.200.10.13 (BACnet 47808). For the BACnet host, the bacnet-info script should extract the Device Instance (1001) and Object Name. For Modbus hosts, modbus-discover may return a vendor string from FC43 if the server supports it."
+      },
+      {
+        "id": "step-09-comparison",
+        "title": "Step 9 — Protocol Comparison and Security Analysis",
+        "body": "## Comparing the Four Protocols\n\n| Feature | Modbus TCP | DNP3 | OPC UA | BACnet/IP |\n|---|---|---|---|---|\n| **Year** | 1979 | 1993 | 2008 | 1995 |\n| **Transport** | TCP | TCP | TCP | UDP |\n| **Authentication** | None | Optional (SA) | Certificate-based | None |\n| **Encryption** | None | None | TLS supported | None |\n| **Data model** | Flat registers | Object groups | Namespace tree | Object properties |\n| **Discovery** | None | None | Browse | Who-Is/I-Am |\n| **Push support** | No | Yes (unsolicited) | Yes (subscriptions) | Yes (COV) |\n\n### Security Implications\n\n**Modbus TCP** — Zero security. Any device on the network can read or write any register. An attacker who reaches port 502 has full control over the PLC. Detection: Suricata rules on FC05 (write coil) writes from non-engineering subnets.\n\n**DNP3** — DNP3 Secure Authentication (SA) exists in DNP3 Level 4+ but is rarely deployed. The binary link-layer format makes it slightly harder to craft manually than Modbus, but automated tools (pyscada-dnp3, pycomm3) handle it trivially.\n\n**OPC UA** — The only modern protocol with real security options. Certificate-based mutual authentication and TLS encryption are available and well-supported. However, most industrial deployments use `None` security for compatibility. Attackers with OPC UA access can write any writable variable — equivalent to Modbus FC05.\n\n**BACnet/IP** — UDP broadcast discovery (Who-Is) means any device on the subnet gets an automatic inventory of all BACnet devices. WriteProperty (the BACnet equivalent of Modbus FC06) allows an attacker to change setpoints, command outputs, and override schedules.\n\n### Key Takeaway\n\nAll four protocols are **unauthenticated by default** in real-world deployments. The primary security control must therefore be **network segmentation** (zone/conduit model per IEC 62443) — keeping OT devices unreachable from any untrusted network. Defense-in-depth adds application-aware firewalls, IDS rules for write operations from unexpected sources, and protocol-specific monitoring (Modbus FC anomaly detection, DNP3 unsolicited response tracking).",
+        "successCheck": "You can describe the key security characteristic (authentication: none/optional/supported) for each protocol and name one realistic attack path for each. You understand why network segmentation is the primary ICS defense rather than protocol-level authentication."
+      },
+      {
+        "id": "step-10-report",
+        "title": "Step 10 — Lab Report Requirements",
+        "body": "## Lab Report Instructions\n\nSubmit a **PDF or Word Document** containing the following sections.\n\n### Written Analysis (2–3 pages)\n\n1. **Protocol Technical Summary** — For each protocol (Modbus, DNP3, OPC UA, BACnet), write 2–3 sentences explaining: what it was designed for, what its addressing/data model looks like, and what security features (if any) it provides.\n\n2. **Attacker's Perspective** — If you were conducting a penetration test of an ICS network, rank these four protocols from 'easiest to exploit' to 'hardest to exploit' and explain your ranking. What information does an unauthenticated read request reveal to an attacker?\n\n3. **Defender's Perspective** — For each protocol, describe one specific firewall rule or IDS signature that would detect or prevent an unauthorized write. Reference what you observed in Wireshark or nmap output to support your answer.\n\n4. **Reflection** — What is the most surprising security gap you discovered in this lab? Why do you think these protocols are still deployed without authentication in critical infrastructure?\n\n**Do not include screenshots in the written section.** Place all screenshots in labeled Appendices.\n\n---\n\n### Required Appendices (one screenshot per item)\n\n- Appendix A — Step 2: `modbus_read.py` output from the PLC (HR0 and HR1 values visible)\n- Appendix B — Step 3: `modbus_read.py` output from the RTU (drift visible on second run)\n- Appendix C — Step 4: `dnp3_poll.py` output from the IED (all 4 analog inputs visible)\n- Appendix D — Step 5: `opcua_browse.py` output from the SCADA server (all 7 variables visible)\n- Appendix E — Step 6: `bacnet_discover.py` output from the sensor (object names visible)\n- Appendix F — Step 7: tshark Protocol Hierarchy Statistics output\n- Appendix G — Step 8: nmap scan of OT subnet (all 4 hosts visible)",
+        "successCheck": "Your lab report contains a 2–3 page written section followed by 7 labeled appendix screenshots. Each screenshot shows the expected output described in the individual step success checks. Submit per your instructor's instructions."
+      }
+    ]
+  },
+  "visual": {
+    "nodes": [
+      {
+        "id": "plc-1",
+        "type": "plc",
+        "position": { "x": 80, "y": 200 },
+        "data": { "label": "Process PLC", "zone": "ot" }
+      },
+      {
+        "id": "rtu-1",
+        "type": "rtu",
+        "position": { "x": 280, "y": 200 },
+        "data": { "label": "Field RTU", "zone": "ot" }
+      },
+      {
+        "id": "ied-1",
+        "type": "ied",
+        "position": { "x": 480, "y": 200 },
+        "data": { "label": "Protection IED", "zone": "ot" }
+      },
+      {
+        "id": "sensor-1",
+        "type": "sensor",
+        "position": { "x": 680, "y": 200 },
+        "data": { "label": "Process Sensor", "zone": "ot" }
+      },
+      {
+        "id": "scada-server-1",
+        "type": "scada-server",
+        "position": { "x": 200, "y": 180 },
+        "data": { "label": "SCADA Server (OPC UA)", "zone": "control" }
+      },
+      {
+        "id": "workstation-1",
+        "type": "engineering-workstation",
+        "position": { "x": 500, "y": 180 },
+        "data": { "label": "Engineering Workstation", "zone": "control" }
+      },
+      {
+        "id": "firewall-1",
+        "type": "firewall",
+        "position": { "x": 350, "y": 180 },
+        "data": { "label": "Plant Firewall", "zone": "plant-dmz" }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-ws-plc",
+        "source": "workstation-1",
+        "target": "plc-1",
+        "data": { "protocol": "modbus-tcp", "label": "Modbus TCP :502" }
+      },
+      {
+        "id": "e-ws-rtu",
+        "source": "workstation-1",
+        "target": "rtu-1",
+        "data": { "protocol": "modbus-tcp", "label": "Modbus TCP :502" }
+      },
+      {
+        "id": "e-ws-ied",
+        "source": "workstation-1",
+        "target": "ied-1",
+        "data": { "protocol": "dnp3", "label": "DNP3 TCP :20000" }
+      },
+      {
+        "id": "e-ws-sensor",
+        "source": "workstation-1",
+        "target": "sensor-1",
+        "data": { "protocol": "bacnet", "label": "BACnet/IP UDP :47808" }
+      },
+      {
+        "id": "e-ws-scada",
+        "source": "workstation-1",
+        "target": "scada-server-1",
+        "data": { "protocol": "opcua", "label": "OPC UA :4840" }
+      },
+      {
+        "id": "e-ws-fw",
+        "source": "workstation-1",
+        "target": "firewall-1",
+        "data": { "protocol": "none", "label": "" }
+      },
+      {
+        "id": "e-scada-fw",
+        "source": "scada-server-1",
+        "target": "firewall-1",
+        "data": { "protocol": "none", "label": "" }
+      }
+    ],
+    "viewport": { "x": 0, "y": 0, "zoom": 1 }
+  },
+  "network": {
+    "segments": [
+      {
+        "zone": "ot",
+        "subnet": "10.200.10.0/24",
+        "gateway": "10.200.10.1",
+        "dockerNetwork": "ics-sim-ot-net"
+      },
+      {
+        "zone": "control",
+        "subnet": "10.200.20.0/24",
+        "gateway": "10.200.20.1",
+        "dockerNetwork": "ics-sim-control-net"
+      },
+      {
+        "zone": "plant-dmz",
+        "subnet": "10.200.30.0/24",
+        "gateway": "10.200.30.1",
+        "dockerNetwork": "ics-sim-plant-dmz-net"
+      },
+      {
+        "zone": "enterprise",
+        "subnet": "10.200.40.0/24",
+        "gateway": "10.200.40.1",
+        "dockerNetwork": "ics-sim-enterprise-net"
+      },
+      {
+        "zone": "internet-dmz",
+        "subnet": "10.200.50.0/24",
+        "gateway": "10.200.50.1",
+        "dockerNetwork": "ics-sim-internet-dmz-net"
+      },
+      {
+        "zone": "attacker",
+        "subnet": "10.200.60.0/24",
+        "gateway": "10.200.60.1",
+        "dockerNetwork": "ics-sim-attacker-net"
+      }
+    ],
+    "routes": []
+  },
+  "devices": {
+    "devices": {
+      "plc-1": {
+        "nodeId": "plc-1",
+        "category": "plc",
+        "ipAddress": "10.200.10.10",
+        "protocols": ["modbus-tcp"],
+        "modbus": {
+          "mode": "tcp",
+          "port": 502,
+          "unitId": 1,
+          "registers": {
+            "coils": { "0": 1, "1": 1 },
+            "holdingRegisters": { "0": 250, "1": 1013 }
+          }
+        },
+        "plcProgram": {
+          "language": "st",
+          "source": "UFJPR1JBTSBzdXJ2ZXlfcGxjCiAgVkFSCiAgICBwdW1wX3J1biAgICBBVCAlUVgwLjAgOiBCT09MOwogICAgdmFsdmVfb3BlbiAgQVQgJVFYMC4xIDogQk9PTDsKICAgIHRlbXBfdmFsdWUgIEFUICVRVzAgICA6IElOVDsKICAgIHByZXNzdXJlICAgIEFUICVRVzEgICA6IElOVDsKICBFTkRfVkFSCgogIHB1bXBfcnVuICAgOj0gVFJVRTsKICB2YWx2ZV9vcGVuIDo9IFRSVUU7CiAgdGVtcF92YWx1ZSA6PSAyNTA7CiAgcHJlc3N1cmUgICA6PSAxMDEzOwoKRU5EX1BST0dSQU0KCkNPTkZJR1VSQVRJT04gY29uZmlnMAogIFRBU0sgdGFzazAoSU5URVJWQUwgOj0gVCM1MDBtcywgUFJJT1JJVFkgOj0gMCk7CiAgUFJPR1JBTSBpbnN0MCBXSVRIIHRhc2swIDogc3VydmV5X3BsYzsKRU5EX0NPTkZJR1VSQVRJT04=",
+          "variables": [
+            { "name": "pump_run",   "type": "BOOL", "address": "%QX0.0", "protocol": "modbus-tcp", "protocolAddress": "0" },
+            { "name": "valve_open", "type": "BOOL", "address": "%QX0.1", "protocol": "modbus-tcp", "protocolAddress": "1" },
+            { "name": "temp_value", "type": "INT",  "address": "%QW0",   "protocol": "modbus-tcp", "protocolAddress": "40001" },
+            { "name": "pressure",   "type": "INT",  "address": "%QW1",   "protocol": "modbus-tcp", "protocolAddress": "40002" }
+          ]
+        }
+      },
+      "rtu-1": {
+        "nodeId": "rtu-1",
+        "category": "rtu",
+        "ipAddress": "10.200.10.11",
+        "protocols": ["modbus-tcp"],
+        "modbus": {
+          "mode": "tcp",
+          "port": 502,
+          "unitId": 1
+        }
+      },
+      "ied-1": {
+        "nodeId": "ied-1",
+        "category": "ied",
+        "ipAddress": "10.200.10.12",
+        "protocols": ["dnp3"],
+        "dnp3": {
+          "masterAddress": 1,
+          "outstationAddress": 10,
+          "port": 20000
+        }
+      },
+      "sensor-1": {
+        "nodeId": "sensor-1",
+        "category": "sensor",
+        "ipAddress": "10.200.10.13",
+        "protocols": ["bacnet"],
+        "bacnet": {
+          "deviceInstance": 1001,
+          "port": 47808
+        }
+      },
+      "scada-server-1": {
+        "nodeId": "scada-server-1",
+        "category": "scada-server",
+        "ipAddress": "10.200.20.10",
+        "protocols": ["opcua"],
+        "opcua": {
+          "port": 4840,
+          "namespace": "urn:otforge:ics"
+        }
+      },
+      "workstation-1": {
+        "nodeId": "workstation-1",
+        "category": "engineering-workstation",
+        "ipAddress": "10.200.20.11",
+        "protocols": ["none"]
+      },
+      "firewall-1": {
+        "nodeId": "firewall-1",
+        "category": "firewall",
+        "ipAddress": "10.200.30.10",
+        "protocols": ["none"]
+      }
+    }
+  },
+  "security": {
+    "defaultFirewallPolicy": "deny",
+    "firewallRules": [
+      {
+        "id": "rule-control-ot-modbus",
+        "sourceZone": "control",
+        "destinationZone": "ot",
+        "protocol": "tcp",
+        "destinationPort": 502,
+        "action": "allow",
+        "comment": "Allow engineering workstation to read Modbus registers from PLC and RTU"
+      },
+      {
+        "id": "rule-control-ot-dnp3",
+        "sourceZone": "control",
+        "destinationZone": "ot",
+        "protocol": "tcp",
+        "destinationPort": 20000,
+        "action": "allow",
+        "comment": "Allow engineering workstation to poll DNP3 IED"
+      },
+      {
+        "id": "rule-control-ot-bacnet-udp",
+        "sourceZone": "control",
+        "destinationZone": "ot",
+        "protocol": "udp",
+        "destinationPort": 47808,
+        "action": "allow",
+        "comment": "Allow engineering workstation to send BACnet/IP requests to sensors"
+      },
+      {
+        "id": "rule-ot-control-bacnet-reply",
+        "sourceZone": "ot",
+        "destinationZone": "control",
+        "protocol": "udp",
+        "destinationPort": 47808,
+        "action": "allow",
+        "comment": "Allow BACnet/IP unicast replies from sensors back to the workstation"
+      },
+      {
+        "id": "rule-ot-control-any",
+        "sourceZone": "ot",
+        "destinationZone": "control",
+        "protocol": "any",
+        "destinationPort": "any",
+        "action": "allow",
+        "comment": "Allow OT devices to send data to control center (Modbus responses, DNP3 responses)"
+      }
+    ],
+    "ids": {
+      "enabledRulesets": ["emerging-scada", "emerging-modbus"],
+      "disabledRuleIds": [],
+      "zeekScripts": ["modbus.zeek", "dnp3.zeek"],
+      "customRules": ""
+    }
+  }
+}
