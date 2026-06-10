@@ -25,6 +25,10 @@ set -e
 
 DNS_DOMAIN="${DNS_DOMAIN:-meridian-process.com}"
 WEB_SERVER_IP="${WEB_SERVER_IP:-203.0.113.10}"
+# MAIL_SERVER_IP defaults to WEB_SERVER_IP when not injected by the compose
+# generator.  The compose generator auto-injects the claimed email-server IP
+# whenever an email-server device is present in the scenario.
+MAIL_SERVER_IP="${MAIL_SERVER_IP:-${WEB_SERVER_IP}}"
 # Use ${VAR-default} (not ${VAR:-default}) so that DNS_UPSTREAM="" (empty string,
 # injected by the compose generator for air-gapped scenarios) is respected.
 # With :- the shell replaces even an empty value with the default.
@@ -33,6 +37,7 @@ DNS_UPSTREAM="${DNS_UPSTREAM-8.8.8.8}"
 echo "[otforge-dns] ================================================"
 echo "[otforge-dns] Domain:      ${DNS_DOMAIN}"
 echo "[otforge-dns] Web server:  ${WEB_SERVER_IP}"
+echo "[otforge-dns] Mail server: ${MAIL_SERVER_IP}"
 if [ -n "${DNS_UPSTREAM}" ]; then
     echo "[otforge-dns] Upstream:    ${DNS_UPSTREAM}"
 else
@@ -67,13 +72,19 @@ domain=${DNS_DOMAIN}
 # exercise by making non-existent names like ot/scada/plc appear to resolve.
 host-record=${DNS_DOMAIN},${WEB_SERVER_IP}
 
-# Specific subdomains — only www and remote resolve (both hosted on the same
-# single internet-facing server). vpn/mail/ot/scada/plc/hmi all return NXDOMAIN:
-# Meridian uses a cloud mail provider (not in this zone) and has no VPN appliance.
-# The OT names are absent from DNS deliberately — the network is reachable only
-# because of the firewall misconfiguration, not because it is advertised.
+# Specific subdomains — www and remote resolve to the internet-facing web server.
+# mail resolves to the mail server (may be the same host as www when MAIL_SERVER_IP
+# was not set explicitly — the compose generator injects a separate IP when an
+# email-server device is present in the scenario).
+# vpn/ot/scada/plc/hmi all return NXDOMAIN — the OT network is reachable only
+# because of the firewall misconfiguration, not because it is advertised in DNS.
 address=/www.${DNS_DOMAIN}/${WEB_SERVER_IP}
 address=/remote.${DNS_DOMAIN}/${WEB_SERVER_IP}
+address=/mail.${DNS_DOMAIN}/${MAIL_SERVER_IP}
+
+# MX record — mail exchange for the domain pointing at mail.${DNS_DOMAIN}
+# Priority 10 is the standard single-server priority (lower = higher priority).
+mx-host=${DNS_DOMAIN},mail.${DNS_DOMAIN},10
 DNSCONF
 
 # Add upstream resolver unless air-gapped mode is requested
@@ -83,6 +94,9 @@ fi
 
 echo "[otforge-dns] Zone records:"
 grep "^address=" /tmp/dnsmasq.conf | while IFS= read -r line; do
+    echo "[otforge-dns]   ${line}"
+done
+grep "^mx-host=" /tmp/dnsmasq.conf | while IFS= read -r line; do
     echo "[otforge-dns]   ${line}"
 done
 echo ""

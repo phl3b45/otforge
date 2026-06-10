@@ -358,14 +358,48 @@ export interface ProcessUnitConfig {
  *   DNS_DOMAIN      = meridian-process.com
  *   WEB_SERVER_IP   = 203.0.113.10   (RFC 5737 documentation prefix)
  *   DNS_UPSTREAM    = 8.8.8.8
+ *   MAIL_SERVER_IP  = (same as WEB_SERVER_IP when omitted)
  */
 export interface DnsConfig {
   /** Authoritative domain served by this dnsmasq instance (default: meridian-process.com). */
   domain?: string
   /** A-record IP injected for www.<domain> — should match the internet-server IP (default: 203.0.113.10). */
   webServerIp?: string
+  /**
+   * A-record IP injected for mail.<domain> and MX record target.
+   * Should match the email-server device IP in the scenario.
+   * When omitted the DNS entrypoint defaults to the same value as WEB_SERVER_IP.
+   */
+  mailServerIp?: string
   /** Upstream recursive resolver for non-authoritative queries (default: 8.8.8.8). */
   upstream?: string
+}
+
+/**
+ * Runtime configuration for an otforge-mail container.
+ *
+ * The container runs an open-relay SMTP server (aiosmtpd on port 25) that
+ * accepts all inbound mail without authentication -- modelling the insecure
+ * legacy mail infrastructure common in ICS environments.
+ *
+ * Students exploit this to send phishing emails from Kali using:
+ *   curl --url smtp://<mail-ip>:25/ \
+ *        --mail-from attacker@evil.com \
+ *        --mail-rcpt it@meridian-process.com \
+ *        --upload-file phishing.txt
+ *
+ * All received messages are logged to stdout and saved to /var/mail/ inside
+ * the container for forensic verification.
+ *
+ * All fields are optional — the container Dockerfile sets safe defaults:
+ *   MAIL_DOMAIN = meridian-process.com
+ */
+export interface MailConfig {
+  /**
+   * Domain displayed in the startup banner and accepted by the SMTP server.
+   * (default: meridian-process.com)
+   */
+  domain?: string
 }
 
 /**
@@ -418,6 +452,7 @@ export interface DeviceConfig {
   iec104?: Iec104Config // IEC 60870-5-104 config (iec104-rtu devices, Phase 10)
   processUnit?: ProcessUnitConfig // Physics process simulation config (Phase 11)
   dns?: DnsConfig // DNS server config (dns-server devices, Phase 12)
+  mail?: MailConfig // Mail server config (email-server devices)
   plcProgram?: PLCProgramConfig
   safetyPlc?: SafetyPlcConfig // SIS config for safety-plc devices
   dockerImage?: string // override default image for this device type

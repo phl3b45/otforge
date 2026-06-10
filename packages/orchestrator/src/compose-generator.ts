@@ -115,9 +115,9 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   // Replace with otforge-workstation once published.
   'enterprise-desktop': 'lscr.io/linuxserver/webtop:ubuntu-xfce',
   // ── Internet DMZ (Level 5) ───────────────────────────────────────────────────
-  // STUB: mailhog provides a lightweight SMTP+web UI for email simulation.
-  // Replace with otforge-mail once published.
-  'email-server': 'mailhog/mailhog:latest',
+  // Open-relay SMTP server — aiosmtpd on Alpine (containers/mail-server).
+  // Accepts all inbound mail without auth; logs every message to stdout.
+  'email-server': 'ghcr.io/iburres/otforge-mail:latest',
   // STUB: nginx:alpine for generic internet-facing servers.
   // The tutorial scenario overrides this with otforge-web-company via deviceConfig.dockerImage.
   'internet-server': 'nginx:alpine',
@@ -765,6 +765,32 @@ export function generateCompose(
         // internet) via attacker-net even when the scenario's DNS server is air-gapped
         // (DNS_UPSTREAM=""). Without this fallback, Firefox and apt can't reach the internet.
         services[serviceName].dns = [dnsIp, '8.8.8.8']
+      }
+    }
+
+    // DNS server — auto-inject MAIL_SERVER_IP from the scenario's email-server device
+    // so the dnsmasq entrypoint publishes an MX record and mail.<domain> A record.
+    // Only injected when the scenario contains an email-server; scenarios without one
+    // leave the mail subdomain unadvertised (NXDOMAIN), which is intentional for
+    // exercises that teach DNS enumeration against limited-zone configurations.
+    //
+    // Priority: explicit device.dns.mailServerIp (set in buildDeviceEnv above) wins.
+    // Auto-injection only fires when that key is absent to avoid double-injection.
+    if (device.category === 'dns-server') {
+      const mailDevice = Object.values(scenario.devices.devices).find(
+        d => d.category === 'email-server'
+      )
+      if (mailDevice) {
+        const dnsEnv: string[] = services[serviceName].environment ?? []
+        if (!dnsEnv.some(e => e.startsWith('MAIL_SERVER_IP='))) {
+          // Use the claimed (post-dedup) IP when the email-server was processed before
+          // the dns-server in the JSON object; fall back to resolveDeviceIp otherwise.
+          const mailIp =
+            claimedDeviceIps.get(mailDevice.nodeId) ??
+            resolveDeviceIp(mailDevice.ipAddress, scenario, effectiveZones)
+          dnsEnv.push(`MAIL_SERVER_IP=${mailIp}`)
+          services[serviceName].environment = dnsEnv
+        }
       }
     }
 
@@ -1448,17 +1474,27 @@ function buildDeviceEnv(
       env.push(`PIPELINE_PUMP_MAX_LPM=${pu.pipelinePumpMaxLpm}`)
   }
 
-  // Phase 12: DNS server — inject domain and web server IP from the optional DnsConfig.
+  // Phase 12: DNS server — inject domain and web/mail server IPs from the optional DnsConfig.
   // The container Dockerfile already sets DNS_DOMAIN=meridian-process.com and
   // WEB_SERVER_IP=203.0.113.10 as defaults; these overrides are only emitted when
   // the scenario explicitly configures different values, keeping the Compose YAML clean.
   if (device.dns) {
     if (device.dns.domain) env.push(`DNS_DOMAIN=${device.dns.domain}`)
     if (device.dns.webServerIp) env.push(`WEB_SERVER_IP=${device.dns.webServerIp}`)
+    // MAIL_SERVER_IP: explicit override from DnsConfig (author-set). When omitted,
+    // the outer device loop auto-injects the email-server device's claimed IP instead.
+    if (device.dns.mailServerIp) env.push(`MAIL_SERVER_IP=${device.dns.mailServerIp}`)
     // Use !== undefined (not truthiness check) so that upstream: "" correctly
     // injects DNS_UPSTREAM= (empty), overriding the container default of 8.8.8.8.
     // An empty value triggers air-gapped mode in the dns entrypoint.sh.
     if (device.dns.upstream !== undefined) env.push(`DNS_UPSTREAM=${device.dns.upstream}`)
+  }
+
+  // Mail server — inject domain name if explicitly configured.
+  // The container Dockerfile already sets MAIL_DOMAIN=meridian-process.com;
+  // this override is only emitted when the scenario configures a different domain.
+  if (device.mail?.domain) {
+    env.push(`MAIL_DOMAIN=${device.mail.domain}`)
   }
 
   // PLC program pre-load (Phase 4):
