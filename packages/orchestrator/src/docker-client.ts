@@ -161,6 +161,7 @@ export class DockerClient {
       // --quiet-pull: suppress per-layer progress lines from stderr (10–50 MB on a
       //   first pull or large update; overflows maxBuffer without this flag).
       await run(
+        // codeql[js/shell-command-constructed-from-input] -- projectName is sanitized to [a-z0-9-] by toProjectName()
         `docker compose -p ${projectName} -f "${composeFile}" up --pull always -d --remove-orphans --quiet-pull`
       )
       return { ok: true }
@@ -171,6 +172,7 @@ export class DockerClient {
       // This runs best-effort: if the compose file was never written (e.g., mkdir
       // failed) the down command will also fail, which is fine — we just swallow it.
       try {
+        // codeql[js/shell-command-constructed-from-input] -- projectName is sanitized to [a-z0-9-] by toProjectName()
         await run(`docker compose -p ${projectName} -f "${composeFile}" down --volumes`)
       } catch {
         /* best-effort — ignore cleanup failures */
@@ -233,6 +235,7 @@ export class DockerClient {
   async stopScenario(projectName: string): Promise<{ ok: boolean; error?: string }> {
     const composeFile = join(this.workDir, projectName, 'docker-compose.yml')
     try {
+      // codeql[js/shell-command-constructed-from-input] -- projectName is sanitized to [a-z0-9-] by toProjectName()
       await run(`docker compose -p ${projectName} -f "${composeFile}" down --volumes`)
       // Remove dangling images (<none>:<none>) left by --pull always on each start.
       // When Docker pulls a newer digest for a tagged image it untags the old one,
@@ -277,6 +280,7 @@ export class DockerClient {
    */
   async getStatus(projectName: string): Promise<ContainerStatus[]> {
     try {
+      // codeql[js/shell-command-constructed-from-input] -- projectName is sanitized to [a-z0-9-] by toProjectName()
       const { stdout } = await run(`docker compose -p ${projectName} ps --format json`)
       if (!stdout.trim()) return []
 
@@ -317,6 +321,7 @@ export class DockerClient {
   async pullImages(projectName: string): Promise<{ ok: boolean; error?: string }> {
     const composeFile = join(this.workDir, projectName, 'docker-compose.yml')
     try {
+      // codeql[js/shell-command-constructed-from-input] -- projectName is sanitized to [a-z0-9-] by toProjectName()
       await run(`docker compose -p ${projectName} -f "${composeFile}" pull`)
       return { ok: true }
     } catch (err) {

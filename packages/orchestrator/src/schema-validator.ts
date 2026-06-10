@@ -113,6 +113,8 @@ export function validateScenario(raw: unknown): ValidationResult {
  *   toProjectName('Oil & Gas — Refinery')  // → 'otforge-oil-gas-refinery'
  */
 export function toProjectName(scenarioName: string): string {
+  // codeql[js/shell-command-constructed-from-input] -- output is restricted to [a-z0-9-]; safe for docker compose -p
+  // codeql[js/polynomial-redos] -- [^a-z0-9]+ is a simple negated char class with no backtracking risk
   return `otforge-${scenarioName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-') // Replace any non-alphanumeric run with a single hyphen
