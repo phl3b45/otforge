@@ -287,7 +287,21 @@ Wait for it to finish (a few minutes). You will see package installation output 
 
 ---
 
-### Step 7 — Build the Support Packages
+### Step 7 — Install the Electron Binary
+
+On macOS, the Electron desktop runtime binary needs to be downloaded separately after `npm ci`:
+
+```bash
+node node_modules/electron/install.js
+```
+
+This downloads a single ~90 MB file from GitHub. Wait for it to complete before continuing.
+
+> **Windows users:** You do not need this step — Electron downloads automatically during `npm ci` on Windows.
+
+---
+
+### Step 8 — Build the Support Packages
 
 ```bash
 npm run build:packages
@@ -297,7 +311,7 @@ This takes about 30 seconds.
 
 ---
 
-### Step 8 — Launch OTForge
+### Step 9 — Launch OTForge
 
 ```bash
 npm run dev
@@ -307,7 +321,7 @@ The OTForge window opens. On first launch, macOS may show a security dialog — 
 
 ---
 
-### Step 9 — Prepare Your Scenarios Folder
+### Step 10 — Prepare Your Scenarios Folder
 
 Your scenario files live in:
 
@@ -571,26 +585,19 @@ npm run dev
 
 ## Keeping OTForge Updated
 
-Your instructor may push updates to the repository during the semester. To get the latest version:
+Your instructor may push updates to the repository during the semester. **Do not use bare `git pull`** — npm records platform-specific information in `package-lock.json` that differs between macOS and Windows, causing a conflict on every pull that touches that file. Use the provided update script instead — it handles everything in one step.
 
+**Windows (PowerShell in `C:\OTForge`):**
 ```powershell
-# Windows (PowerShell in C:\OTForge)
-git pull
-npm install
-npm run build:packages
+.\get-updates.ps1
 ```
 
+**macOS (Terminal in `~/OTForge`):**
 ```bash
-# macOS (Terminal in ~/OTForge)
-git pull
-npm install
-npm run build:packages
+bash get-updates.sh
 ```
 
-Then relaunch with `npm run dev`.
-
-> **Why `npm install` and not `npm ci`?**
-> `npm ci` does a full clean reinstall every time — it deletes `node_modules` and re-downloads everything, including the 90 MB Electron binary, even when the Electron version has not changed. `npm install` is incremental: it only downloads packages that actually changed since your last update. For ongoing updates this is much faster and avoids the Electron download errors students sometimes see on campus networks.
+The script resets `package-lock.json`, pulls the latest code, reinstalls dependencies, downloads the Electron binary (macOS), and rebuilds the packages. When it finishes, run `npm run dev` to launch.
 
 ---
 
@@ -645,7 +652,7 @@ Remove-NetFirewallRule -DisplayName "OTForge — Block inbound lab ports"
 | Navigate to OTForge | `cd C:\OTForge` | `cd ~/OTForge` |
 | Start OTForge | `npm run dev` | `npm run dev` |
 | Scenarios folder | `C:\OTForge\scenarios\` | `~/OTForge/scenarios/` |
-| Update OTForge | `git pull && npm install && npm run build:packages` | `git pull && npm install && npm run build:packages` |
+| Update OTForge | `.\get-updates.ps1` | `bash get-updates.sh` |
 
 ---
 
