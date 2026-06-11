@@ -1,6 +1,6 @@
 # OTForge Student Setup Guide
 
-> **Tip:** For the best reading experience, [open the formatted version in your browser](student-setup.html).
+> **Tip:** For the best reading experience, [open the formatted version in your browser](https://iburres.github.io/otforge/student-setup.html).
 
 Install three tools, clone the repository, and run a few commands. The whole process takes about 30–45 minutes (most of that is download time).
 

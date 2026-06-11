@@ -142,7 +142,7 @@ Docker Desktop must be running before launching the app.
 
 **First-time students:** see the step-by-step setup guide for a full walkthrough covering Docker, Git, Node.js, and OTForge setup on both Windows and macOS.
 
-> **[View Student Setup Guide (browser)](docs/student-setup.html)** &nbsp;|&nbsp; [Markdown source](docs/student-setup.md)
+> **[View Student Setup Guide (browser)](https://iburres.github.io/otforge/student-setup.html)** &nbsp;|&nbsp; [Markdown source](docs/student-setup.md)
 
 ### Getting updates
 
