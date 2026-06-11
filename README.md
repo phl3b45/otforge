@@ -140,7 +140,9 @@ Docker Desktop must be running before launching the app.
 
 > **Node.js 22+ required.** Vite 8 uses `crypto.hash()`, which was added in Node 21.7. Node 20 will throw `TypeError: crypto.hash is not a function`.
 
-**First-time students:** see [`docs/student-setup.md`](docs/student-setup.md) (also available as [`docs/student-setup.html`](docs/student-setup.html)) for a full step-by-step walkthrough covering Docker, Git, Node.js, and OTForge setup on both Windows and macOS.
+**First-time students:** see the step-by-step setup guide for a full walkthrough covering Docker, Git, Node.js, and OTForge setup on both Windows and macOS.
+
+> **[View Student Setup Guide (browser)](docs/student-setup.html)** &nbsp;|&nbsp; [Markdown source](docs/student-setup.md)
 
 ### Getting updates
 

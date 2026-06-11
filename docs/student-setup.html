@@ -256,6 +256,7 @@
     <div class="nav-section">Reference</div>
     <li><a href="#updating">Getting Updates</a></li>
     <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li class="sub"><a href="#docker-starting-engine">Docker &ldquo;Starting Engine&rdquo;</a></li>
     <li><a href="#network-isolation">Firewall Rule (Windows)</a></li>
     <li><a href="#quick-ref">Quick Reference</a></li>
   </ul>
@@ -432,19 +433,28 @@ npm run dev</code></pre>
   <h3>&ldquo;Docker Desktop is not running&rdquo;</h3>
   <p>Open Docker Desktop and wait for the green &ldquo;Engine running&rdquo; status before launching OTForge.</p>
 
+  <h3 id="docker-starting-engine">Docker Desktop hangs at &ldquo;Starting Engine&rdquo; (Windows)</h3>
+  <p>This means the WSL 2 backend or the Docker service got stuck during installation or after an update. Try these steps in order:</p>
+  <ol>
+    <li><strong>Quit Docker Desktop</strong> &mdash; right-click the Docker whale icon in the system tray and choose <strong>Quit Docker Desktop</strong>.</li>
+    <li><strong>Restart WSL</strong> &mdash; open PowerShell and run:
+<pre><code>wsl --shutdown</code></pre>
+    </li>
+    <li><strong>Relaunch Docker Desktop</strong> &mdash; wait up to two minutes for the green &ldquo;Engine running&rdquo; indicator to appear.</li>
+  </ol>
+  <p>If the spinner still does not clear:</p>
+  <ol start="4">
+    <li>Open <strong>Task Manager</strong> &rarr; <strong>Services</strong> tab &rarr; find <strong>com.docker.service</strong> &rarr; right-click &rarr; <strong>Restart</strong>.</li>
+    <li>Relaunch Docker Desktop.</li>
+  </ol>
+  <p>If none of the above work, restart your computer and relaunch Docker Desktop. A full reboot clears stuck WSL instances and stalled service states.</p>
+
   <h3><code>npm run dev</code> fails &mdash; Electron not installed (macOS)</h3>
 <pre><code>node node_modules/electron/install.js
 npm run dev</code></pre>
 
   <h3><code>npm run dev</code> fails &mdash; Electron not installed (Windows)</h3>
-<pre><code>node node_modules\electron\install.js
-npm run dev</code></pre>
-  <p>If that fails, try an alternate download mirror:</p>
-<pre><code>$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
-node node_modules\electron\install.js
-Remove-Item Env:\ELECTRON_MIRROR
-npm run dev</code></pre>
-  <p>For persistent failures, run the included repair script:</p>
+  <p>Run the included repair script from <code>C:\OTForge</code>:</p>
 <pre><code>.\fix-electron.ps1</code></pre>
 
   <h3><code>TypeError: crypto.hash is not a function</code></h3>

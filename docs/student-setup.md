@@ -1,5 +1,7 @@
 # OTForge Student Setup Guide
 
+> **Tip:** For the best reading experience, [open the formatted version in your browser](student-setup.html).
+
 Install three tools, clone the repository, and run a few commands. The whole process takes about 30–45 minutes (most of that is download time).
 
 ---
@@ -155,6 +157,23 @@ The script handles resetting `package-lock.json`, pulling, reinstalling, and reb
 ### "Docker Desktop is not running"
 Open Docker Desktop and wait for the green "Engine running" status before launching OTForge.
 
+### Docker Desktop hangs at "Starting Engine" (Windows)
+This means the WSL 2 backend or the Docker service got stuck during installation or after an update. Try these steps in order:
+
+1. **Quit Docker Desktop** — right-click the Docker whale icon in the system tray and choose **Quit Docker Desktop**.
+2. **Restart WSL** — open PowerShell and run:
+   ```powershell
+   wsl --shutdown
+   ```
+3. **Relaunch Docker Desktop** — wait up to two minutes for the green "Engine running" indicator to appear.
+
+If the spinner still does not clear:
+
+4. Open **Task Manager** → **Services** tab → find **com.docker.service** → right-click → **Restart**.
+5. Relaunch Docker Desktop.
+
+If none of the above work, restart your computer and relaunch Docker Desktop. A full reboot clears stuck WSL instances and stalled service states.
+
 ### `npm run dev` fails — Electron not installed (macOS)
 ```bash
 node node_modules/electron/install.js
@@ -162,16 +181,9 @@ npm run dev
 ```
 
 ### `npm run dev` fails — Electron not installed (Windows)
+Run the included repair script from `C:\OTForge`:
 ```powershell
-node node_modules\electron\install.js
-npm run dev
-```
-If that fails, try:
-```powershell
-$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
-node node_modules\electron\install.js
-Remove-Item Env:\ELECTRON_MIRROR
-npm run dev
+.\fix-electron.ps1
 ```
 
 ### `TypeError: crypto.hash is not a function`
