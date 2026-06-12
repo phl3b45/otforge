@@ -1003,6 +1003,30 @@ code.prop-value {
   padding: 1px 5px;
 }
 
+/* Editable input fields in the Properties Panel — Author Mode only */
+.prop-input {
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 2px 6px;
+  min-width: 0;
+  flex: 1;
+  text-align: right;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.prop-input:focus {
+  border-color: var(--accent-blue);
+}
+
+.prop-input.prop-input-mono {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 0.7rem;
+}
+
 .prop-tags {
   display: flex;
   flex-wrap: wrap;

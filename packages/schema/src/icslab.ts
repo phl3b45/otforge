@@ -441,6 +441,8 @@ export interface SafetyPlcConfig {
 export interface DeviceConfig {
   nodeId: string // matches CanvasNode.id
   category: DeviceCategory
+  /** Author-assigned display name shown on the canvas node. Falls back to the category label when absent. */
+  label?: string
   ipAddress: string
   protocols: Protocol[]
   modbus?: ModbusConfig

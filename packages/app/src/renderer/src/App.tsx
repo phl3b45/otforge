@@ -792,6 +792,44 @@ export default function App() {
     })
   }, [])
 
+  /**
+   * Handles author edits to a device's IP address or display label from the
+   * Properties Panel. Updates scenario state (which re-syncs the canvas) and
+   * also immediately updates selectedDevice so the panel reflects the change
+   * before the next React Flow re-render cycle completes.
+   */
+  const handleDeviceChange = useCallback(
+    (nodeId: string, changes: { ipAddress?: string; label?: string }) => {
+      setScenario(prev => {
+        if (!prev) return prev
+        const existing = prev.devices.devices[nodeId]
+        if (!existing) return prev
+        const updatedDevice = { ...existing, ...changes }
+        // Remove label from DeviceConfig when cleared so the canvas falls back
+        // to the category label stored in visual.nodes.
+        if ('label' in changes && !changes.label) {
+          delete updatedDevice.label
+        }
+        return {
+          ...prev,
+          devices: {
+            ...prev.devices,
+            devices: { ...prev.devices.devices, [nodeId]: updatedDevice }
+          }
+        }
+      })
+      // Immediately refresh selectedDevice so the Properties Panel input values
+      // stay in sync without waiting for the canvas re-render cycle.
+      setSelectedDevice(prev => {
+        if (!prev || prev.nodeId !== nodeId) return prev
+        const updated = { ...prev, ...changes }
+        if ('label' in changes && !changes.label) delete updated.label
+        return updated
+      })
+    },
+    []
+  )
+
   /** Toggles the 25 × 25 snap grid on/off. */
   const handleGridToggle = useCallback(() => {
     setShowGrid(prev => !prev)
@@ -1636,7 +1674,8 @@ export default function App() {
           zone={selectedZone}
           simRunning={simStatus === 'running'}
           security={scenario?.security ?? null}
-          readOnly={false}
+          readOnly={appMode !== 'author'}
+          onDeviceChange={handleDeviceChange}
           onSecurityChange={handleSecurityChange}
           onOpenPlcIde={handleOpenPlcIde}
           onOpenAttackTerminal={handleOpenAttackTerminal}

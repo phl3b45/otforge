@@ -27,6 +27,7 @@
  *   When the simulation is not running, a note explains it must be started first.
  */
 
+import { useEffect, useState } from 'react'
 import type { DeviceConfig, SecurityLayer } from '@otforge/schema'
 import { DeviceIcon } from '../icons/DeviceIcons'
 import { ZONE_COLORS } from '../canvas/DeviceNode'
@@ -73,12 +74,16 @@ interface PropertiesPanelProps {
    */
   security: SecurityLayer | null
   /**
-   * When true the panel is view-only: PLC Save Program and security editing buttons
-   * are hidden. Currently always false — students are permitted to edit firewall rules,
-   * IDS rules, and PLC programs as hands-on lab exercises. Reserved for future use
-   * if a stricter read-only mode is ever needed.
+   * When true the panel is view-only: editing inputs are hidden and all fields
+   * are shown as read-only text. Set to true in Student Mode (scenario.meta.locked).
    */
   readOnly?: boolean
+  /**
+   * Called when the author edits the device's IP address or display label.
+   * App.tsx updates scenario.devices.devices[nodeId] and re-syncs the canvas.
+   * Only called in Author Mode (readOnly === false).
+   */
+  onDeviceChange?: (nodeId: string, changes: { ipAddress?: string; label?: string }) => void
   /**
    * Called when the user edits security config in FirewallPanel or IDSPanel.
    * App.tsx applies the updater to scenario.security and re-renders.
@@ -123,10 +128,21 @@ export function PropertiesPanel({
   simRunning,
   security,
   readOnly = false,
+  onDeviceChange,
   onSecurityChange,
   onOpenPlcIde,
   onOpenAttackTerminal
 }: PropertiesPanelProps) {
+  // Local draft values for the editable IP and label inputs.
+  // Initialized from the device prop; reset whenever the selected device changes.
+  const [editIp, setEditIp] = useState(device?.ipAddress ?? '')
+  const [editLabel, setEditLabel] = useState(device?.label ?? '')
+
+  useEffect(() => {
+    setEditIp(device?.ipAddress ?? '')
+    setEditLabel(device?.label ?? '')
+  }, [device?.nodeId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Empty state — shown when no node is selected on the canvas
   if (!device) {
     return (
@@ -165,6 +181,19 @@ export function PropertiesPanel({
         <div className="properties-body">
           {/* Identity section — same fields as non-PLC devices */}
           <section className="prop-section">
+            {/* Label — editable in Author Mode; hidden in Student Mode */}
+            {!readOnly && (
+              <div className="prop-row">
+                <span className="prop-label">Label</span>
+                <input
+                  className="prop-input"
+                  value={editLabel}
+                  placeholder={device.nodeId}
+                  onChange={e => setEditLabel(e.target.value)}
+                  onBlur={() => onDeviceChange?.(device.nodeId, { label: editLabel })}
+                />
+              </div>
+            )}
             <div className="prop-row">
               <span className="prop-label">Node ID</span>
               <code className="prop-value">{device.nodeId}</code>
@@ -177,7 +206,17 @@ export function PropertiesPanel({
             </div>
             <div className="prop-row">
               <span className="prop-label">IP Address</span>
-              <code className="prop-value">{device.ipAddress}</code>
+              {readOnly ? (
+                <code className="prop-value">{device.ipAddress}</code>
+              ) : (
+                <input
+                  className="prop-input prop-input-mono"
+                  value={editIp}
+                  placeholder="0.0.0.0"
+                  onChange={e => setEditIp(e.target.value)}
+                  onBlur={() => onDeviceChange?.(device.nodeId, { ipAddress: editIp })}
+                />
+              )}
             </div>
           </section>
 
@@ -270,6 +309,19 @@ export function PropertiesPanel({
         <div className="properties-body">
           {/* ── Identity section ─────────────────────────────────────────────── */}
           <section className="prop-section">
+            {/* Label — editable in Author Mode; hidden in Student Mode */}
+            {!readOnly && (
+              <div className="prop-row">
+                <span className="prop-label">Label</span>
+                <input
+                  className="prop-input"
+                  value={editLabel}
+                  placeholder={device.nodeId}
+                  onChange={e => setEditLabel(e.target.value)}
+                  onBlur={() => onDeviceChange?.(device.nodeId, { label: editLabel })}
+                />
+              </div>
+            )}
             <div className="prop-row">
               <span className="prop-label">Node ID</span>
               <code className="prop-value">{device.nodeId}</code>
@@ -282,7 +334,17 @@ export function PropertiesPanel({
             </div>
             <div className="prop-row">
               <span className="prop-label">IP Address</span>
-              <code className="prop-value">{device.ipAddress}</code>
+              {readOnly ? (
+                <code className="prop-value">{device.ipAddress}</code>
+              ) : (
+                <input
+                  className="prop-input prop-input-mono"
+                  value={editIp}
+                  placeholder="0.0.0.0"
+                  onChange={e => setEditIp(e.target.value)}
+                  onBlur={() => onDeviceChange?.(device.nodeId, { ipAddress: editIp })}
+                />
+              )}
             </div>
           </section>
 

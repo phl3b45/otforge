@@ -546,6 +546,12 @@ export function ScadaCanvas({
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
+  // Tracks the currently selected node ID so we can restore selection after
+  // scenario-driven setNodes calls (e.g., when a device's IP or label is edited
+  // and the sync effect re-runs). Without this, setNodes clears all selection,
+  // which closes the Properties Panel mid-edit.
+  const selectedNodeIdRef = useRef<string | null>(null)
+
   /**
    * Live coil state map — keyed by "${nodeId}:${coilIndex}", value is boolean.
    * Populated by the polling useEffect below when the simulation is running and
@@ -862,7 +868,12 @@ export function ScadaCanvas({
     }
     const deviceNodes = scenarioToNodes(scenario, activeLayer)
     const layerNodeIds = new Set(deviceNodes.map(n => n.id))
-    setNodes(deviceNodes)
+    // Restore the previously selected node so that scenario-driven re-syncs
+    // (e.g., IP or label edits) don't close the Properties Panel.
+    const selId = selectedNodeIdRef.current
+    setNodes(
+      selId ? deviceNodes.map(n => (n.id === selId ? { ...n, selected: true } : n)) : deviceNodes
+    )
     setEdges(scenarioToEdges(scenario, activeLayer, layerNodeIds) as Edge[])
     // Only re-fit when the active layer tab changes — not on every node/edge mutation.
     // Scenario edits (drops, drags, connections) must not re-center the viewport.
@@ -935,14 +946,17 @@ export function ScadaCanvas({
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
       if (selectedNodes.length !== 1) {
+        selectedNodeIdRef.current = null
         onSelectDevice(null, null)
         return
       }
       const node = selectedNodes[0]
       if (node.type !== 'deviceNode') {
+        selectedNodeIdRef.current = null
         onSelectDevice(null, null)
         return
       }
+      selectedNodeIdRef.current = node.id
       const data = node.data as DeviceNodeData
       onSelectDevice(node.id, data.device)
     },

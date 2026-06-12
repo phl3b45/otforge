@@ -171,7 +171,7 @@ export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps
          * Color mirrors the fill indicator: blue (safe) → amber → red (critical).
          */}
         <div className="device-node-info">
-          <div className="device-node-label">{data.label}</div>
+          <div className="device-node-label">{data.device.label || data.label}</div>
           {isProcessUnit && data.fillLevel !== undefined ? (
             <div
               className="device-node-meta"
