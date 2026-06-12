@@ -1458,7 +1458,22 @@ export function ScadaCanvas({
       {contextMenu && (
         <div
           className="connection-context-menu"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          style={{
+            left: contextMenu.x,
+            // Flip the menu above the cursor when it would overflow the bottom of the
+            // viewport. Threshold at 55% of screen height gives enough room for the
+            // full cable+protocol list. When flipped, `bottom` pins the menu's lower
+            // edge to the cursor; when not flipped, `top` pins the upper edge.
+            ...(contextMenu.y > window.innerHeight * 0.55
+              ? { bottom: window.innerHeight - contextMenu.y, top: 'auto' }
+              : { top: contextMenu.y, bottom: 'auto' }),
+            // Hard cap + scroll so an unusually long list never escapes the viewport.
+            maxHeight:
+              contextMenu.y > window.innerHeight * 0.55
+                ? `${contextMenu.y - 8}px`
+                : `${window.innerHeight - contextMenu.y - 8}px`,
+            overflowY: 'auto'
+          }}
           onContextMenu={e => e.preventDefault()}
         >
           <div className="connection-context-menu-title">Connect via…</div>
