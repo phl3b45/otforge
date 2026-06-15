@@ -1345,11 +1345,11 @@ export function ScadaCanvas({
       // in the Properties Panel without needing to know the schema structure.
       if (category === 'rtu' || category === 'iec104-rtu') {
         const defaultRtu: RtuConfig = {
-          commType: 'wired-ethernet',
+          commType: 'cellular',
           primaryProtocol: category === 'iec104-rtu' ? 'iec-104' : 'dnp3',
-          operatingMode: 'polled',
+          operatingMode: 'report-by-exception',
           pollIntervalSec: 60,
-          powerSource: 'ac'
+          powerSource: 'solar-battery'
         }
         device.rtuConfig = defaultRtu
       }

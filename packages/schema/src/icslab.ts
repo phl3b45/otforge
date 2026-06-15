@@ -439,15 +439,16 @@ export interface SafetyPlcConfig {
 }
 
 /**
- * Physical/wireless link used to reach the SCADA master station.
- * The communication type determines the attack surface of the RTU:
- *   wired-ethernet — lowest exposure; confined to substation LAN
- *   rs485          — legacy serial bus; unauthenticated by default
- *   cellular       — internet-exposed unless behind a private APN or VPN
- *   radio          — 900 MHz ISM band; unauthenticated, in-range intercept possible
- *   satellite      — high latency; often bypasses corporate monitoring
+ * Telemetry-focused communication link used by field RTUs to reach the SCADA master.
+ * RTUs are deployed in remote or harsh environments (pipelines, power grid, water)
+ * where cellular, radio, and satellite are the primary uplink choices.
+ *   cellular    — 4G/5G or legacy 2G/3G GPRS; internet-exposed unless on private APN/VPN
+ *   radio       — licensed or 900 MHz ISM band; unauthenticated by default
+ *   satellite   — VSAT; high latency, often bypasses corporate monitoring stack
+ *   mqtt        — MQTT broker over IP/cellular (IIoT edge-to-cloud telemetry pattern)
+ *   dnp3-serial — DNP3 over RS-485/232 serial to a radio or telephone modem (classic SCADA)
  */
-export type RtuCommType = 'wired-ethernet' | 'rs485' | 'cellular' | 'radio' | 'satellite'
+export type RtuCommType = 'cellular' | 'radio' | 'satellite' | 'mqtt' | 'dnp3-serial'
 
 /**
  * Primary industrial protocol carried between the RTU and the SCADA master.

@@ -32,11 +32,11 @@ import type {
 // ── Option tables ────────────────────────────────────────────────────────────
 
 const COMM_OPTIONS: { value: RtuCommType; label: string }[] = [
-  { value: 'wired-ethernet', label: 'Wired Ethernet' },
-  { value: 'rs485', label: 'RS-485 Serial' },
   { value: 'cellular', label: 'Cellular 4G/5G' },
-  { value: 'radio', label: 'Radio 900 MHz' },
-  { value: 'satellite', label: 'Satellite' }
+  { value: 'radio', label: 'Radio (900 MHz)' },
+  { value: 'satellite', label: 'Satellite (VSAT)' },
+  { value: 'mqtt', label: 'MQTT (IIoT Broker)' },
+  { value: 'dnp3-serial', label: 'DNP3 over Serial' }
 ]
 
 const PROTOCOL_OPTIONS: { value: RtuProtocol; label: string }[] = [
@@ -67,16 +67,15 @@ const POWER_OPTIONS: { value: RtuPowerSource; label: string }[] = [
  * of the selected link without leaving the scenario builder.
  */
 const COMM_SECURITY_NOTES: Record<RtuCommType, string> = {
-  'wired-ethernet':
-    'Ethernet-connected RTUs are confined to the substation LAN. Exploiting one typically requires prior network access — making lateral movement from IT to OT the primary threat vector.',
-  rs485:
-    'RS-485 is an unauthenticated multi-drop bus. Any device physically connected to the bus segment can inject or eavesdrop on Modbus RTU frames without credentials.',
   cellular:
-    'Cellular-connected RTUs are often internet-exposed if they use a public APN rather than a private one or a VPN. This is one of the most common misconfigurations found in ICS assessments.',
+    'Cellular-connected RTUs are often internet-exposed when using a public APN instead of a private one or VPN tunnel. This is one of the most common misconfigurations found in pipeline and power-grid ICS assessments.',
   radio:
-    '900 MHz ISM-band radio links transmit frames without encryption or authentication by default. An attacker within range can replay or inject commands using a software-defined radio.',
+    '900 MHz licensed-band and ISM-band radio links transmit frames without encryption or authentication by default. An attacker within radio range can replay or inject control commands using a software-defined radio (SDR).',
   satellite:
-    'Satellite uplinks introduce high latency (500–1500 ms) that can mask attack traffic. They often route outside the corporate security stack, bypassing IDS/SIEM visibility.'
+    'Satellite uplinks (VSAT) introduce 500–1500 ms round-trip latency and often route outside the corporate security stack, bypassing IDS/SIEM visibility. Jamming the uplink is a viable physical denial-of-service technique.',
+  mqtt: 'MQTT brokers are commonly cloud-hosted with shared or hardcoded credentials and wildcard topic ACLs. Any subscriber with the broker address can enumerate all RTU telemetry topics and inject spoofed sensor readings.',
+  'dnp3-serial':
+    'DNP3 over serial (RS-485/232) to a radio or telephone modem is unauthenticated by default — DNP3 Secure Authentication v5 exists but is rarely deployed. Physical access to the serial bus allows frame injection and replay.'
 }
 
 // ── Default config ────────────────────────────────────────────────────────────
@@ -86,11 +85,11 @@ const COMM_SECURITY_NOTES: Record<RtuCommType, string> = {
  * and no rtuConfig has been set yet.
  */
 export const DEFAULT_RTU_CONFIG: RtuConfig = {
-  commType: 'wired-ethernet',
+  commType: 'cellular',
   primaryProtocol: 'dnp3',
-  operatingMode: 'polled',
+  operatingMode: 'report-by-exception',
   pollIntervalSec: 60,
-  powerSource: 'ac'
+  powerSource: 'solar-battery'
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
