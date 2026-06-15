@@ -5635,3 +5635,15 @@ code.prop-value {
   line-height: 1.5;
   margin: 0;
 }
+
+/* Live progress line — shows the most recent docker compose output line */
+.pull-progress-line {
+  font-size: 0.72rem;
+  color: #58a6ff;
+  font-family: monospace;
+  margin-top: 8px !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 340px;
+}

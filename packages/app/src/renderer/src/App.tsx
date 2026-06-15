@@ -486,6 +486,8 @@ export default function App() {
    * Reset automatically when simStatus leaves 'starting'.
    */
   const [pullActive, setPullActive] = useState<boolean>(false)
+  /** Most recent output line from docker compose during a pull — shown in the overlay. */
+  const [pullProgress, setPullProgress] = useState<string>('')
 
   // attackLaunched state removed — toolbar button now opens AttackTerminalModal directly
   // so button color uses (attackTerminalDevice !== null) instead of a separate flag.
@@ -574,20 +576,36 @@ export default function App() {
     // is in progress rather than seeing the app appear to hang.
     const unsubPull = window.electronAPI.on.simulationPullStatus(({ pulling }) => {
       setPullActive(pulling)
+      if (!pulling) setPullProgress('')
+    })
+
+    // Stream per-line docker compose output into the pull overlay so students
+    // can see which image is downloading rather than a static spinner.
+    const unsubProgress = window.electronAPI.on.simulationPullProgress(({ line }) => {
+      // Only surface lines that are short enough to display cleanly and contain
+      // something meaningful (image name, layer status). Skip hash-only lines.
+      if (
+        line.length < 120 &&
+        /pulling|pull|download|extract|layer|image|pushed|digest/i.test(line)
+      ) {
+        setPullProgress(line)
+      }
     })
 
     // Clean up IPC listeners when the component unmounts
     return () => {
       unsubStatus()
       unsubPull()
+      unsubProgress()
     }
   }, [])
 
-  // Automatically clear the "Importing Containers" overlay when the simulation
-  // leaves the 'starting' phase (either to 'running' on success or 'idle' on failure)
+  // Clear the pull overlay and any accumulated progress text when the simulation
+  // leaves 'starting' (either transitions to 'running' on success or 'idle' on failure).
   useEffect(() => {
     if (simStatus !== 'starting') {
       setPullActive(false)
+      setPullProgress('')
     }
   }, [simStatus])
 
@@ -1809,26 +1827,27 @@ export default function App() {
       )}
 
       {/*
-       * "Importing Containers" overlay — displayed during simulation start when Docker
-       * needs to pull at least one container image for the first time. The main process
-       * sends a simulation:pullStatus event with { pulling: true } before running
-       * docker compose up, and we show this overlay so the user understands why
-       * startup is taking longer than normal.
+       * "Importing Images" overlay — shown only when docker compose up detects that
+       * at least one image needs to be downloaded (first install or updated version).
+       * The main process fires simulation:pullStatus { pulling: true } when it first
+       * sees a "Pulling" line in the docker compose output — so this overlay never
+       * appears when all images are already cached and up to date.
        *
        * z-index 400 puts it above the toolbar (z 50), workspace (100), tutorial panel
        * (150), and all modals (200-300) so it is never obscured.
        */}
       {simStatus === 'starting' && pullActive && (
-        <div className="pull-overlay" role="alertdialog" aria-label="Importing containers">
+        <div className="pull-overlay" role="alertdialog" aria-label="Importing images">
           <div className="pull-overlay-card">
             <div className="pull-spinner" aria-hidden="true" />
             <div className="pull-overlay-text">
-              <strong>Importing Containers</strong>
+              <strong>Importing Images</strong>
               <p>
-                Downloading Docker images for the first time.
+                Downloading container images. This may take a few minutes
                 <br />
-                This may take a few minutes depending on your connection speed.
+                depending on your connection speed.
               </p>
+              {pullProgress && <p className="pull-progress-line">{pullProgress}</p>}
             </div>
           </div>
         </div>

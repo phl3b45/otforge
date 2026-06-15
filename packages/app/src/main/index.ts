@@ -842,9 +842,18 @@ function registerIPCHandlers(): void {
         // Pass a callback that fires if docker image inspect reveals missing images.
         // The renderer listens for simulation:pullStatus { pulling: true } and shows
         // an "Importing Containers" overlay so the user knows why startup is slow.
-        const result = await dockerClient.startScenario(projectName, composeYaml, () => {
-          mainWindow?.webContents.send('simulation:pullStatus', { pulling: true })
-        })
+        const result = await dockerClient.startScenario(
+          projectName,
+          composeYaml,
+          // onPullNeeded: fires only when Docker is actually downloading layers
+          () => {
+            mainWindow?.webContents.send('simulation:pullStatus', { pulling: true })
+          },
+          // onProgress: stream each output line to the renderer overlay
+          (line: string) => {
+            mainWindow?.webContents.send('simulation:pullProgress', { line })
+          }
+        )
 
         if (!result.ok) {
           activeProjectName = null

@@ -630,14 +630,12 @@ const api = {
     },
 
     /**
-     * Fires when the main process detects that a docker compose up operation will
-     * need to pull container images that are not yet cached locally.
+     * Fires when the main process detects that a docker compose up operation is
+     * actually downloading container images (i.e., Docker printed a "Pulling" line).
+     * The overlay is NOT shown for starts where all images are already cached — the
+     * event only fires when a real download is in progress.
      *
-     * { pulling: true }  — sent before docker compose up starts pulling images.
-     *                      The renderer should show an "Importing Containers" overlay.
-     * { pulling: false } — sent after all images are confirmed present locally.
-     *                      The renderer can hide the overlay (simStatus will also
-     *                      transition away from 'starting' shortly after).
+     * { pulling: true }  — download detected; renderer shows the "Updating Images" overlay.
      *
      * @param cb - Callback receiving { pulling: boolean }
      * @returns Unsubscribe function — call in useEffect cleanup.
@@ -645,6 +643,19 @@ const api = {
     simulationPullStatus: (cb: (status: { pulling: boolean }) => void) => {
       ipcRenderer.on('simulation:pullStatus', (_event, status) => cb(status))
       return () => ipcRenderer.removeAllListeners('simulation:pullStatus')
+    },
+
+    /**
+     * Fires for each output line emitted by `docker compose up` during the
+     * image pull phase. Only sent while the pull overlay is active.
+     * The renderer can display the most recent line to show pull progress.
+     *
+     * @param cb - Callback receiving { line: string } — one Docker output line.
+     * @returns Unsubscribe function — call in useEffect cleanup.
+     */
+    simulationPullProgress: (cb: (status: { line: string }) => void) => {
+      ipcRenderer.on('simulation:pullProgress', (_event, status) => cb(status))
+      return () => ipcRenderer.removeAllListeners('simulation:pullProgress')
     }
   }
 }

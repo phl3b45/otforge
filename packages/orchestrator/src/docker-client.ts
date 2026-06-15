@@ -22,7 +22,7 @@
  *   await client.stopScenario(projectName)
  */
 
-import { exec } from 'child_process'
+import { exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import { writeFile, mkdir, rm } from 'fs/promises'
 import { join } from 'path'
@@ -140,7 +140,8 @@ export class DockerClient {
   async startScenario(
     projectName: string,
     composeYaml: string,
-    onPullNeeded?: () => void
+    onPullNeeded?: () => void,
+    onProgress?: (line: string) => void
   ): Promise<{ ok: boolean; error?: string }> {
     const scenarioDir = join(this.workDir, projectName)
     const composeFile = join(scenarioDir, 'docker-compose.yml')
@@ -150,75 +151,49 @@ export class DockerClient {
       await mkdir(scenarioDir, { recursive: true })
       await writeFile(composeFile, composeYaml, 'utf-8')
 
-      // Always notify the caller before compose up — with --pull always, Docker will
-      // contact GHCR on every start to check for updated image digests, which can take
-      // several seconds or trigger a full layer download if an image was updated.
-      onPullNeeded?.()
+      // Start containers, streaming output so we can detect whether Docker is
+      // actually pulling any images. onPullNeeded fires only when a "Pulling"
+      // line appears — so the overlay is shown only when a download is in progress,
+      // not on every start when all images are already cached locally.
+      await this._composeUp(projectName, composeFile, onPullNeeded, onProgress)
 
-      // --pull always: check GHCR for newer image digests on every start; download
-      //   updated layers if found. If the local image is already current the digest
-      //   check is fast (<1 s per image) and no download occurs.
-      // --quiet-pull: suppress per-layer progress lines from stderr (10–50 MB on a
-      //   first pull or large update; overflows maxBuffer without this flag).
-      await run(
-        // codeql[js/shell-command-constructed-from-input] -- projectName is sanitized to [a-z0-9-] by toProjectName()
-        `docker compose -p ${projectName} -f "${composeFile}" up --pull always -d --remove-orphans --quiet-pull`
-      )
-      // --pull always untags the previously cached image digest whenever Docker
-      // downloads a newer one, leaving a <none>:<none> dangling image behind.
-      // Prune immediately after the successful up so the dangling image is gone
-      // before the UI transitions to "Running" — the user should never see <none>
-      // entries in Docker Desktop during normal operation. The stop-time prune
-      // below is kept as a safety net for abnormal exits.
+      // Prune <none>:<none> dangling images left whenever Docker replaces an old
+      // image digest with a newer pull. Best-effort — prune failure must not abort
+      // a successful simulation start.
       try {
         await run('docker image prune -f')
       } catch {
-        /* best-effort — prune failure must not abort a successful simulation start */
+        /* best-effort */
       }
       return { ok: true }
     } catch (err) {
       // Tear down any partial state left by the failed `up` — containers, volumes,
       // and especially networks. Without this cleanup the subnet addresses remain
       // allocated and the next attempt fails with "Address already in use".
-      // This runs best-effort: if the compose file was never written (e.g., mkdir
-      // failed) the down command will also fail, which is fine — we just swallow it.
       try {
         // codeql[js/shell-command-constructed-from-input] -- projectName is sanitized to [a-z0-9-] by toProjectName()
         await run(`docker compose -p ${projectName} -f "${composeFile}" down --volumes`)
       } catch {
-        /* best-effort — ignore cleanup failures */
+        /* best-effort */
       }
 
-      // Node.js exec errors include the raw command string + full stderr in .message,
-      // but the useful failure reason is buried among docker compose lifecycle lines
-      // ("Creating...", "Started...", "Stopping...", etc.). Extract it here.
-      const execErr = err as Error & { stderr?: string; stdout?: string }
+      // _composeUp attaches collected output to the error as _composeOutput so we
+      // can write it to a log without relying on execAsync's stderr field.
+      const composeErr = err as Error & { _composeOutput?: string }
+      const rawOutput = composeErr._composeOutput ?? composeErr.message
 
-      // Prefer the raw stderr field (just daemon output) over .message (includes
-      // the full command string and all lifecycle noise).
-      const rawStderr = execErr.stderr ?? execErr.message
-
-      // Write the complete output to a log file for advanced diagnostics.
-      // Path is shown in the error message so users know where to look.
       const logPath = join(scenarioDir, 'compose-error.log')
       try {
-        const logContent =
-          `=== docker compose up stderr ===\n${rawStderr}\n\n` +
-          `=== docker compose up stdout ===\n${execErr.stdout ?? '(none)'}\n`
-        await writeFile(logPath, logContent, 'utf-8')
+        await writeFile(logPath, rawOutput, 'utf-8')
       } catch {
         /* log write failure is non-fatal */
       }
 
-      // Extract the lines that contain the actual failure reason.
-      // Docker daemon error messages always start with "Error" or contain
-      // "failed", "invalid", "cannot", "denied", "unauthorized", "no such".
-      const errorLines = rawStderr
+      const errorLines = rawOutput
         .split('\n')
         .map(l => l.trim())
         .filter(l => /error|failed|cannot|invalid|denied|unauthorized|no such/i.test(l))
         .filter(Boolean)
-        // Deduplicate — docker compose sometimes repeats the same error per service
         .filter((l, i, arr) => arr.indexOf(l) === i)
         .slice(0, 8)
 
@@ -229,6 +204,88 @@ export class DockerClient {
 
       return { ok: false, error: shortError }
     }
+  }
+
+  /**
+   * Runs `docker compose up --pull always` via spawn so output can be streamed
+   * line-by-line. This avoids the maxBuffer limit of execAsync and lets the caller
+   * detect when Docker actually starts pulling images (rather than just checking
+   * digests), so the "Updating Images" overlay is shown only when a download is
+   * in progress.
+   *
+   * onPullNeeded fires at most once, when the first line containing "Pulling"
+   * appears. If all images are already current Docker only prints container-start
+   * lines and onPullNeeded never fires — no overlay is shown.
+   */
+  private _composeUp(
+    projectName: string,
+    composeFile: string,
+    onPullNeeded?: () => void,
+    onProgress?: (line: string) => void
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let pullNotified = false
+      const allLines: string[] = []
+
+      const child = spawn(
+        'docker',
+        [
+          'compose',
+          '-p',
+          projectName,
+          '-f',
+          composeFile,
+          'up',
+          '--pull',
+          'always',
+          '-d',
+          '--remove-orphans'
+        ],
+        { env: buildEnv() }
+      )
+
+      const processChunk = (buf: Buffer): void => {
+        // Docker uses \r to overwrite progress lines in-place on a TTY.
+        // Replace \r with \n so we split on both.
+        buf
+          .toString()
+          .replace(/\r/g, '\n')
+          .split('\n')
+          .forEach(raw => {
+            // Strip ANSI escape sequences before forwarding to the renderer.
+            // eslint-disable-next-line no-control-regex
+            const line = raw.replace(/\x1B\[[0-9;]*[mGKHF]/g, '').trim()
+            if (!line) return
+
+            allLines.push(line)
+            onProgress?.(line)
+
+            // Fire onPullNeeded only once — when Docker first reports it is
+            // actually downloading an image layer, not just checking the digest.
+            if (!pullNotified && /pulling/i.test(line)) {
+              pullNotified = true
+              onPullNeeded?.()
+            }
+          })
+      }
+
+      child.stdout?.on('data', processChunk)
+      child.stderr?.on('data', processChunk)
+
+      child.on('close', code => {
+        if (code === 0) {
+          resolve()
+        } else {
+          const e = new Error(`docker compose up exited with code ${code}`) as Error & {
+            _composeOutput: string
+          }
+          e._composeOutput = allLines.join('\n')
+          reject(e)
+        }
+      })
+
+      child.on('error', reject)
+    })
   }
 
   /**
