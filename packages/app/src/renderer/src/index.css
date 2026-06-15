@@ -5602,7 +5602,7 @@ code.prop-value {
   display: flex;
   align-items: center;
   gap: 22px;
-  max-width: 440px;
+  max-width: 620px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.8);
 }
 
@@ -5645,5 +5645,5 @@ code.prop-value {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 340px;
+  max-width: 500px;
 }
