@@ -23,7 +23,7 @@ import type { SiteRegion } from '@otforge/schema'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export interface SiteNodeData {
+export interface SiteNodeData extends Record<string, unknown> {
   /** The SiteRegion config being displayed. */
   region: SiteRegion
   /** When true, editing controls (resize handles, label editor, color picker) are hidden. */
@@ -52,7 +52,8 @@ export type SiteNodeType = Node<SiteNodeData, 'siteNode'>
  * The color is changed via a hidden <input type="color"> triggered by the swatch button.
  */
 export function SiteNode({ id, data, selected }: NodeProps) {
-  const { region, readOnly, onLabelChange, onColorChange, onResizeEnd } = data as SiteNodeData
+  const { region, readOnly, onLabelChange, onColorChange, onResizeEnd } =
+    data as unknown as SiteNodeData
 
   const [editing, setEditing] = useState(false)
   const [draftLabel, setDraftLabel] = useState(region.label)

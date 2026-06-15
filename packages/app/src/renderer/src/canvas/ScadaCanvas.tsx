@@ -1631,7 +1631,7 @@ export function ScadaCanvas({
           style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 6 }}
           nodeColor={node => {
             if (node.type === 'siteNode') {
-              const d = node.data as SiteNodeData
+              const d = node.data as unknown as SiteNodeData
               return d.region?.color ?? '#484f58'
             }
             const data = node.data as DeviceNodeData
