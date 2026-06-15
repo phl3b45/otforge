@@ -28,10 +28,11 @@
  */
 
 import { useEffect, useState } from 'react'
-import type { DeviceConfig, SecurityLayer } from '@otforge/schema'
+import type { DeviceConfig, SecurityLayer, RtuConfig } from '@otforge/schema'
 import { DeviceIcon } from '../icons/DeviceIcons'
 import { ZONE_COLORS } from '../canvas/DeviceNode'
 import { FirewallPanel, IDSPanel } from './SecurityPanel'
+import { RtuPanel } from './RtuPanel'
 
 /** Full human-readable names for the properties panel header. */
 const CATEGORY_LABELS: Record<string, string> = {
@@ -79,11 +80,14 @@ interface PropertiesPanelProps {
    */
   readOnly?: boolean
   /**
-   * Called when the author edits the device's IP address or display label.
+   * Called when the author edits the device's IP address, display label, or RTU config.
    * App.tsx updates scenario.devices.devices[nodeId] and re-syncs the canvas.
    * Only called in Author Mode (readOnly === false).
    */
-  onDeviceChange?: (nodeId: string, changes: { ipAddress?: string; label?: string }) => void
+  onDeviceChange?: (
+    nodeId: string,
+    changes: { ipAddress?: string; label?: string; rtuConfig?: RtuConfig }
+  ) => void
   /**
    * Called when the user edits security config in FirewallPanel or IDSPanel.
    * App.tsx applies the updater to scenario.security and re-renders.
@@ -430,6 +434,17 @@ export function PropertiesPanel({
                 <code className="prop-value">{device.opcua.namespace}</code>
               </div>
             </section>
+          )}
+
+          {/* ── RTU configuration panel ──────────────────────────────────────── */}
+          {/* Shown for rtu and iec104-rtu devices in both Author and Student modes. */}
+          {(device.category === 'rtu' || device.category === 'iec104-rtu') && (
+            <RtuPanel
+              rtuConfig={device.rtuConfig}
+              nodeId={device.nodeId}
+              readOnly={readOnly}
+              onChange={(nodeId, config) => onDeviceChange?.(nodeId, { rtuConfig: config })}
+            />
           )}
 
           {/* ── Firewall panel (Phase 5) ──────────────────────────────────────── */}

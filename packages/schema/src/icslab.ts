@@ -438,6 +438,68 @@ export interface SafetyPlcConfig {
   safeState?: string
 }
 
+/**
+ * Physical/wireless link used to reach the SCADA master station.
+ * The communication type determines the attack surface of the RTU:
+ *   wired-ethernet — lowest exposure; confined to substation LAN
+ *   rs485          — legacy serial bus; unauthenticated by default
+ *   cellular       — internet-exposed unless behind a private APN or VPN
+ *   radio          — 900 MHz ISM band; unauthenticated, in-range intercept possible
+ *   satellite      — high latency; often bypasses corporate monitoring
+ */
+export type RtuCommType = 'wired-ethernet' | 'rs485' | 'cellular' | 'radio' | 'satellite'
+
+/**
+ * Primary industrial protocol carried between the RTU and the SCADA master.
+ * DNP3 and IEC 60870-5-104 are the most common for electric utility and pipeline RTUs.
+ * Modbus RTU / TCP is ubiquitous in legacy installations.
+ */
+export type RtuProtocol = 'dnp3' | 'modbus-rtu' | 'modbus-tcp' | 'iec-104'
+
+/**
+ * Whether the RTU sends data only when values change (Report by Exception),
+ * is polled on a fixed interval by the master, or both.
+ *
+ * Security implication: Report-by-Exception makes anomaly detection harder because
+ * the master only learns of a value change when the RTU decides to report it.
+ * Subtle process drift can go unreported for extended periods.
+ */
+export type RtuOperatingMode = 'report-by-exception' | 'polled' | 'hybrid'
+
+/**
+ * Primary power supply for the RTU field unit.
+ * Physical attack surface varies by supply type:
+ *   ac            — mains-powered; disrupting shore power kills telemetry
+ *   solar-battery — common on remote pipeline stations; battery drain = denial of service
+ *   battery       — battery-only deployments have finite operational life
+ *   dc            — 24 VDC instrument bus; loss of instrument power affects all loop devices
+ */
+export type RtuPowerSource = 'ac' | 'solar-battery' | 'battery' | 'dc'
+
+/**
+ * Deployment configuration for an RTU (Remote Terminal Unit).
+ *
+ * RTUs differ from PLCs in their intended environment (remote, harsh conditions),
+ * communication medium (cellular, radio, satellite for SCADA backhaul), and
+ * programming model (pre-configured drop-down menus, not ladder logic or ST programs).
+ * These settings are injected as container environment variables so students can
+ * inspect them during red-team and blue-team exercises.
+ */
+export interface RtuConfig {
+  /** Physical or wireless link used to reach the SCADA master. */
+  commType: RtuCommType
+  /** Primary industrial protocol carried over the communication link. */
+  primaryProtocol: RtuProtocol
+  /** Whether the RTU reports by exception, is polled on a schedule, or both. */
+  operatingMode: RtuOperatingMode
+  /** Poll interval in seconds — relevant when operatingMode is polled or hybrid. Default: 60. */
+  pollIntervalSec: number
+  /** Power supply type — affects physical availability attack surface. */
+  powerSource: RtuPowerSource
+  /** Free-text description of the physical installation site (e.g. "Pipeline pump station 3"). */
+  siteType?: string
+}
+
 export interface DeviceConfig {
   nodeId: string // matches CanvasNode.id
   category: DeviceCategory
@@ -457,6 +519,7 @@ export interface DeviceConfig {
   mail?: MailConfig // Mail server config (email-server devices)
   plcProgram?: PLCProgramConfig
   safetyPlc?: SafetyPlcConfig // SIS config for safety-plc devices
+  rtuConfig?: RtuConfig // RTU deployment configuration (rtu, iec104-rtu devices)
   dockerImage?: string // override default image for this device type
   /**
    * Additional Purdue Model zone networks to attach this device to, beyond the

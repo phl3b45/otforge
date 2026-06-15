@@ -48,7 +48,8 @@ import type {
   NetworkZone,
   DeviceConfig,
   Protocol,
-  CableType
+  CableType,
+  RtuConfig
 } from '@otforge/schema'
 import {
   DeviceNode,
@@ -1337,6 +1338,20 @@ export function ScadaCanvas({
       // change it in PropertiesPanel. port 20000 is the IANA-registered DNP3 TCP port.
       if (category === 'ied') {
         device.dnp3 = { masterAddress: 1, outstationAddress: 10, port: 20000 }
+      }
+
+      // RTU devices get a sensible default deployment config so the RTU Configuration
+      // panel is immediately populated. Authors can adjust all fields via the drop-downs
+      // in the Properties Panel without needing to know the schema structure.
+      if (category === 'rtu' || category === 'iec104-rtu') {
+        const defaultRtu: RtuConfig = {
+          commType: 'wired-ethernet',
+          primaryProtocol: category === 'iec104-rtu' ? 'iec-104' : 'dnp3',
+          operatingMode: 'polled',
+          pollIntervalSec: 60,
+          powerSource: 'ac'
+        }
+        device.rtuConfig = defaultRtu
       }
 
       // Use the pack device type's label if available; fall back to the built-in label.

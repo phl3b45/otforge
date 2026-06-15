@@ -43,7 +43,8 @@ import type {
   NetworkZone,
   SecurityLayer,
   InstalledPack,
-  ResolvedPackDeviceType
+  ResolvedPackDeviceType,
+  RtuConfig
 } from '@otforge/schema'
 import { ScadaCanvas } from './canvas/ScadaCanvas'
 import { DevicePalette } from './palette/DevicePalette'
@@ -799,7 +800,7 @@ export default function App() {
    * before the next React Flow re-render cycle completes.
    */
   const handleDeviceChange = useCallback(
-    (nodeId: string, changes: { ipAddress?: string; label?: string }) => {
+    (nodeId: string, changes: { ipAddress?: string; label?: string; rtuConfig?: RtuConfig }) => {
       setScenario(prev => {
         if (!prev) return prev
         const existing = prev.devices.devices[nodeId]
