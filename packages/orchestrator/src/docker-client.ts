@@ -164,6 +164,17 @@ export class DockerClient {
         // codeql[js/shell-command-constructed-from-input] -- projectName is sanitized to [a-z0-9-] by toProjectName()
         `docker compose -p ${projectName} -f "${composeFile}" up --pull always -d --remove-orphans --quiet-pull`
       )
+      // --pull always untags the previously cached image digest whenever Docker
+      // downloads a newer one, leaving a <none>:<none> dangling image behind.
+      // Prune immediately after the successful up so the dangling image is gone
+      // before the UI transitions to "Running" — the user should never see <none>
+      // entries in Docker Desktop during normal operation. The stop-time prune
+      // below is kept as a safety net for abnormal exits.
+      try {
+        await run('docker image prune -f')
+      } catch {
+        /* best-effort — prune failure must not abort a successful simulation start */
+      }
       return { ok: true }
     } catch (err) {
       // Tear down any partial state left by the failed `up` — containers, volumes,
