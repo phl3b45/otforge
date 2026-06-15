@@ -773,6 +773,8 @@ export function ScadaCanvas({
       if (sourceNode) {
         const sourceCategory = (sourceNode.data as DeviceNodeData).device.category
         result = nodes.map(n => {
+          // Site region nodes are not connection participants — leave them unstyled.
+          if (n.type === 'siteNode') return n
           if (n.id === pendingConnection.sourceId) {
             return { ...n, className: 'connection-source' }
           }
@@ -791,6 +793,7 @@ export function ScadaCanvas({
     // Only runs while the simulation is active (levelStates is empty map otherwise).
     if (levelStates.size > 0) {
       result = result.map(n => {
+        if (n.type === 'siteNode') return n
         const data = n.data as DeviceNodeData
         if (data.device.category !== 'process-unit') return n
 
