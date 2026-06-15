@@ -2847,18 +2847,29 @@ async function configureAttackMachine(): Promise<void> {
 async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   const FUXA_PORT = 1881
 
-  // ── Collect Modbus/PLC nodes from canvas edges ─────────────────────────────
-  // Only PLC and RTU nodes that appear on a modbus-tcp edge are wired to FUXA.
-  // Other Modbus devices (e.g., a sensor stub on Alpine) are not worth polling.
+  // ── Collect Modbus/PLC nodes ──────────────────────────────────────────────
+  // RTUs are unconditionally included: every otforge-modbus container runs a
+  // Modbus TCP server on port 502 regardless of what canvas edges are drawn,
+  // and the RTU panel lets authors configure real-world comm types (cellular,
+  // radio, etc.) that don't map to canvas wire connections.
+  // PLCs/safety-PLCs are only included when they appear on a modbus-tcp edge
+  // (matching the original behaviour — PLC Modbus is the programmer's concern,
+  // not a passive telemetry device like an RTU).
   const modbusNodeIds = new Set<string>()
+
+  // All RTU devices — no edge requirement
+  for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
+    if (device.category === 'rtu' || device.category === 'iec104-rtu') {
+      modbusNodeIds.add(nodeId)
+    }
+  }
+
+  // PLCs/safety-PLCs that appear on a modbus-tcp edge
   for (const edge of scenario.visual.edges) {
     if (edge.data.protocol !== 'modbus-tcp') continue
     for (const candidateId of [edge.source, edge.target]) {
       const device = scenario.devices.devices[candidateId]
-      if (
-        device &&
-        (device.category === 'plc' || device.category === 'safety-plc' || device.category === 'rtu')
-      ) {
+      if (device && (device.category === 'plc' || device.category === 'safety-plc')) {
         modbusNodeIds.add(candidateId)
       }
     }
@@ -2919,6 +2930,32 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     }
   }
 
+  /**
+   * POST a view definition to FUXA's /api/view endpoint.
+   * Best-effort: errors are swallowed so a format mismatch between FUXA versions
+   * never prevents data sources and tags from being provisioned.
+   */
+  async function postView(view: unknown): Promise<void> {
+    const payload = JSON.stringify(view)
+    try {
+      await httpPost(
+        {
+          host: 'localhost',
+          port: FUXA_PORT,
+          path: '/api/view',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload)
+          }
+        },
+        payload
+      )
+    } catch {
+      // View creation is best-effort; data sources + tags still work without it.
+    }
+  }
+
   // ── Provision Modbus TCP (PLCs / RTUs) ─────────────────────────────────────
   for (const nodeId of modbusNodeIds) {
     const device = scenario.devices.devices[nodeId]
@@ -2926,17 +2963,23 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     const address = device.ipAddress.split('/')[0]
     const uid = device.modbus?.unitId ?? 1
     const port = device.modbus?.port ?? 502
+    const isRtu = device.category === 'rtu' || device.category === 'iec104-rtu'
+    // RTUs get a full register map so students see live telemetry values without
+    // any manual FUXA tag configuration. PLCs keep an empty tag set so the
+    // instructor can add PLC-specific variables through the FUXA editor.
+    const tags = isRtu ? buildRtuModbusTags(nodeId) : {}
+    const displayName = device.label ?? nodeId
 
     await postDevice(
       JSON.stringify({
         id: nodeId,
-        name: `${nodeId} (Modbus)`,
+        name: isRtu ? `${displayName}` : `${displayName} (Modbus)`,
         enabled: true,
         type: 'MODBUSTCP',
         polling: 1000,
         request: 30_000,
         property: { address, port, uid },
-        tags: {}
+        tags
       })
     )
   }
@@ -2991,6 +3034,300 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
         tags: {}
       })
     )
+  }
+
+  // ── Create RTU Overview HMI view ───────────────────────────────────────────
+  // Generates a pre-built FUXA view that shows one card per RTU: device name,
+  // IP address, and the telemetry comm type from the RTU panel. Students open
+  // FUXA (port 1881) from the HMI node or engineering workstation and see this
+  // view immediately without any manual FUXA configuration.
+  // The view is created after all devices are provisioned so FUXA's device list
+  // is fully populated before the view references device IDs.
+  const rtuEntries = Object.entries(scenario.devices.devices).filter(
+    ([, d]) => d.category === 'rtu' || d.category === 'iec104-rtu'
+  )
+  if (rtuEntries.length > 0) {
+    await postView(buildRtuOverviewView(rtuEntries))
+  }
+}
+
+// ── FUXA RTU provisioning helpers ─────────────────────────────────────────────
+
+/**
+ * Builds a standard Modbus register map for an RTU device in FUXA tag format.
+ *
+ * Real RTUs expose four Modbus table types. This set gives students immediately
+ * live-readable data without any manual FUXA tag configuration:
+ *
+ *   DI_0–DI_3   Discrete Inputs (FC 02, read-only bool) — sensor status, breaker states
+ *   DO_0–DO_3   Coils (FC 01/05/15, read/write bool) — control outputs, relay commands
+ *   IR_0–IR_3   Input Registers (FC 04, read-only int) — measurements (temp, flow, voltage)
+ *   HR_0–HR_3   Holding Registers (FC 03/06/16, read/write int) — setpoints, thresholds
+ *
+ * Tag IDs are namespaced by nodeId so they remain unique across a multi-RTU scenario.
+ *
+ * @param nodeId - Canvas node ID of the RTU device (used to namespace tag IDs).
+ * @returns Record of tag objects keyed by tag ID, ready for the FUXA /api/device payload.
+ */
+function buildRtuModbusTags(nodeId: string): Record<string, unknown> {
+  const tags: Record<string, unknown> = {}
+  const ns = nodeId.replace(/[^a-z0-9]/gi, '-') // safe namespace prefix
+
+  // Discrete Inputs — read-only digital status bits (FC 02)
+  for (let i = 0; i < 4; i++) {
+    const id = `${ns}-di-${i}`
+    tags[id] = { id, name: `DI_${i}`, type: 'Bool', memaddress: i, memtype: 'Input' }
+  }
+
+  // Coils — writable digital outputs (FC 01 read / FC 05 write single / FC 15 write multiple)
+  for (let i = 0; i < 4; i++) {
+    const id = `${ns}-do-${i}`
+    tags[id] = { id, name: `DO_${i}`, type: 'Bool', memaddress: i, memtype: 'Coil' }
+  }
+
+  // Input Registers — read-only 16-bit measurements (FC 04)
+  for (let i = 0; i < 4; i++) {
+    const id = `${ns}-ir-${i}`
+    tags[id] = { id, name: `IR_${i}`, type: 'Int16', memaddress: i, memtype: 'InputRegister' }
+  }
+
+  // Holding Registers — read/write 16-bit setpoints (FC 03 read / FC 06/16 write)
+  for (let i = 0; i < 4; i++) {
+    const id = `${ns}-hr-${i}`
+    tags[id] = { id, name: `HR_${i}`, type: 'Int16', memaddress: i, memtype: 'HoldingRegister' }
+  }
+
+  return tags
+}
+
+/**
+ * Generates a FUXA view object showing one information card per RTU device.
+ *
+ * Each card displays the RTU's display name, IP address, and the telemetry
+ * communication type from the RTU panel (cellular, radio, satellite, MQTT, or
+ * DNP3-Serial). Cards are laid out left-to-right, wrapping every three columns.
+ *
+ * The view is posted to FUXA's /api/view endpoint after all devices are
+ * provisioned. FUXA stores it alongside auto-created views so students see it
+ * immediately when they open the HMI — no manual view creation required.
+ *
+ * @param rtuEntries - Array of [nodeId, DeviceConfig] pairs for RTU/iec104-rtu devices.
+ * @returns Plain object matching FUXA's view schema, ready to JSON.stringify.
+ */
+function buildRtuOverviewView(
+  rtuEntries: Array<[string, OTForgeScenario['devices']['devices'][string]]>
+): unknown {
+  const CARD_W = 420
+  const CARD_H = 200
+  const COLS = 3
+  const GAP = 24
+  const MARGIN = 48
+  const HEADER_H = 90 // vertical space reserved for the view title
+
+  const items: unknown[] = [
+    // ── Title ──────────────────────────────────────────────────────────────
+    {
+      id: 'otf-rtu-title',
+      type: 'svg-text',
+      name: 'RTU Overview',
+      label: 'RTU Overview',
+      x: MARGIN,
+      y: MARGIN + 12,
+      w: 640,
+      h: 44,
+      rotation: 0,
+      property: {
+        text: 'RTU Station Overview',
+        fontSize: '26',
+        fontWeight: 'bold',
+        fontColor: '#58a6ff'
+      }
+    },
+    {
+      id: 'otf-rtu-subtitle',
+      type: 'svg-text',
+      name: '',
+      label: '',
+      x: MARGIN,
+      y: MARGIN + 58,
+      w: 640,
+      h: 20,
+      rotation: 0,
+      property: {
+        text: 'Live Modbus telemetry — tags poll every 1 s',
+        fontSize: '13',
+        fontColor: '#8b949e'
+      }
+    }
+  ]
+
+  rtuEntries.forEach(([nodeId, device], i) => {
+    const col = i % COLS
+    const row = Math.floor(i / COLS)
+    const x = MARGIN + col * (CARD_W + GAP)
+    const y = MARGIN + HEADER_H + row * (CARD_H + GAP)
+    const ip = device.ipAddress.split('/')[0]
+    const commType = (device.rtuConfig?.commType ?? 'modbus-tcp').toUpperCase()
+    const protocol = (device.rtuConfig?.primaryProtocol ?? 'DNP3').toUpperCase()
+    const power = device.rtuConfig?.powerSource ?? ''
+    const displayName = device.label ?? nodeId
+
+    // ── Card background ───────────────────────────────────────────────────
+    items.push({
+      id: `otf-rtu-card-${nodeId}`,
+      type: 'svg-rect',
+      name: '',
+      label: '',
+      x,
+      y,
+      w: CARD_W,
+      h: CARD_H,
+      rotation: 0,
+      property: {
+        bkgcolor: '#161b22',
+        color: '#30363d',
+        borderWidth: 1
+      }
+    })
+
+    // ── Status indicator dot (green = polling, visualised as small circle) ─
+    items.push({
+      id: `otf-rtu-dot-${nodeId}`,
+      type: 'svg-ellipse',
+      name: '',
+      label: '',
+      x: x + CARD_W - 28,
+      y: y + 18,
+      w: 14,
+      h: 14,
+      rotation: 0,
+      property: {
+        bkgcolor: '#3fb950',
+        color: '#238636',
+        borderWidth: 1
+      }
+    })
+
+    // ── Device name ───────────────────────────────────────────────────────
+    items.push({
+      id: `otf-rtu-name-${nodeId}`,
+      type: 'svg-text',
+      name: '',
+      label: displayName,
+      x: x + 18,
+      y: y + 32,
+      w: CARD_W - 52,
+      h: 26,
+      rotation: 0,
+      property: {
+        text: displayName,
+        fontSize: '17',
+        fontWeight: 'bold',
+        fontColor: '#e6edf3'
+      }
+    })
+
+    // ── IP address ────────────────────────────────────────────────────────
+    items.push({
+      id: `otf-rtu-ip-${nodeId}`,
+      type: 'svg-text',
+      name: '',
+      label: ip,
+      x: x + 18,
+      y: y + 64,
+      w: CARD_W - 36,
+      h: 20,
+      rotation: 0,
+      property: {
+        text: `IP: ${ip}   Port: 502`,
+        fontSize: '12',
+        fontColor: '#8b949e'
+      }
+    })
+
+    // ── Comm type + protocol ──────────────────────────────────────────────
+    items.push({
+      id: `otf-rtu-comm-${nodeId}`,
+      type: 'svg-text',
+      name: '',
+      label: commType,
+      x: x + 18,
+      y: y + 92,
+      w: CARD_W - 36,
+      h: 20,
+      rotation: 0,
+      property: {
+        text: `Comm: ${commType}   Protocol: ${protocol}`,
+        fontSize: '12',
+        fontColor: '#8b949e'
+      }
+    })
+
+    // ── Power source ──────────────────────────────────────────────────────
+    if (power) {
+      items.push({
+        id: `otf-rtu-power-${nodeId}`,
+        type: 'svg-text',
+        name: '',
+        label: power,
+        x: x + 18,
+        y: y + 116,
+        w: CARD_W - 36,
+        h: 20,
+        rotation: 0,
+        property: {
+          text: `Power: ${power}`,
+          fontSize: '12',
+          fontColor: '#8b949e'
+        }
+      })
+    }
+
+    // ── Divider line above tag summary ────────────────────────────────────
+    items.push({
+      id: `otf-rtu-div-${nodeId}`,
+      type: 'svg-rect',
+      name: '',
+      label: '',
+      x: x + 18,
+      y: y + CARD_H - 50,
+      w: CARD_W - 36,
+      h: 1,
+      rotation: 0,
+      property: { bkgcolor: '#30363d', color: '#30363d' }
+    })
+
+    // ── Tag legend (shows the 4 types configured above) ───────────────────
+    items.push({
+      id: `otf-rtu-tags-${nodeId}`,
+      type: 'svg-text',
+      name: '',
+      label: 'DI DO IR HR',
+      x: x + 18,
+      y: y + CARD_H - 26,
+      w: CARD_W - 36,
+      h: 18,
+      rotation: 0,
+      property: {
+        text: 'Tags: DI×0–03  DO×0–03  IR×0–03  HR×0–03',
+        fontSize: '11',
+        fontColor: '#6e7681'
+      }
+    })
+  })
+
+  const totalRows = Math.ceil(rtuEntries.length / COLS)
+  const viewHeight = MARGIN + HEADER_H + totalRows * (CARD_H + GAP) + MARGIN
+  const viewWidth = MARGIN + COLS * (CARD_W + GAP) + MARGIN
+
+  return {
+    id: 'otf-rtu-overview',
+    name: 'RTU Overview',
+    width: Math.max(1400, viewWidth),
+    height: Math.max(720, viewHeight),
+    background: '#0d1117',
+    items,
+    variables: []
   }
 }
 
