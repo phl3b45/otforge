@@ -1199,6 +1199,8 @@ export function ScadaCanvas({
   const onNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: Node) => {
       if (readOnly) return
+      // Site region nodes have no device protocols — suppress the context menu.
+      if (node.type === 'siteNode') return
       event.preventDefault()
       setPendingConnection(null)
       setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
@@ -1262,6 +1264,10 @@ export function ScadaCanvas({
         cancelConnection()
         return
       }
+
+      // Site region nodes are not valid connection targets — ignore clicks on them
+      // while a pending connection is active so the connection stays live.
+      if (node.type === 'siteNode') return
 
       // ── Protocol / Purdue-model validation ────────────────────────────────
       // Look up both ends of the attempted connection and check the matrix.
