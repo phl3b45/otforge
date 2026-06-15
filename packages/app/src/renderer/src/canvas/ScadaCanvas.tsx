@@ -49,6 +49,7 @@ import type {
   DeviceConfig,
   Protocol,
   CableType,
+  FluidType,
   RtuConfig,
   SiteRegion
 } from '@otforge/schema'
@@ -87,6 +88,20 @@ const CONNECTION_OPTIONS: { protocol: Protocol; label: string; color: string }[]
   { protocol: 'iec61850', label: 'IEC 61850', color: '#a371f7' },
   { protocol: 'mqtt', label: 'MQTT', color: '#e87040' },
   { protocol: 'none', label: 'Unspecified / Ethernet', color: '#484f58' }
+]
+
+/**
+ * Fluid type options shown in the "Fluid Type" section of the OT-layer connection menu.
+ * Selecting a fluid type is OPTIONAL — the pipe is created regardless.
+ * When a fluid type is pre-selected, it is stored on the edge and drives the animated
+ * substance icons in PipeEdge.tsx once the simulation is running.
+ */
+const FLUID_OPTIONS: { fluid: FluidType; label: string; color: string }[] = [
+  { fluid: 'water', label: 'Water / Process Water', color: '#38bdf8' },
+  { fluid: 'oil', label: 'Oil / Hydraulic Fluid', color: '#78350f' },
+  { fluid: 'gas', label: 'Gas / Steam / Pneumatic Air', color: '#94a3b8' },
+  { fluid: 'chemical', label: 'Chemical / Reagent', color: '#4ade80' },
+  { fluid: 'electric', label: 'Electrical Signal / Power', color: '#facc15' }
 ]
 
 /**
@@ -136,6 +151,12 @@ interface ContextMenuState {
    * Carried into PendingConnectionState when the user then clicks a protocol item.
    */
   pendingCable?: CableType
+  /**
+   * Fluid type pre-selected from the Fluid Type section of the OT-layer menu.
+   * Carried into PendingConnectionState when the user clicks a protocol item.
+   * Drives the animated substance icons on the resulting PipeEdge.
+   */
+  pendingFluid?: FluidType
 }
 
 /**
@@ -153,6 +174,11 @@ interface PendingConnectionState {
    * Undefined when the user only selected a protocol without choosing a cable.
    */
   cableType?: CableType
+  /**
+   * Fluid type pre-selected from the OT-layer menu (optional).
+   * Written into the new PipeEdge's data.fluidType field.
+   */
+  fluidType?: FluidType
 }
 
 /** Registration map: React Flow node type key → component. */
@@ -1235,7 +1261,7 @@ export function ScadaCanvas({
   /**
    * Called when the user picks a protocol from the right-click context menu.
    * Transitions from "menu open" to "awaiting target click" mode, carrying the
-   * optional pre-selected cable type into the pending connection state.
+   * optional pre-selected cable type and fluid type into the pending connection state.
    * The canvas cursor changes to a crosshair (via .connecting CSS class) to
    * signal that the next node click will complete the connection.
    */
@@ -1245,7 +1271,8 @@ export function ScadaCanvas({
       setPendingConnection({
         sourceId: contextMenu.nodeId,
         protocol,
-        cableType: contextMenu.pendingCable
+        cableType: contextMenu.pendingCable,
+        fluidType: contextMenu.pendingFluid
       })
       setContextMenu(null)
     },
@@ -1260,6 +1287,17 @@ export function ScadaCanvas({
   const selectCable = useCallback((cable: CableType) => {
     setContextMenu(prev =>
       prev ? { ...prev, pendingCable: prev.pendingCable === cable ? undefined : cable } : null
+    )
+  }, [])
+
+  /**
+   * Toggles the pre-selected fluid type in the open OT-layer context menu.
+   * Clicking an already-selected fluid deselects it (undefined = no fluid icon).
+   * The menu stays open so the user can select a fluid AND THEN click a protocol.
+   */
+  const selectFluid = useCallback((fluid: FluidType) => {
+    setContextMenu(prev =>
+      prev ? { ...prev, pendingFluid: prev.pendingFluid === fluid ? undefined : fluid } : null
     )
   }, [])
 
@@ -1349,9 +1387,10 @@ export function ScadaCanvas({
 
       // ── Valid connection — create the edge ────────────────────────────────
       const edgeType = activeLayer === 'ot' ? 'pipeEdge' : 'protocolEdge'
-      const edgeData: { protocol: Protocol; cableType?: CableType } = {
+      const edgeData: { protocol: Protocol; cableType?: CableType; fluidType?: FluidType } = {
         protocol: pendingConnection.protocol,
-        ...(pendingConnection.cableType ? { cableType: pendingConnection.cableType } : {})
+        ...(pendingConnection.cableType ? { cableType: pendingConnection.cableType } : {}),
+        ...(pendingConnection.fluidType ? { fluidType: pendingConnection.fluidType } : {})
       }
       const newEdge: Edge = {
         id: `${pendingConnection.sourceId}-${node.id}-${Date.now()}`,
@@ -1733,10 +1772,48 @@ export function ScadaCanvas({
           }}
           onContextMenu={e => e.preventDefault()}
         >
-          <div className="connection-context-menu-title">Connect via…</div>
+          <div className="connection-context-menu-title">
+            {isOT ? 'Draw Pipe Connection' : 'Connect via…'}
+          </div>
 
-          {/* ── Section 1: Application Protocol ── */}
-          <div className="connection-context-menu-section-title">Application Protocol</div>
+          {/* ── Section 0 (OT layer only): Fluid Type pre-selection ── */}
+          {isOT && (
+            <>
+              <div className="connection-context-menu-section-title">
+                Fluid / Substance
+                {contextMenu.pendingFluid && (
+                  <span className="connection-context-menu-cable-hint"> — then click signal</span>
+                )}
+              </div>
+              <div className="connection-context-menu-sep" />
+              {FLUID_OPTIONS.map(opt => {
+                const isSelected = contextMenu.pendingFluid === opt.fluid
+                return (
+                  <button
+                    key={opt.fluid}
+                    className={`connection-context-menu-item${isSelected ? ' connection-context-menu-item--selected' : ''}`}
+                    onClick={() => selectFluid(opt.fluid)}
+                  >
+                    <span
+                      className="connection-context-menu-dot"
+                      style={{
+                        background: isSelected ? opt.color : 'transparent',
+                        borderColor: opt.color
+                      }}
+                    />
+                    {opt.label}
+                    {isSelected && <span className="connection-context-menu-check">✓</span>}
+                  </button>
+                )
+              })}
+              <div className="connection-context-menu-sep" style={{ marginTop: 6 }} />
+            </>
+          )}
+
+          {/* ── Section 1: ICS Signal Protocol ── */}
+          <div className="connection-context-menu-section-title">
+            {isOT ? 'ICS Control Signal' : 'Application Protocol'}
+          </div>
           <div className="connection-context-menu-sep" />
           {filteredConnectionOptions.map(opt => (
             <button
