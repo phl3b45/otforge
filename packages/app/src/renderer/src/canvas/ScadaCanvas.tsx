@@ -505,6 +505,10 @@ function scenarioToEdges(
         ...(ce.data.label !== undefined ? { label: ce.data.label } : {}),
         // Pass optional cable type through to the edge component for chip rendering.
         ...(ce.data.cableType !== undefined ? { cableType: ce.data.cableType } : {}),
+        // Pass fluid type through to PipeEdge so it renders substance-specific icons.
+        ...(activeLayer === 'ot' && ce.data.fluidType !== undefined
+          ? { fluidType: ce.data.fluidType }
+          : {}),
         // Pass coilSource through to PipeEdge so the ScadaCanvas polling loop
         // knows which PLC coil drives this edge's flow-state animation.
         ...(activeLayer === 'ot' && ce.data.coilSource !== undefined
