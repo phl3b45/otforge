@@ -2,6 +2,14 @@ FROM ubuntu:22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
+# ── Layer 0: Security baseline — upgrade all base packages ────────────────────
+# Ubuntu 22.04 base image packages are frozen at the image publish date.
+# Running apt-get upgrade here ensures every subsequent layer starts from a
+# fully-patched baseline. Fixes CVE-2026-45447 (OpenSSL heap use-after-free
+# in PKCS7_verify, fixed in openssl/libssl 3.0.2-0ubuntu1.25).
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 # ── Layer 1: Core system + desktop environment ─────────────────────────────────
 # Firefox is intentionally NOT installed via `apt install firefox`.
 # On Ubuntu 22.04, that package is a snap stub — it tries to exec `snap run firefox`
