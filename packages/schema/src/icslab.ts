@@ -160,6 +160,42 @@ export interface CanvasEdge {
   }
 }
 
+/**
+ * A labeled, colored rectangular region overlaid on the canvas to indicate a
+ * physical field site (local control room, remote pump station, substation, etc.).
+ *
+ * Site regions are purely visual — they do not affect simulation or Docker networking.
+ * They render behind device nodes so RTUs and sensors can sit visually "inside" a site.
+ *
+ * Authors create them via the "Add Field Site" button in Author Mode and can:
+ *   - Drag to reposition
+ *   - Drag the resize handles to change dimensions
+ *   - Edit the label inline on the canvas
+ *   - Pick a border/fill color from the Properties Panel
+ *
+ * Students see the regions as read-only overlays that communicate the physical
+ * layout of the ICS deployment (local vs. remote, which devices share a site).
+ */
+export interface SiteRegion {
+  /** Unique identifier — used as the React Flow node ID. */
+  id: string
+  /** Human-readable name shown in the region header, e.g. "Remote Site 1". */
+  label: string
+  /**
+   * CSS hex color for the border and semi-transparent fill tint.
+   * Recommended: green/teal for local sites, amber/orange for remote sites.
+   */
+  color: string
+  /** Which Purdue layer this region belongs to — filtered same as device nodes. */
+  zone: NetworkZone
+  /** Canvas-space position of the top-left corner. */
+  position: CanvasPosition
+  /** Width in canvas units (pixels at zoom=1). Default 320. */
+  width: number
+  /** Height in canvas units (pixels at zoom=1). Default 220. */
+  height: number
+}
+
 export interface VisualLayer {
   nodes: CanvasNode[]
   edges: CanvasEdge[]
@@ -168,6 +204,12 @@ export interface VisualLayer {
     y: number
     zoom: number
   }
+  /**
+   * Named field site regions overlaid on the canvas.
+   * Rendered behind device nodes so devices can be visually grouped inside a site.
+   * Optional for backwards compatibility with scenario files created before this field.
+   */
+  siteRegions?: SiteRegion[]
 }
 
 // ── Network layer ─────────────────────────────────────────────────────────────

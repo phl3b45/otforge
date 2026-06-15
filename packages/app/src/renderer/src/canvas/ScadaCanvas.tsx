@@ -49,7 +49,8 @@ import type {
   DeviceConfig,
   Protocol,
   CableType,
-  RtuConfig
+  RtuConfig,
+  SiteRegion
 } from '@otforge/schema'
 import {
   DeviceNode,
@@ -58,6 +59,7 @@ import {
   type CrossLayerLink,
   ZONE_COLORS
 } from './DeviceNode'
+import { SiteNode, type SiteNodeType, type SiteNodeData } from './SiteNode'
 import { ProtocolEdge, type ProtocolEdgeType } from './ProtocolEdge'
 import { PipeEdge, type PipeEdgeType } from './PipeEdge'
 import {
@@ -155,7 +157,8 @@ interface PendingConnectionState {
 
 /** Registration map: React Flow node type key → component. */
 const nodeTypes: NodeTypes = {
-  deviceNode: DeviceNode
+  deviceNode: DeviceNode,
+  siteNode: SiteNode
 }
 
 /**
@@ -589,6 +592,12 @@ export function ScadaCanvas({
   } | null>(null)
 
   /**
+   * Controls whether the "Add Field Site" dropdown menu is open.
+   * Toggled by the button in the canvas toolbar; closed on any option click.
+   */
+  const [showSiteMenu, setShowSiteMenu] = useState(false)
+
+  /**
    * Ref to the React Flow instance — needed for screenToFlowPosition() in onDrop.
    * Using a ref avoids wrapping in ReactFlowProvider just to call useReactFlow().
    */
@@ -869,12 +878,42 @@ export function ScadaCanvas({
     }
     const deviceNodes = scenarioToNodes(scenario, activeLayer)
     const layerNodeIds = new Set(deviceNodes.map(n => n.id))
+
+    // Build site region nodes for this layer. Site nodes render behind device nodes
+    // so they serve as visual grouping regions without obscuring device icons.
+    // They are placed first in the array (lower z-order) and given zIndex: -1.
+    const siteNodes: SiteNodeType[] = (scenario.visual.siteRegions ?? [])
+      .filter(r => r.zone === activeLayer)
+      .map(r => ({
+        id: r.id,
+        type: 'siteNode' as const,
+        position: r.position,
+        width: r.width,
+        height: r.height,
+        // zIndex -1 ensures site regions always render beneath device nodes.
+        zIndex: -1,
+        // Sites are selectable (to show resize handles) but not connectable.
+        selectable: !readOnly,
+        draggable: !readOnly,
+        data: {
+          region: r,
+          readOnly,
+          onLabelChange: handleSiteLabelChange,
+          onColorChange: handleSiteColorChange,
+          onResizeEnd: handleSiteResizeEnd
+        } satisfies SiteNodeData
+      }))
+
     // Restore the previously selected node so that scenario-driven re-syncs
     // (e.g., IP or label edits) don't close the Properties Panel.
     const selId = selectedNodeIdRef.current
-    setNodes(
-      selId ? deviceNodes.map(n => (n.id === selId ? { ...n, selected: true } : n)) : deviceNodes
-    )
+    const allNodes: Node[] = [
+      ...siteNodes,
+      ...(selId
+        ? deviceNodes.map(n => (n.id === selId ? { ...n, selected: true } : n))
+        : deviceNodes)
+    ]
+    setNodes(allNodes)
     setEdges(scenarioToEdges(scenario, activeLayer, layerNodeIds) as Edge[])
     // Only re-fit when the active layer tab changes — not on every node/edge mutation.
     // Scenario edits (drops, drags, connections) must not re-center the viewport.
@@ -992,7 +1031,9 @@ export function ScadaCanvas({
             nodes: prev.visual.nodes.filter(n => !deletedIds.has(n.id)),
             edges: prev.visual.edges.filter(
               e => !deletedIds.has(e.source) && !deletedIds.has(e.target)
-            )
+            ),
+            // Also remove any site regions that were deleted.
+            siteRegions: (prev.visual.siteRegions ?? []).filter(r => !deletedIds.has(r.id))
           },
           devices: {
             devices: Object.fromEntries(
@@ -1003,6 +1044,115 @@ export function ScadaCanvas({
       })
     },
     [onScenarioChange, onSelectDevice]
+  )
+
+  /** Updates a site region's label in the scenario when the author commits an edit. */
+  const handleSiteLabelChange = useCallback(
+    (siteId: string, label: string) => {
+      onScenarioChange(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          visual: {
+            ...prev.visual,
+            siteRegions: (prev.visual.siteRegions ?? []).map(r =>
+              r.id === siteId ? { ...r, label } : r
+            )
+          }
+        }
+      })
+    },
+    [onScenarioChange]
+  )
+
+  /** Updates a site region's color in the scenario when the author picks a new color. */
+  const handleSiteColorChange = useCallback(
+    (siteId: string, color: string) => {
+      onScenarioChange(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          visual: {
+            ...prev.visual,
+            siteRegions: (prev.visual.siteRegions ?? []).map(r =>
+              r.id === siteId ? { ...r, color } : r
+            )
+          }
+        }
+      })
+    },
+    [onScenarioChange]
+  )
+
+  /** Persists updated position + dimensions after a NodeResizer drag ends. */
+  const handleSiteResizeEnd = useCallback(
+    (siteId: string, x: number, y: number, width: number, height: number) => {
+      onScenarioChange(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          visual: {
+            ...prev.visual,
+            siteRegions: (prev.visual.siteRegions ?? []).map(r =>
+              r.id === siteId ? { ...r, position: { x, y }, width, height } : r
+            )
+          }
+        }
+      })
+    },
+    [onScenarioChange]
+  )
+
+  /**
+   * Creates a new site region of the given type and adds it to the center of the
+   * current viewport. Local sites default to teal; remote sites to amber.
+   */
+  const handleAddSite = useCallback(
+    (type: 'local' | 'remote') => {
+      setShowSiteMenu(false)
+      if (!rfInstance.current) return
+
+      // Count existing sites of this type to generate an auto-incremented label.
+      onScenarioChange(prev => {
+        if (!prev) return prev
+        const existing = prev.visual.siteRegions ?? []
+        const sameType = existing.filter(r =>
+          type === 'local'
+            ? r.label.toLowerCase().includes('local')
+            : r.label.toLowerCase().includes('remote')
+        )
+        const index = sameType.length
+        const label = type === 'local' ? `Local Site ${index}` : `Remote Site ${index + 1}`
+        const color = type === 'local' ? '#22c55e' : '#f59e0b'
+
+        // Use screenToFlowPosition on the visible center of the canvas element.
+        const rect = (
+          document.querySelector('.react-flow') as HTMLElement | null
+        )?.getBoundingClientRect()
+        const centerX = rect ? rect.left + rect.width / 2 : 0
+        const centerY = rect ? rect.top + rect.height / 2 : 0
+        const pos = rfInstance.current!.screenToFlowPosition({ x: centerX, y: centerY })
+
+        const newRegion: SiteRegion = {
+          id: `site-${type}-${Date.now()}`,
+          label,
+          color,
+          zone: activeLayer,
+          position: { x: pos.x - 160, y: pos.y - 110 },
+          width: 320,
+          height: 220
+        }
+
+        return {
+          ...prev,
+          visual: {
+            ...prev.visual,
+            siteRegions: [...existing, newRegion]
+          }
+        }
+      })
+    },
+    [onScenarioChange, activeLayer]
   )
 
   /**
@@ -1034,6 +1184,7 @@ export function ScadaCanvas({
     setContextMenu(null)
     setPendingConnection(null)
     setInvalidTooltip(null)
+    setShowSiteMenu(false)
     if (tooltipTimerRef.current !== null) {
       clearTimeout(tooltipTimerRef.current)
       tooltipTimerRef.current = null
@@ -1265,11 +1416,20 @@ export function ScadaCanvas({
     (_event, _node, allNodes) => {
       onScenarioChange(prev => {
         if (!prev) return prev
+        // Update device node positions.
         const updatedVisualNodes = prev.visual.nodes.map(cn => {
           const moved = allNodes.find(n => n.id === cn.id)
           return moved ? { ...cn, position: moved.position } : cn
         })
-        return { ...prev, visual: { ...prev.visual, nodes: updatedVisualNodes } }
+        // Update site region positions (dragged site nodes share the same allNodes array).
+        const updatedSiteRegions = (prev.visual.siteRegions ?? []).map(r => {
+          const moved = allNodes.find(n => n.id === r.id)
+          return moved ? { ...r, position: moved.position } : r
+        })
+        return {
+          ...prev,
+          visual: { ...prev.visual, nodes: updatedVisualNodes, siteRegions: updatedSiteRegions }
+        }
       })
     },
     [onScenarioChange]
@@ -1470,12 +1630,50 @@ export function ScadaCanvas({
         <MiniMap
           style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 6 }}
           nodeColor={node => {
+            if (node.type === 'siteNode') {
+              const d = node.data as SiteNodeData
+              return d.region?.color ?? '#484f58'
+            }
             const data = node.data as DeviceNodeData
             return ZONE_COLORS[data.zone] ?? '#484f58'
           }}
           maskColor="rgba(13, 17, 23, 0.7)"
         />
       </ReactFlow>
+
+      {/* ── Add Field Site button (Author Mode only) ────────────────────────── */}
+      {/* Floats at the top-right of the canvas area above the React Flow surface.
+          Clicking opens a small dropdown with Local Site / Remote Site options.
+          Closed automatically when an option is chosen or the user clicks away. */}
+      {!readOnly && (
+        <div className="site-add-btn-wrap">
+          <button
+            className="btn btn-secondary site-add-btn"
+            onClick={() => setShowSiteMenu(prev => !prev)}
+            title="Add a field site region to group devices by physical location"
+          >
+            + Field Site
+          </button>
+          {showSiteMenu && (
+            <div className="site-add-menu">
+              <button
+                className="site-add-menu-item site-add-menu-item--local"
+                onClick={() => handleAddSite('local')}
+              >
+                <span className="site-add-menu-swatch" style={{ background: '#22c55e' }} />
+                Local Site
+              </button>
+              <button
+                className="site-add-menu-item site-add-menu-item--remote"
+                onClick={() => handleAddSite('remote')}
+              >
+                <span className="site-add-menu-swatch" style={{ background: '#f59e0b' }} />
+                Remote Site
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Right-click protocol + cable selection menu ─────────────────────── */}
       {/* Rendered outside ReactFlow so it sits above the canvas SVG layer.
