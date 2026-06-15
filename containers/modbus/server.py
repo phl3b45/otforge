@@ -134,6 +134,47 @@ _SECURITY: dict[str, str] = {
     ),
 }
 
+# ── Mutable runtime configuration (initialized from env vars, editable via portal) ──
+# Students can change these values through the web UI and they take effect immediately
+# without restarting the container. Changes are lost when the container restarts.
+_config: dict[str, str] = {
+    "comm_type": RTU_COMM_TYPE,
+    "protocol":  RTU_PROTOCOL,
+    "mode":      RTU_MODE,
+    "power":     RTU_POWER,
+    "site":      RTU_SITE,
+    "poll_int":  RTU_POLL_INT,
+}
+
+# ── Dropdown options for each editable configuration field ───────────────────────
+_COMM_OPTIONS: dict[str, list[tuple[str, str]]] = {
+    "comm_type": [
+        ("cellular",    "Cellular"),
+        ("radio",       "Radio (900 MHz)"),
+        ("satellite",   "Satellite (VSAT)"),
+        ("mqtt",        "MQTT / Cloud"),
+        ("dnp3-serial", "DNP3 Serial"),
+    ],
+    "protocol": [
+        ("modbus",  "Modbus TCP/RTU"),
+        ("dnp3",    "DNP3"),
+        ("iec104",  "IEC 60870-5-104"),
+        ("mqtt",    "MQTT"),
+        ("bacnet",  "BACnet"),
+    ],
+    "mode": [
+        ("polled",              "Polled"),
+        ("report-by-exception", "Report by Exception (RBE)"),
+        ("hybrid",              "Hybrid"),
+    ],
+    "power": [
+        ("solar-battery", "Solar + Battery"),
+        ("ac",            "AC Mains"),
+        ("battery",       "Battery Only"),
+        ("dc",            "DC (24 VDC Instrument)"),
+    ],
+}
+
 # ── CSS shared between the login and dashboard pages ─────────────────────────────
 _BASE_CSS = """
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -203,6 +244,15 @@ def _esc(text: str) -> str:
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace('"', "&quot;"))
+
+
+def _select(name: str, options: list[tuple[str, str]], current: str) -> str:
+    """Renders an HTML <select> with the current value pre-selected."""
+    opts = "".join(
+        f'<option value="{_esc(v)}"{" selected" if v == current else ""}>{_esc(label)}</option>'
+        for v, label in options
+    )
+    return f'<select name="{name}" class="cfg-select">{opts}</select>'
 
 
 def build_login_page(error: bool = False) -> str:
@@ -325,13 +375,19 @@ def build_login_page(error: bool = False) -> str:
 </html>"""
 
 
-def build_dashboard_page() -> str:
+def build_dashboard_page(saved: bool = False) -> str:
     """
     Renders the authenticated RTU configuration dashboard.
 
-    Shows device identity, RTU panel settings (from env vars), a security note
-    for the selected comm type, and a live register table that auto-refreshes
-    every 5 seconds via <meta http-equiv="refresh">.
+    Device Identity is read-only.  Communication Configuration is an editable
+    form — dropdowns for comm type, protocol, operating mode, and power source;
+    a text input for site name; a number input for poll interval.  Submitting
+    the form POSTs to /config which updates _config in memory and redirects
+    back here with ?saved=1 so a success banner can be shown.
+
+    The Register Status section auto-refreshes every 5 seconds.  Because all
+    form fields are re-populated from _config on each render, a page refresh
+    never discards saved values (only unsaved in-progress edits are lost).
     """
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -352,7 +408,7 @@ def build_dashboard_page() -> str:
     def badge(text: str, cls: str = "blue") -> str:
         return f'<span class="badge {cls}">{_esc(text)}</span>'
 
-    # ── Identity rows ──────────────────────────────────────────────────────────
+    # ── Identity rows (read-only) ──────────────────────────────────────────────
     id_rows = (
         tr("Device ID", f"<code>{did}</code>") +
         tr("Display Name", label) +
@@ -361,37 +417,59 @@ def build_dashboard_page() -> str:
         tr("Modbus Port", str(PORT))
     )
 
-    # ── Communication configuration rows (only when RTU panel vars are set) ────
+    # ── Saved confirmation banner ──────────────────────────────────────────────
+    saved_html = (
+        '<div class="alert-success">&#10003; Configuration saved successfully.</div>'
+        if saved else ""
+    )
+
+    # ── Communication configuration — editable form (any device with comm config) ─
     comm_html = ""
-    if RTU_COMM_TYPE:
-        mode_labels = {
-            "report-by-exception": "Report by Exception (RBE)",
-            "polled": "Polled",
-            "hybrid": "Hybrid",
-        }
-        power_labels = {
-            "solar-battery": "Solar + Battery",
-            "ac": "AC Mains",
-            "battery": "Battery Only",
-            "dc": "DC (24 VDC Instrument)",
-        }
-        comm_rows = (
-            tr("Comm Type", badge(RTU_COMM_TYPE.upper())) +
-            tr("Protocol", badge(RTU_PROTOCOL.upper(), "green") if RTU_PROTOCOL else "&mdash;") +
-            tr("Operating Mode", _esc(mode_labels.get(RTU_MODE, RTU_MODE))) +
-            (tr("Poll Interval", f"{RTU_POLL_INT} s") if RTU_POLL_INT else "") +
-            tr("Power Source", _esc(power_labels.get(RTU_POWER, RTU_POWER))) +
-            (tr("Site", _esc(RTU_SITE)) if RTU_SITE else "")
-        )
+    if _config.get("comm_type"):
+        poll_val = _esc(_config.get("poll_int", ""))
+        site_val = _esc(_config.get("site", ""))
         comm_html = f"""
       <section class="card">
         <h2>Communication Configuration</h2>
-        <table>{comm_rows}</table>
+        {saved_html}
+        <form method="POST" action="/config">
+          <table>
+            <tr>
+              <td class="f">Comm Type</td>
+              <td class="v">{_select("comm_type", _COMM_OPTIONS["comm_type"], _config.get("comm_type", ""))}</td>
+            </tr>
+            <tr>
+              <td class="f">Protocol</td>
+              <td class="v">{_select("protocol", _COMM_OPTIONS["protocol"], _config.get("protocol", ""))}</td>
+            </tr>
+            <tr>
+              <td class="f">Operating Mode</td>
+              <td class="v">{_select("mode", _COMM_OPTIONS["mode"], _config.get("mode", ""))}</td>
+            </tr>
+            <tr>
+              <td class="f">Power Source</td>
+              <td class="v">{_select("power", _COMM_OPTIONS["power"], _config.get("power", ""))}</td>
+            </tr>
+            <tr>
+              <td class="f">Site / Location</td>
+              <td class="v"><input type="text" name="site" class="cfg-input"
+                value="{site_val}" placeholder="e.g. Pump Station 4"></td>
+            </tr>
+            <tr>
+              <td class="f">Poll Interval (s)</td>
+              <td class="v"><input type="number" name="poll_int" class="cfg-input cfg-narrow"
+                value="{poll_val}" min="1" max="3600" placeholder="30"></td>
+            </tr>
+          </table>
+          <div class="form-actions">
+            <button type="submit" class="save-btn">Save Configuration</button>
+          </div>
+        </form>
       </section>"""
 
-    # ── Security note ──────────────────────────────────────────────────────────
+    # ── Security note — updates live when comm type changes ────────────────────
     sec_html = ""
-    note = _SECURITY.get(RTU_COMM_TYPE, "")
+    note = _SECURITY.get(_config.get("comm_type", ""), "")
     if note:
         sec_html = f"""
       <section class="card warn">
@@ -420,7 +498,6 @@ def build_dashboard_page() -> str:
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="refresh" content="5">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RTU Config &mdash; {label}</title>
   <style>
@@ -510,6 +587,48 @@ def build_dashboard_page() -> str:
       letter-spacing: 1px;
       margin: 14px 0 6px;
     }}
+    .alert-success {{
+      background: #0d2011;
+      color: #3fb950;
+      border: 1px solid #238636;
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin-bottom: 14px;
+      font-size: 13px;
+    }}
+    .cfg-select {{
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      color: #e6edf3;
+      padding: 5px 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }}
+    .cfg-select:focus {{ outline: none; border-color: #58a6ff; }}
+    .cfg-input {{
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      color: #e6edf3;
+      padding: 5px 8px;
+      font-size: 13px;
+      width: 100%;
+    }}
+    .cfg-input:focus {{ outline: none; border-color: #58a6ff; }}
+    .cfg-narrow {{ width: 90px; }}
+    .form-actions {{ margin-top: 14px; text-align: right; }}
+    .save-btn {{
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 7px 20px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+    }}
+    .save-btn:hover {{ background: #2ea043; }}
     footer {{
       color: #6e7681;
       font-size: 11px;
@@ -566,14 +685,15 @@ def build_dashboard_page() -> str:
 # HTTP portal -- request handling
 # ══════════════════════════════════════════════════════════════════════════════════
 
-def _parse_request(raw: bytes) -> tuple[str, str, dict[str, str], str]:
+def _parse_request(raw: bytes) -> tuple[str, str, str, dict[str, str], str]:
     """
     Parses the essential fields from a raw HTTP request.
 
     Returns:
-        (method, path, cookies, body)
+        (method, path, qs, cookies, body)
         method  -- 'GET', 'POST', etc.
         path    -- URL path without query string (e.g. '/login')
+        qs      -- raw query string without leading '?' (e.g. 'saved=1'), or ''
         cookies -- dict of cookie name -> value from the Cookie header
         body    -- decoded request body (form data for POST /login)
     """
@@ -592,7 +712,8 @@ def _parse_request(raw: bytes) -> tuple[str, str, dict[str, str], str]:
     req_parts = lines[0].decode("utf-8", errors="replace").split(" ")
     method = req_parts[0].upper() if req_parts else "GET"
     raw_path = req_parts[1] if len(req_parts) >= 2 else "/"
-    path = raw_path.split("?")[0]          # strip query string
+    qs = raw_path.split("?", 1)[1] if "?" in raw_path else ""
+    path = raw_path.split("?")[0]
 
     # Parse Cookie header
     cookies: dict[str, str] = {}
@@ -604,7 +725,7 @@ def _parse_request(raw: bytes) -> tuple[str, str, dict[str, str], str]:
                     k, v = pair.strip().split("=", 1)
                     cookies[k.strip()] = v.strip()
 
-    return method, path, cookies, body
+    return method, path, qs, cookies, body
 
 
 def _write_response(writer: asyncio.StreamWriter,
@@ -630,11 +751,12 @@ async def http_handler(reader: asyncio.StreamReader,
     Handles a single incoming HTTP connection for the RTU configuration portal.
 
     Routing:
-      GET  /            authenticated  -> dashboard
+      GET  /            authenticated  -> dashboard (saved=True if qs contains saved=1)
       GET  /            anonymous      -> redirect to /login
       GET  /login       any            -> login form
       POST /login       any            -> validate; set cookie + redirect or show error
       GET  /logout      any            -> clear cookie + redirect to /login
+      POST /config      authenticated  -> update _config, redirect to /?saved=1
       GET  /favicon.ico any            -> 404 (suppresses browser log noise)
       anything else     any            -> 404
 
@@ -643,7 +765,7 @@ async def http_handler(reader: asyncio.StreamReader,
     """
     try:
         raw = await asyncio.wait_for(reader.read(8192), timeout=5.0)
-        method, path, cookies, body = _parse_request(raw)
+        method, path, qs, cookies, body = _parse_request(raw)
         authenticated = cookies.get("sid", "") in _sessions
 
         # ── /favicon.ico ──────────────────────────────────────────────────────
@@ -685,9 +807,21 @@ async def http_handler(reader: asyncio.StreamReader,
             html = build_login_page()
             _write_response(writer, "200 OK", "text/html; charset=utf-8", html.encode())
 
+        # ── POST /config -- save runtime configuration changes ────────────────
+        elif method == "POST" and path == "/config" and authenticated:
+            form = dict(urllib.parse.parse_qsl(body))
+            for key in ("comm_type", "protocol", "mode", "power", "site", "poll_int"):
+                if key in form:
+                    _config[key] = form[key]
+            log.info("HTTP: RTU config updated: %s", _config)
+            _write_response(
+                writer, "302 Found", "text/plain", b"",
+                extra="Location: /?saved=1\r\n"
+            )
+
         # ── GET / -- authenticated dashboard ──────────────────────────────────
         elif path == "/" or path == "":
-            html = build_dashboard_page()
+            html = build_dashboard_page(saved=(qs == "saved=1"))
             _write_response(writer, "200 OK", "text/html; charset=utf-8", html.encode())
 
         # ── Anything else ─────────────────────────────────────────────────────

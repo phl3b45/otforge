@@ -32,7 +32,6 @@ import type { DeviceConfig, SecurityLayer, RtuConfig } from '@otforge/schema'
 import { DeviceIcon } from '../icons/DeviceIcons'
 import { ZONE_COLORS } from '../canvas/DeviceNode'
 import { FirewallPanel, IDSPanel } from './SecurityPanel'
-import { RtuPanel } from './RtuPanel'
 
 /** Full human-readable names for the properties panel header. */
 const CATEGORY_LABELS: Record<string, string> = {
@@ -434,17 +433,6 @@ export function PropertiesPanel({
                 <code className="prop-value">{device.opcua.namespace}</code>
               </div>
             </section>
-          )}
-
-          {/* ── RTU configuration panel ──────────────────────────────────────── */}
-          {/* Shown for rtu and iec104-rtu devices in both Author and Student modes. */}
-          {(device.category === 'rtu' || device.category === 'iec104-rtu') && (
-            <RtuPanel
-              rtuConfig={device.rtuConfig}
-              nodeId={device.nodeId}
-              readOnly={readOnly}
-              onChange={(nodeId, config) => onDeviceChange?.(nodeId, { rtuConfig: config })}
-            />
           )}
 
           {/* ── Firewall panel (Phase 5) ──────────────────────────────────────── */}
