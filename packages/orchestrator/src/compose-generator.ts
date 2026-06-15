@@ -1411,7 +1411,27 @@ function buildDeviceEnv(
   device: OTForgeScenario['devices']['devices'][string],
   _scenario: OTForgeScenario
 ): string[] {
-  const env: string[] = [`DEVICE_ID=${device.nodeId}`, `DEVICE_CATEGORY=${device.category}`]
+  const env: string[] = [
+    `DEVICE_ID=${device.nodeId}`,
+    `DEVICE_CATEGORY=${device.category}`,
+    // Human-readable label shown in the RTU configuration web page header.
+    // Falls back to the node ID when no label has been set.
+    `DEVICE_LABEL=${device.label ?? device.nodeId}`
+  ]
+
+  // RTU telemetry configuration — displayed on the browser-accessible config page
+  // served by containers/modbus/server.py on port 80. Only emitted for rtu and
+  // iec104-rtu devices; other categories simply ignore the vars.
+  if (device.rtuConfig) {
+    env.push(`RTU_COMM_TYPE=${device.rtuConfig.commType}`)
+    env.push(`RTU_PROTOCOL=${device.rtuConfig.primaryProtocol}`)
+    env.push(`RTU_OPERATING_MODE=${device.rtuConfig.operatingMode}`)
+    env.push(`RTU_POWER_SOURCE=${device.rtuConfig.powerSource}`)
+    if (device.rtuConfig.siteType) env.push(`RTU_SITE_TYPE=${device.rtuConfig.siteType}`)
+    if (device.rtuConfig.pollIntervalSec !== undefined) {
+      env.push(`RTU_POLL_INTERVAL=${device.rtuConfig.pollIntervalSec}`)
+    }
+  }
 
   // Modbus TCP/RTU configuration — consumed by containers/modbus/server.py
   if (device.modbus) {

@@ -13,11 +13,19 @@ RUN chmod +x entrypoint.sh
 
 # Defaults — all overridable via docker-compose environment:
 ENV DEVICE_ID=device-1 \
+    DEVICE_LABEL="" \
     DEVICE_CATEGORY=sensor \
     MODBUS_MODE=tcp \
     MODBUS_PORT=502 \
-    MODBUS_UNIT_ID=1
+    MODBUS_UNIT_ID=1 \
+    RTU_COMM_TYPE="" \
+    RTU_PROTOCOL="" \
+    RTU_OPERATING_MODE="" \
+    RTU_POWER_SOURCE="" \
+    RTU_SITE_TYPE="" \
+    RTU_POLL_INTERVAL=""
 
-EXPOSE 502
+# 502 = Modbus TCP  |  80 = HTTP configuration web page
+EXPOSE 502 80
 
 ENTRYPOINT ["./entrypoint.sh"]
