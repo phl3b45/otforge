@@ -131,6 +131,22 @@ export interface CanvasNode {
   }
 }
 
+/**
+ * Physical substance carried by a P&ID pipe edge on the OT Process canvas.
+ *
+ * Used to select the animated flow icon that travels along the pipe when a
+ * coil-driven flow is active. 'none' (the default) falls back to the legacy
+ * green-dash animation for backwards compatibility with existing scenarios.
+ *
+ *   electric  — electrical power lines (AC/DC bus, generator tie lines)
+ *   water     — process water, cooling water, steam condensate
+ *   gas       — natural gas, steam, pneumatic air (same icon, named by label)
+ *   oil       — crude oil, refined product, hydraulic fluid
+ *   chemical  — process chemicals, reagents, solvents
+ *   none      — unspecified / backwards-compatible green-dash animation
+ */
+export type FluidType = 'electric' | 'water' | 'gas' | 'oil' | 'chemical' | 'none'
+
 export interface CanvasEdge {
   id: string
   source: string // node id
@@ -157,6 +173,13 @@ export interface CanvasEdge {
       /** Zero-based Modbus coil address (FC01). */
       coilIndex: number
     }
+    /**
+     * Physical substance flowing through this pipe.
+     * Selects the animated icon that travels along the edge when flowActive is true.
+     * When absent or 'none', the legacy green-dash animation is used instead,
+     * preserving full backwards compatibility with existing scenario files.
+     */
+    fluidType?: FluidType
   }
 }
 

@@ -521,6 +521,12 @@ interface ScadaCanvasProps {
   onSelectDevice: (nodeId: string | null, device: DeviceConfig | null) => void
   onScenarioChange: (updater: (s: OTForgeScenario | null) => OTForgeScenario | null) => void
   /**
+   * Called when a PipeEdge is selected on the OT layer in Author Mode.
+   * App.tsx uses this to show the EdgePanel in the right sidebar.
+   * Receives null when the selection is cleared or a non-pipe element is selected.
+   */
+  onSelectEdge?: (edgeId: string | null) => void
+  /**
    * Called when the user clicks a cross-layer stub badge on a device node.
    * Switches the active Purdue layer tab to the destination zone so the student
    * can follow the connection chain across layers. Optional — stubs are hidden
@@ -545,6 +551,7 @@ export function ScadaCanvas({
   simRunning = false,
   onSelectDevice,
   onScenarioChange,
+  onSelectEdge,
   onLayerChange
 }: ScadaCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
@@ -985,25 +992,38 @@ export function ScadaCanvas({
     [setEdges, onScenarioChange, activeLayer]
   )
 
-  /** Only single device node selections populate the PropertiesPanel. */
+  /** Handles selection changes — device nodes populate PropertiesPanel; pipe edges populate EdgePanel. */
   const onSelectionChange = useCallback(
-    ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
-      if (selectedNodes.length !== 1) {
-        selectedNodeIdRef.current = null
-        onSelectDevice(null, null)
+    ({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
+      // Single device node selected → show device properties
+      if (selectedNodes.length === 1 && selectedNodes[0].type === 'deviceNode') {
+        const node = selectedNodes[0]
+        selectedNodeIdRef.current = node.id
+        const data = node.data as DeviceNodeData
+        onSelectDevice(node.id, data.device)
+        onSelectEdge?.(null)
         return
       }
-      const node = selectedNodes[0]
-      if (node.type !== 'deviceNode') {
+
+      // Single pipe edge selected on OT layer in Author Mode → show edge properties
+      if (
+        selectedNodes.length === 0 &&
+        selectedEdges.length === 1 &&
+        activeLayer === 'ot' &&
+        !readOnly
+      ) {
         selectedNodeIdRef.current = null
         onSelectDevice(null, null)
+        onSelectEdge?.(selectedEdges[0].id)
         return
       }
-      selectedNodeIdRef.current = node.id
-      const data = node.data as DeviceNodeData
-      onSelectDevice(node.id, data.device)
+
+      // Anything else — clear both panels
+      selectedNodeIdRef.current = null
+      onSelectDevice(null, null)
+      onSelectEdge?.(null)
     },
-    [onSelectDevice]
+    [onSelectDevice, onSelectEdge, activeLayer, readOnly]
   )
 
   const onDragOver = useCallback(
@@ -1025,6 +1045,7 @@ export function ScadaCanvas({
     (deletedNodes: Node[]) => {
       const deletedIds = new Set(deletedNodes.map(n => n.id))
       onSelectDevice(null, null)
+      onSelectEdge?.(null)
       onScenarioChange(prev => {
         if (!prev) return prev
         return {

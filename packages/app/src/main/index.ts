@@ -489,7 +489,7 @@ function createWindow(): void {
     title: 'OTForge',
     backgroundColor: '#1a1a2e',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
@@ -2125,9 +2125,9 @@ function registerIPCHandlers(): void {
         webPreferences: {
           /**
            * terminal-window.ts preload: exposes only terminal/clipboard/on IPC.
-           * In production the compiled output is terminal-window.js (same stem).
+           * Vite 8 / rolldown produces .mjs for ESM preload bundles.
            */
-          preload: join(__dirname, '../preload/terminalWindow.js'),
+          preload: join(__dirname, '../preload/terminalWindow.mjs'),
           contextIsolation: true,
           nodeIntegration: false,
           // sandbox: false is required so the preload can use contextBridge +

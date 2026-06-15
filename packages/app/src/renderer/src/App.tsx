@@ -44,12 +44,14 @@ import type {
   SecurityLayer,
   InstalledPack,
   ResolvedPackDeviceType,
-  RtuConfig
+  RtuConfig,
+  FluidType
 } from '@otforge/schema'
 import { ScadaCanvas } from './canvas/ScadaCanvas'
 import { DevicePalette } from './palette/DevicePalette'
 import { LayerTabBar } from './canvas/LayerTabBar'
 import { PropertiesPanel } from './properties/PropertiesPanel'
+import { EdgePanel } from './properties/EdgePanel'
 import { PlcIdePanel } from './properties/PlcIdePanel'
 import { AttackTerminalModal } from './terminal/AttackTerminalModal'
 import { MonitorPanel } from './monitor/MonitorPanel'
@@ -432,6 +434,8 @@ export default function App() {
   const [scenario, setScenario] = useState<OTForgeScenario | null>(null)
   const [selectedDevice, setSelectedDevice] = useState<DeviceConfig | null>(null)
   const [selectedZone, setSelectedZone] = useState<string | null>(null)
+  /** ID of the currently selected PipeEdge on the OT layer (Author Mode only). */
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [simStatus, setSimStatus] = useState<SimStatus>('idle')
   const [containerStatuses, setContainerStatuses] = useState<ContainerStatus[]>([])
   /**
@@ -765,7 +769,6 @@ export default function App() {
   const handleSelectDevice = useCallback(
     (nodeId: string | null, device: DeviceConfig | null) => {
       setSelectedDevice(device)
-      // Find zone by locating the canvas node in the visual layer
       if (nodeId && scenario) {
         const canvasNode = scenario.visual.nodes.find(n => n.id === nodeId)
         setSelectedZone(canvasNode?.data.zone ?? null)
@@ -775,6 +778,30 @@ export default function App() {
     },
     [scenario]
   )
+
+  /** Records which PipeEdge is selected on the OT canvas. Clears when null. */
+  const handleSelectEdge = useCallback((edgeId: string | null) => {
+    setSelectedEdgeId(edgeId)
+  }, [])
+
+  /**
+   * Persists a fluidType change from EdgePanel to the scenario's visual edge data.
+   * Called when the author picks a substance from the EdgePanel dropdown.
+   */
+  const handleFluidTypeChange = useCallback((edgeId: string, fluidType: FluidType) => {
+    setScenario(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        visual: {
+          ...prev.visual,
+          edges: prev.visual.edges.map(e =>
+            e.id === edgeId ? { ...e, data: { ...e.data, fluidType } } : e
+          )
+        }
+      }
+    })
+  }, [])
 
   /**
    * Applies a scenario update from the canvas (device added, edge added, etc.).
@@ -1689,20 +1716,44 @@ export default function App() {
           packDeviceTypes={allPackDeviceTypes}
           simRunning={simStatus === 'running'}
           onSelectDevice={handleSelectDevice}
+          onSelectEdge={handleSelectEdge}
           onScenarioChange={handleScenarioChange}
           onLayerChange={setActiveLayer}
         />
-        <PropertiesPanel
-          device={selectedDevice}
-          zone={selectedZone}
-          simRunning={simStatus === 'running'}
-          security={scenario?.security ?? null}
-          readOnly={appMode !== 'author'}
-          onDeviceChange={handleDeviceChange}
-          onSecurityChange={handleSecurityChange}
-          onOpenPlcIde={handleOpenPlcIde}
-          onOpenAttackTerminal={handleOpenAttackTerminal}
-        />
+        {/* Right sidebar: EdgePanel when a pipe edge is selected, PropertiesPanel otherwise */}
+        {(() => {
+          const selectedEdge = selectedEdgeId
+            ? scenario?.visual.edges.find(e => e.id === selectedEdgeId)
+            : null
+          if (selectedEdge && selectedDevice === null) {
+            return (
+              <EdgePanel
+                edge={{
+                  edgeId: selectedEdge.id,
+                  protocol: selectedEdge.data.protocol,
+                  label: selectedEdge.data.label,
+                  cableType: selectedEdge.data.cableType,
+                  hasCoilSource: !!selectedEdge.data.coilSource,
+                  fluidType: selectedEdge.data.fluidType
+                }}
+                onFluidTypeChange={handleFluidTypeChange}
+              />
+            )
+          }
+          return (
+            <PropertiesPanel
+              device={selectedDevice}
+              zone={selectedZone}
+              simRunning={simStatus === 'running'}
+              security={scenario?.security ?? null}
+              readOnly={appMode !== 'author'}
+              onDeviceChange={handleDeviceChange}
+              onSecurityChange={handleSecurityChange}
+              onOpenPlcIde={handleOpenPlcIde}
+              onOpenAttackTerminal={handleOpenAttackTerminal}
+            />
+          )
+        })()}
       </div>
       {/*
        * Monitor panel drawer — rendered between workspace and status bar so it

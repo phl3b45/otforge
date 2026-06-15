@@ -1027,6 +1027,35 @@ code.prop-value {
   font-size: 0.7rem;
 }
 
+/* Generic dropdown select for Properties Panel (e.g., EdgePanel fluid type) */
+.prop-select {
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 2px 6px;
+  min-width: 0;
+  flex: 1;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.prop-select:focus {
+  border-color: var(--accent-blue);
+}
+
+/* Hint text below a prop row — supplementary explanation in muted style */
+.prop-hint {
+  font-size: 0.675rem;
+  color: var(--text-muted);
+  margin: 2px 0 0 0;
+  line-height: 1.4;
+}
+
 /* RTU Configuration Panel — dropdown selects and interval input */
 .rtu-select {
   font-size: 0.75rem;

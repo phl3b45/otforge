@@ -2,32 +2,48 @@
  * electron.vite.config.ts — Build configuration for the Electron application.
  *
  * Three compilation targets:
- *   main     — Node.js process (CommonJS, all deps externalized via externalizeDeps)
+ *   main     — Node.js process (externalized deps; no bundling of node_modules)
  *   preload  — Sandboxed Node context (also externalized; no bundling needed)
  *   renderer — Browser/React context (Rolldown-bundled; deps inlined)
  *
- * electron-vite 5.x: externalizeDepsPlugin() was removed; use externalizeDeps: true
- * in the build options instead — it instructs Rolldown to leave Node.js and Electron
- * imports as runtime requires rather than inlining them.
+ * electron-vite 5.x: externalizeDeps: true handles Node.js built-ins correctly.
  *
- * Vite 8.x / electron-vite 5.x: rollupOptions key is unchanged — the public config
- * API was kept stable even though Rolldown is now the internal bundler.
+ * Vite 8.x / Rolldown regression: externalizeDeps: true does NOT externalize
+ * node_modules packages (electron, @electron-toolkit/*, classic-level, etc.).
+ * Rolldown resolves them to absolute file paths before the external check and
+ * then inlines them, breaking __dirname-dependent native module loading.
+ *
+ * Fix: the `external` function in rollupOptions returns true for any import that
+ * is a bare specifier (not a relative path, not a virtual module, not an absolute
+ * path). This covers all node_modules regardless of how rolldown resolves them.
+ *
+ * Output extension: Rolldown produces .mjs for ESM bundles. package.json "main"
+ * and preload path references in src/main/index.ts both use .mjs to match.
  */
 
 import { resolve } from 'path'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
+/**
+ * Returns true for any module ID that should be kept as a runtime external —
+ * i.e., anything that is NOT a relative import, a virtual rolldown module, or
+ * an absolute file-system path. This covers the full node_modules tree and
+ * works around the rolldown regression where externalizeDeps: true is ignored.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const externalAll = (id: string): any =>
+  !id.startsWith('.') &&
+  !id.startsWith('\0') &&
+  !id.startsWith('/') &&
+  !/^[A-Za-z]:/.test(id) // Windows absolute path e.g. C:\...
+
 export default defineConfig({
   main: {
     build: {
-      /**
-       * externalizeDeps: true keeps electron, node:* builtins, and all node_modules
-       * out of the main process bundle — they are loaded at runtime by Node.js, which
-       * is the correct behavior for the Electron main process.
-       */
       externalizeDeps: true,
       rollupOptions: {
+        external: externalAll,
         input: {
           index: resolve(__dirname, 'src/main/index.ts')
         }
@@ -37,12 +53,9 @@ export default defineConfig({
 
   preload: {
     build: {
-      /**
-       * The preload script runs in a privileged context with Node.js access.
-       * Externalizing keeps electron's ipcRenderer/contextBridge as runtime imports.
-       */
       externalizeDeps: true,
       rollupOptions: {
+        external: externalAll,
         input: {
           /** Main app preload — exposes full electronAPI to the React renderer. */
           index: resolve(__dirname, 'src/preload/index.ts'),

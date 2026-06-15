@@ -12,9 +12,22 @@
  *     that applies across both OT and IT layer canvases.
  *
  * Flow state animation (when coilSource is set and simulation is running):
- *   - flowActive === true  → bright green (#22c55e) animated dashes — fluid flowing
+ *   - flowActive === true  → fluid icons travel along the pipe (or green dashes for none)
  *   - flowActive === false → red (#ef4444) solid stroke — flow stopped/blocked
  *   - flowActive undefined → default protocol color, no animation
+ *
+ * Fluid type icons (when fluidType is set on the edge):
+ *   - Always visible: one centered icon when flow is stopped / sim not running.
+ *   - Three traveling icons when flowActive === true, spaced 33% apart along the path.
+ *   - fluidType 'none' (default) keeps the legacy green-dash animation for backwards
+ *     compatibility with scenario files created before this field was introduced.
+ *
+ * Icon shapes (all rendered as inline SVG paths, centered at 0,0):
+ *   electric  — yellow lightning bolt
+ *   water     — blue teardrop
+ *   gas       — gray cloud (also steam, pneumatic air — distinguish by edge label)
+ *   oil       — dark brown teardrop
+ *   chemical  — green teardrop
  *
  * The `coilSource` field identifies which PLC coil drives this pipe's state.
  * ScadaCanvas polls coil states via the `modbus:readCoils` IPC channel and
@@ -31,7 +44,7 @@
  */
 
 import { type EdgeProps, getSmoothStepPath, EdgeLabelRenderer, BaseEdge } from '@xyflow/react'
-import type { Protocol, CableType } from '@otforge/schema'
+import type { Protocol, CableType, FluidType } from '@otforge/schema'
 
 /** Short display labels for each cable type — same table as ProtocolEdge.tsx. */
 const CABLE_LABELS: Record<CableType, string> = {
@@ -94,10 +107,70 @@ const PROTOCOL_LABELS: Partial<Record<Protocol, string>> = {
   mqtt: 'MQTT' // IIoT pub/sub
 }
 
-/** Bright green used when a coil-driven flow is active. */
+/** Bright green used when a coil-driven flow is active (legacy / fluidType 'none'). */
 const FLOW_ACTIVE_COLOR = '#22c55e'
 /** Red used when a coil-driven flow is stopped or blocked. */
 const FLOW_INACTIVE_COLOR = '#ef4444'
+
+/**
+ * Fill color for each fluid type icon.
+ * The icon shape (teardrop / bolt / cloud) is shared; color distinguishes the substance.
+ */
+const FLUID_COLORS: Record<FluidType, string> = {
+  electric: '#facc15', // yellow
+  water: '#38bdf8', // sky blue
+  gas: '#94a3b8', // slate gray
+  oil: '#78350f', // dark brown
+  chemical: '#4ade80', // green
+  none: FLOW_ACTIVE_COLOR // not used directly (falls back to legacy animation)
+}
+
+/**
+ * Render an SVG <g> containing the icon shape for the given fluid type.
+ * The group is centered at (0, 0) so callers can apply any transform.
+ * Size is fixed at ~10 px tall — suitable for placement on a 3 px pipe stroke.
+ *
+ * @param fluidType - Which substance to depict.
+ * @param opacity   - Overall opacity passed through to the group.
+ */
+function FluidIcon({ fluidType, opacity = 1 }: { fluidType: FluidType; opacity?: number }) {
+  const fill = FLUID_COLORS[fluidType] ?? FLOW_ACTIVE_COLOR
+
+  if (fluidType === 'electric') {
+    // Lightning bolt: top-right to centre, then sharp right-pointing spike, back up-right.
+    // viewBox-equivalent: fits within ~12x14 px centered on 0,0.
+    return (
+      <g opacity={opacity}>
+        <path d="M 2,-7 L -2,0 L 1,0 L -2,7 L 6,-1 L 3,-1 Z" fill={fill} stroke="none" />
+      </g>
+    )
+  }
+
+  if (fluidType === 'gas') {
+    // Cloud: three overlapping circles forming a simplified cumulus shape.
+    return (
+      <g opacity={opacity}>
+        <circle cx="-3" cy="1" r="3.5" fill={fill} stroke="none" />
+        <circle cx="3" cy="1" r="3.5" fill={fill} stroke="none" />
+        <circle cx="0" cy="-1.5" r="3" fill={fill} stroke="none" />
+        {/* Bottom bar to close the cloud underside */}
+        <rect x="-6" y="1" width="12" height="3" fill={fill} stroke="none" />
+      </g>
+    )
+  }
+
+  // Teardrop: shared shape for water / oil / chemical.
+  // Pointed at top (–7 px), rounded at bottom (+5 px), ~6 px wide at equator.
+  return (
+    <g opacity={opacity}>
+      <path
+        d="M 0,-7 C -4,-3 -5,1 -5,3 A 5,5 0 1 0 5,3 C 5,1 4,-3 0,-7 Z"
+        fill={fill}
+        stroke="none"
+      />
+    </g>
+  )
+}
 
 export interface PipeEdgeData {
   /** The ICS protocol carried by this pipe connection. */
@@ -123,11 +196,17 @@ export interface PipeEdgeData {
   }
   /**
    * Computed by ScadaCanvas from live Modbus coil polling.
-   *   true  → coil is ON  — render as green flowing animation
+   *   true  → coil is ON  — render as traveling fluid icons (or green dashes for none)
    *   false → coil is OFF — render as solid red (stopped)
    *   undefined → coilSource not set or simulation not running — use protocol color
    */
   flowActive?: boolean
+  /**
+   * Physical substance flowing through this pipe.
+   * When set (and not 'none'), traveling fluid icons replace the legacy green-dash animation.
+   * When absent or 'none', the legacy animation is preserved for backwards compatibility.
+   */
+  fluidType?: FluidType
 }
 
 /** React Flow typed edge record for PipeEdge. */
@@ -160,30 +239,36 @@ export function PipeEdge({
   const edgeData = data as unknown as PipeEdgeData
   const protocol = edgeData?.protocol ?? 'none'
   const isNone = protocol === 'none'
-  const { flowActive, coilSource, cableType } = edgeData ?? {}
+  const { flowActive, coilSource, cableType, fluidType } = edgeData ?? {}
   const cableLabel = cableType ? (CABLE_LABELS[cableType] ?? cableType) : undefined
   const cableColor = cableType ? (CABLE_COLORS[cableType] ?? '#58a6ff') : undefined
 
+  // Whether this edge uses fluid icons instead of the legacy green-dash animation.
+  // 'none' (or absent) means keep the legacy behavior for backwards compatibility.
+  const useFluidIcons = fluidType && fluidType !== 'none'
+
   // Flow state overrides the default protocol color when a coilSource is configured.
-  // The three states give students immediate visual feedback about PLC coil changes:
-  //   green + animated  = process is running (coil ON)
-  //   red + static      = process stopped/blocked (coil OFF)
-  //   protocol color    = no coil binding, normal network topology display
+  // Three states for student feedback:
+  //   flowing     = process running (coil ON)  → fluid icons traveling OR green dashes
+  //   stopped     = flow blocked (coil OFF)    → solid red stroke
+  //   protocol    = no coil binding            → normal protocol color, no animation
   let strokeColor: string
   let flowClass: string
   let strokeDasharray: string | undefined
 
   if (coilSource !== undefined) {
     if (flowActive === true) {
-      strokeColor = FLOW_ACTIVE_COLOR
-      flowClass = 'pipe-edge--active'
-      strokeDasharray = '8 4'
+      // With fluid icons: keep protocol color so the pipe itself doesn't go green.
+      // Without fluid icons: legacy green + animated dashes.
+      strokeColor = useFluidIcons ? (PIPE_COLORS[protocol] ?? '#484f58') : FLOW_ACTIVE_COLOR
+      flowClass = useFluidIcons ? '' : 'pipe-edge--active'
+      strokeDasharray = useFluidIcons ? undefined : '8 4'
     } else if (flowActive === false) {
       strokeColor = FLOW_INACTIVE_COLOR
       flowClass = 'pipe-edge--inactive'
       strokeDasharray = undefined
     } else {
-      // coilSource set but simulation not running — show protocol color, no animation
+      // coilSource set but simulation not running — protocol color, no animation
       strokeColor = PIPE_COLORS[protocol] ?? '#484f58'
       flowClass = ''
       strokeDasharray = undefined
@@ -206,26 +291,26 @@ export function PipeEdge({
   })
 
   // Unique marker IDs so multiple edges don't share the same arrowhead definition.
-  // Two markers per edge:
-  //   markerId      — target-end arrowhead (flow arrives at destination)
-  //   markerIdStart — source-end arrowhead (flow leaves source)
-  // Both use orient="auto" so both tips point in the direction of flow.
   const markerId = `pipe-arrow-${id}`
   const markerIdStart = `pipe-arrow-start-${id}`
+  // ID for the hidden motion path used by <animateMotion> on fluid icon travelers.
+  const motionPathId = `pipe-motion-${id}`
 
   const strokeWidth = 3
   const opacity = isNone ? 0.3 : selected ? 1 : 0.85
   const displayLabel = edgeData?.label ?? (isNone ? '' : (PROTOCOL_LABELS[protocol] ?? protocol))
 
+  // Travel duration for fluid icons — 3 seconds for one full traversal.
+  const travelDuration = '3s'
+  // Icon opacity: slightly transparent so they don't overpower the pipe.
+  const iconOpacity = 0.9
+
   return (
     <>
-      {/* SVG defs: arrowhead markers in the pipe color.
-          Both triangles use the same geometry (M0,0 L0,6 L8,3) so tips point in
-          the path direction. refX="6" for target end places the tip just past the
-          endpoint to account for stroke width; refX="2" for source end anchors
-          the base near the connection handle so the tip shoots forward into the pipe. */}
+      {/* SVG defs: arrowhead markers + hidden motion path for fluid icon animation.
+          Both arrowhead triangles use the same geometry (M0,0 L0,6 L8,3).
+          refX="6" for target end; refX="2" for source end. */}
       <defs>
-        {/* Source-end arrowhead — shows flow leaving the source node */}
         <marker
           id={markerIdStart}
           markerWidth="8"
@@ -237,7 +322,6 @@ export function PipeEdge({
         >
           <path d="M0,0 L0,6 L8,3 z" fill={strokeColor} opacity={opacity} />
         </marker>
-        {/* Target-end arrowhead — shows flow entering the destination node */}
         <marker
           id={markerId}
           markerWidth="8"
@@ -249,9 +333,13 @@ export function PipeEdge({
         >
           <path d="M0,0 L0,6 L8,3 z" fill={strokeColor} opacity={opacity} />
         </marker>
+        {/* Hidden duplicate of the edge path — <animateMotion> references this via mpath.
+            The visible pipe is rendered by BaseEdge; this copy is display:none so it
+            provides motion geometry without adding an extra visible stroke. */}
+        {useFluidIcons && <path id={motionPathId} d={edgePath} style={{ display: 'none' }} />}
       </defs>
 
-      {/* Pipe body using BaseEdge for React Flow's built-in interaction handling */}
+      {/* Pipe body */}
       <BaseEdge
         id={id}
         path={edgePath}
@@ -266,10 +354,45 @@ export function PipeEdge({
         className={`pipe-edge${isNone ? ' pipe-edge--none' : ''}${flowClass ? ` ${flowClass}` : ''}`}
       />
 
+      {/* Fluid icons — only rendered when fluidType is set and not 'none' */}
+      {useFluidIcons && fluidType && (
+        <>
+          {flowActive === true ? (
+            // Active flow: three icons travel along the path, each offset by 1/3 of the duration.
+            // begin="0s" / "1s" / "2s" with dur="3s" means they are perpetually 33% apart.
+            <>
+              <g>
+                <FluidIcon fluidType={fluidType} opacity={iconOpacity} />
+                <animateMotion dur={travelDuration} repeatCount="indefinite" begin="0s">
+                  <mpath href={`#${motionPathId}`} />
+                </animateMotion>
+              </g>
+              <g>
+                <FluidIcon fluidType={fluidType} opacity={iconOpacity} />
+                <animateMotion dur={travelDuration} repeatCount="indefinite" begin="1s">
+                  <mpath href={`#${motionPathId}`} />
+                </animateMotion>
+              </g>
+              <g>
+                <FluidIcon fluidType={fluidType} opacity={iconOpacity} />
+                <animateMotion dur={travelDuration} repeatCount="indefinite" begin="2s">
+                  <mpath href={`#${motionPathId}`} />
+                </animateMotion>
+              </g>
+            </>
+          ) : (
+            // Stopped / no simulation: one static icon at the pipe midpoint.
+            // Shows what's in the pipe even when nothing is flowing.
+            <g transform={`translate(${labelX}, ${labelY})`}>
+              <FluidIcon fluidType={fluidType} opacity={0.6} />
+            </g>
+          )}
+        </>
+      )}
+
       {/* Protocol + cable label chips — only shown for named protocols */}
       {!isNone && displayLabel && (
         <EdgeLabelRenderer>
-          {/* Cable type chip — shown above the protocol chip when a cable is set */}
           {cableType && cableLabel && cableColor && (
             <div
               className="cable-type-chip"
@@ -284,7 +407,6 @@ export function PipeEdge({
               {cableLabel}
             </div>
           )}
-          {/* Protocol chip — shifted slightly down when a cable chip is also present */}
           <div
             className={`pipe-edge-label${selected ? ' selected' : ''}`}
             style={{

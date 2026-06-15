@@ -2,7 +2,7 @@
   "name": "@otforge/app",
   "version": "0.1.0",
   "private": true,
-  "main": "./out/main/index.js",
+  "main": "./out/main/index.mjs",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build && electron-builder",
