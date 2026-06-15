@@ -1458,8 +1458,8 @@ export default function App() {
             )}
             {/*
              * Attack Machine — four visual states:
-             *   idle (no machine)  → "+ Attack Machine" teal outline — click to add
-             *   idle (has machine) → "⚔ Attack Ready" solid teal — click to remove
+             *   idle (no machine)  → "Add Attack Machine" teal outline — click to add
+             *   idle (has machine) → "Remove Attack Machine" solid teal — click to remove
              *   running (ready)    → "⚔ Kali Terminal" solid teal — click to open terminal
              *   running (launched) → "⚔ Kali Terminal" solid red — click to re-open
              */}
@@ -1496,7 +1496,7 @@ export default function App() {
                       : 'Add a Kali Linux attack machine to this scenario'
                   }
                 >
-                  {hasAttackMachine ? '⚔ Attack Ready' : '+ Attack Machine'}
+                  {hasAttackMachine ? 'Remove Attack Machine' : 'Add Attack Machine'}
                 </button>
               )
             )}
