@@ -139,16 +139,17 @@ This folder is created automatically when you clone the repository. When your in
 
 **Windows (PowerShell in `C:\OTForge`):**
 ```powershell
-git pull
+.\get-updates.ps1
 npm run dev
 ```
-Do **not** run `npm ci` on updates — it wipes `node_modules` and breaks the Electron installation. Only run `npm ci` once during initial setup.
 
 **macOS (Terminal in `~/OTForge`):**
 ```bash
 bash get-updates.sh
+npm run dev
 ```
-The script handles resetting `package-lock.json`, pulling, reinstalling, and rebuilding automatically. Then run `npm run dev`.
+
+> The update scripts handle resetting package files, pulling the latest changes, reinstalling dependencies, and rebuilding automatically. Do **not** run `git pull` directly — it will conflict with platform-specific files that npm rewrites during installation.
 
 ---
 
@@ -238,7 +239,7 @@ New-NetFirewallRule `
 | Navigate to OTForge | `cd C:\OTForge` | `cd ~/OTForge` |
 | Launch OTForge | `npm run dev` | `npm run dev` |
 | Scenarios folder | `C:\OTForge\scenarios\` | `~/OTForge/scenarios/` |
-| Get updates | `git pull && npm run dev` | `bash get-updates.sh` |
+| Get updates | `.\get-updates.ps1` then `npm run dev` | `bash get-updates.sh` then `npm run dev` |
 
 ---
 
