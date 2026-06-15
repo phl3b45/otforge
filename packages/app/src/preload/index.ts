@@ -640,7 +640,9 @@ const api = {
      * @param cb - Callback receiving { pulling: boolean }
      * @returns Unsubscribe function — call in useEffect cleanup.
      */
-    simulationPullStatus: (cb: (status: { pulling: boolean }) => void) => {
+    simulationPullStatus: (
+      cb: (status: { pulling: boolean; type?: 'import' | 'update' }) => void
+    ) => {
       ipcRenderer.on('simulation:pullStatus', (_event, status) => cb(status))
       return () => ipcRenderer.removeAllListeners('simulation:pullStatus')
     },

@@ -845,9 +845,10 @@ function registerIPCHandlers(): void {
         const result = await dockerClient.startScenario(
           projectName,
           composeYaml,
-          // onPullNeeded: fires only when Docker is actually downloading layers
-          () => {
-            mainWindow?.webContents.send('simulation:pullStatus', { pulling: true })
+          // onPullNeeded: fires only when Docker is actually downloading layers;
+          // type is 'import' (image missing locally) or 'update' (image present, new digest)
+          (type: 'import' | 'update') => {
+            mainWindow?.webContents.send('simulation:pullStatus', { pulling: true, type })
           },
           // onProgress: stream each output line to the renderer overlay
           (line: string) => {

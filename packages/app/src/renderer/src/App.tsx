@@ -486,6 +486,8 @@ export default function App() {
    * Reset automatically when simStatus leaves 'starting'.
    */
   const [pullActive, setPullActive] = useState<boolean>(false)
+  /** 'import' = image not present locally; 'update' = image present but new digest available. */
+  const [pullType, setPullType] = useState<'import' | 'update'>('import')
   /** Most recent output line from docker compose during a pull — shown in the overlay. */
   const [pullProgress, setPullProgress] = useState<string>('')
 
@@ -574,8 +576,9 @@ export default function App() {
     // is not cached locally and a docker compose up will trigger a pull.
     // We show the "Importing Containers" overlay so the user knows a long operation
     // is in progress rather than seeing the app appear to hang.
-    const unsubPull = window.electronAPI.on.simulationPullStatus(({ pulling }) => {
+    const unsubPull = window.electronAPI.on.simulationPullStatus(({ pulling, type }) => {
       setPullActive(pulling)
+      if (type) setPullType(type)
       if (!pulling) setPullProgress('')
     })
 
@@ -606,6 +609,7 @@ export default function App() {
     if (simStatus !== 'starting') {
       setPullActive(false)
       setPullProgress('')
+      setPullType('import')
     }
   }, [simStatus])
 
@@ -1841,11 +1845,15 @@ export default function App() {
           <div className="pull-overlay-card">
             <div className="pull-spinner" aria-hidden="true" />
             <div className="pull-overlay-text">
-              <strong>Importing Images</strong>
+              <strong>
+                {pullType === 'update' ? 'Updating Containers' : 'Importing Containers'}
+              </strong>
               <p>
-                Downloading container images. This may take a few minutes
+                {pullType === 'update'
+                  ? 'Downloading updated container images.'
+                  : 'Downloading container images for the first time.'}{' '}
                 <br />
-                depending on your connection speed.
+                This may take a few minutes depending on your connection speed.
               </p>
               {pullProgress && <p className="pull-progress-line">{pullProgress}</p>}
             </div>
