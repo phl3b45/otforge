@@ -17,8 +17,5 @@ packages/app/src/renderer/dist
 #   curl -fsSL https://github.com/thiagoralves/OpenPLC_v3/archive/refs/heads/master.tar.gz \
 #     | tar -xz --strip-components=1 -C containers/openplc/openplc-src
 containers/openplc/openplc-src/
-# Old tutorial filenames from before the rename — no longer tracked.
-scenarios/tutorial-01-modbus-coil-write.otflab
-scenarios/tutorial-02-scenario-builder.otflab
 # Test coverage reports — generated artifacts, not committed.
 packages/orchestrator/coverage/
