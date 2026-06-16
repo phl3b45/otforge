@@ -414,14 +414,14 @@ npm run dev</code></pre>
   <!-- ── Getting Updates ── -->
   <h2 id="updating">Getting Updates</h2>
 
-  <p class="platform-label">Windows &mdash; PowerShell (from <code>C:\OTForge</code>)</p>
+  <p>Run these two commands from your OTForge folder &mdash; same on Windows and macOS:</p>
 <pre><code>git pull
 npm run dev</code></pre>
-  <p>Do <strong>not</strong> run <code>npm ci</code> on updates &mdash; it wipes <code>node_modules</code> and breaks the Electron installation. Only run <code>npm ci</code> once during initial setup.</p>
+  <p><code>git pull</code> downloads the latest code. <code>npm run dev</code> rebuilds and relaunches automatically &mdash; nothing else needed.</p>
 
-  <p class="platform-label">macOS &mdash; Terminal (from <code>~/OTForge</code>)</p>
-<pre><code>bash get-updates.sh</code></pre>
-  <p>The script handles resetting <code>package-lock.json</code>, pulling, reinstalling, and rebuilding automatically. Then run <code>npm run dev</code>.</p>
+  <blockquote class="note">
+    <p><strong>If your instructor announces that new packages were added</strong>, run <code>.\get-updates.ps1</code> (Windows) or <code>bash get-updates.sh</code> (macOS) instead of <code>git pull</code>. This is rare &mdash; most updates are source-code only and need nothing more than <code>git pull</code>.</p>
+  </blockquote>
 
   <hr>
 
@@ -529,7 +529,7 @@ npm run dev</code></pre>
         <tr><td>Navigate to OTForge</td><td><code>cd C:\OTForge</code></td><td><code>cd ~/OTForge</code></td></tr>
         <tr><td>Launch OTForge</td><td><code>npm run dev</code></td><td><code>npm run dev</code></td></tr>
         <tr><td>Scenarios folder</td><td><code>C:\OTForge\scenarios\</code></td><td><code>~/OTForge/scenarios/</code></td></tr>
-        <tr><td>Get updates</td><td><code>git pull &amp;&amp; npm run dev</code></td><td><code>bash get-updates.sh</code></td></tr>
+        <tr><td>Get updates</td><td><code>git pull</code> then <code>npm run dev</code></td><td><code>git pull</code> then <code>npm run dev</code></td></tr>
       </tbody>
     </table>
   </div>
