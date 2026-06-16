@@ -137,19 +137,16 @@ This folder is created automatically when you clone the repository. When your in
 
 ## Getting Updates
 
-**Windows (PowerShell in `C:\OTForge`):**
-```powershell
-.\get-updates.ps1
+Run these two commands from your OTForge folder — same on Windows and macOS:
+
+```
+git pull
 npm run dev
 ```
 
-**macOS (Terminal in `~/OTForge`):**
-```bash
-bash get-updates.sh
-npm run dev
-```
+That's it. `git pull` downloads the latest code and `npm run dev` rebuilds and relaunches the app automatically.
 
-> The update scripts handle resetting package files, pulling the latest changes, reinstalling dependencies, and rebuilding automatically. Do **not** run `git pull` directly — it will conflict with platform-specific files that npm rewrites during installation.
+> **If your instructor announces that new packages were added**, run `.\get-updates.ps1` (Windows) or `bash get-updates.sh` (macOS) instead of `git pull`. This is rare — most updates are source-code only and need nothing more than `git pull`.
 
 ---
 
@@ -239,7 +236,7 @@ New-NetFirewallRule `
 | Navigate to OTForge | `cd C:\OTForge` | `cd ~/OTForge` |
 | Launch OTForge | `npm run dev` | `npm run dev` |
 | Scenarios folder | `C:\OTForge\scenarios\` | `~/OTForge/scenarios/` |
-| Get updates | `.\get-updates.ps1` then `npm run dev` | `bash get-updates.sh` then `npm run dev` |
+| Get updates | `git pull` then `npm run dev` | `git pull` then `npm run dev` |
 
 ---
 
