@@ -151,6 +151,15 @@ export interface CanvasEdge {
   id: string
   source: string // node id
   target: string // node id
+  /**
+   * Optional React Flow handle overrides. When set, these take precedence over the
+   * automatic bestHandles() computation in scenarioToEdges so that specific edges can
+   * be routed to a non-default side of a node (e.g., top/bottom arcs to avoid routing
+   * through intermediate nodes). Must match the handle `id` props on DeviceNode
+   * (s-top, s-bottom, s-left, s-right for source; t-top, t-bottom, t-left, t-right for target).
+   */
+  sourceHandle?: string
+  targetHandle?: string
   data: {
     protocol: Protocol
     label?: string

@@ -522,10 +522,16 @@ function scenarioToEdges(
   return scenario.visual.edges
     .filter(ce => layerNodeIds.has(ce.source) && layerNodeIds.has(ce.target))
     .map(ce => {
-      const { sourceHandle, targetHandle } = bestHandles(
+      // Use explicit handles from the scenario JSON when present; fall back to automatic
+      // bestHandles() computation. Explicit handles are needed when the auto-computed
+      // path would route through intermediate nodes (e.g., a long backward edge that
+      // crosses other devices). See CanvasEdge.sourceHandle / targetHandle in schema.
+      const auto = bestHandles(
         nodePositions.get(ce.source) ?? { x: 0, y: 0 },
         nodePositions.get(ce.target) ?? { x: 0, y: 0 }
       )
+      const sourceHandle = ce.sourceHandle ?? auto.sourceHandle
+      const targetHandle = ce.targetHandle ?? auto.targetHandle
       return {
         id: ce.id,
         source: ce.source,
