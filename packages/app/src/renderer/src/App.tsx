@@ -804,6 +804,61 @@ export default function App() {
   }, [])
 
   /**
+   * Persists a label change from EdgePanel to the scenario's visual edge data.
+   * An empty string removes the label field from the edge.
+   */
+  const handleEdgeLabelChange = useCallback((edgeId: string, label: string) => {
+    setScenario(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        visual: {
+          ...prev.visual,
+          edges: prev.visual.edges.map(e => {
+            if (e.id !== edgeId) return e
+            const data = { ...e.data }
+            if (label) {
+              data.label = label
+            } else {
+              delete data.label
+            }
+            return { ...e, data }
+          })
+        }
+      }
+    })
+  }, [])
+
+  /**
+   * Persists a coilSource change from EdgePanel to the scenario's visual edge data.
+   * Passing null removes the coilSource binding entirely.
+   */
+  const handleCoilSourceChange = useCallback(
+    (edgeId: string, coilSource: { nodeId: string; coilIndex: number } | null) => {
+      setScenario(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          visual: {
+            ...prev.visual,
+            edges: prev.visual.edges.map(e => {
+              if (e.id !== edgeId) return e
+              const data = { ...e.data }
+              if (coilSource) {
+                data.coilSource = coilSource
+              } else {
+                delete data.coilSource
+              }
+              return { ...e, data }
+            })
+          }
+        }
+      })
+    },
+    []
+  )
+
+  /**
    * Applies a scenario update from the canvas (device added, edge added, etc.).
    * Uses an updater function pattern so changes can be based on the previous state.
    */
@@ -1733,10 +1788,12 @@ export default function App() {
                   protocol: selectedEdge.data.protocol,
                   label: selectedEdge.data.label,
                   cableType: selectedEdge.data.cableType,
-                  hasCoilSource: !!selectedEdge.data.coilSource,
+                  coilSource: selectedEdge.data.coilSource,
                   fluidType: selectedEdge.data.fluidType
                 }}
                 onFluidTypeChange={handleFluidTypeChange}
+                onLabelChange={handleEdgeLabelChange}
+                onCoilSourceChange={handleCoilSourceChange}
               />
             )
           }

@@ -487,35 +487,65 @@ function scenarioToNodes(scenario: OTForgeScenario, activeLayer: NetworkZone): D
  * OT layer → PipeEdgeType (orthogonal P&ID routing)
  * All other layers → ProtocolEdgeType (bezier curves)
  */
+
+/**
+ * Picks the best source/target handle IDs based on which axis dominates between
+ * the two nodes. Handle IDs must match the `id` props on DeviceNode's Handles.
+ * This is called both when loading edges from the scenario and when creating new
+ * edges via two-click, so every edge is routed to the geometrically nearest side.
+ */
+export function bestHandles(
+  srcPos: { x: number; y: number },
+  tgtPos: { x: number; y: number }
+): { sourceHandle: string; targetHandle: string } {
+  const dx = tgtPos.x - srcPos.x
+  const dy = tgtPos.y - srcPos.y
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0
+      ? { sourceHandle: 's-right', targetHandle: 't-left' }
+      : { sourceHandle: 's-left', targetHandle: 't-right' }
+  } else {
+    return dy >= 0
+      ? { sourceHandle: 's-bottom', targetHandle: 't-top' }
+      : { sourceHandle: 's-top', targetHandle: 't-bottom' }
+  }
+}
+
 function scenarioToEdges(
   scenario: OTForgeScenario,
   activeLayer: NetworkZone,
   layerNodeIds: Set<string>
 ): (ProtocolEdgeType | PipeEdgeType)[] {
   const edgeType = activeLayer === 'ot' ? ('pipeEdge' as const) : ('protocolEdge' as const)
+  const nodePositions = new Map(scenario.visual.nodes.map(n => [n.id, n.position]))
+
   return scenario.visual.edges
     .filter(ce => layerNodeIds.has(ce.source) && layerNodeIds.has(ce.target))
-    .map(ce => ({
-      id: ce.id,
-      source: ce.source,
-      target: ce.target,
-      type: edgeType,
-      data: {
-        protocol: ce.data.protocol,
-        ...(ce.data.label !== undefined ? { label: ce.data.label } : {}),
-        // Pass optional cable type through to the edge component for chip rendering.
-        ...(ce.data.cableType !== undefined ? { cableType: ce.data.cableType } : {}),
-        // Pass fluid type through to PipeEdge so it renders substance-specific icons.
-        ...(activeLayer === 'ot' && ce.data.fluidType !== undefined
-          ? { fluidType: ce.data.fluidType }
-          : {}),
-        // Pass coilSource through to PipeEdge so the ScadaCanvas polling loop
-        // knows which PLC coil drives this edge's flow-state animation.
-        ...(activeLayer === 'ot' && ce.data.coilSource !== undefined
-          ? { coilSource: ce.data.coilSource }
-          : {})
+    .map(ce => {
+      const { sourceHandle, targetHandle } = bestHandles(
+        nodePositions.get(ce.source) ?? { x: 0, y: 0 },
+        nodePositions.get(ce.target) ?? { x: 0, y: 0 }
+      )
+      return {
+        id: ce.id,
+        source: ce.source,
+        target: ce.target,
+        sourceHandle,
+        targetHandle,
+        type: edgeType,
+        data: {
+          protocol: ce.data.protocol,
+          ...(ce.data.label !== undefined ? { label: ce.data.label } : {}),
+          ...(ce.data.cableType !== undefined ? { cableType: ce.data.cableType } : {}),
+          ...(activeLayer === 'ot' && ce.data.fluidType !== undefined
+            ? { fluidType: ce.data.fluidType }
+            : {}),
+          ...(activeLayer === 'ot' && ce.data.coilSource !== undefined
+            ? { coilSource: ce.data.coilSource }
+            : {})
+        }
       }
-    }))
+    })
 }
 
 interface ScadaCanvasProps {
@@ -1396,10 +1426,17 @@ export function ScadaCanvas({
         ...(pendingConnection.cableType ? { cableType: pendingConnection.cableType } : {}),
         ...(pendingConnection.fluidType ? { fluidType: pendingConnection.fluidType } : {})
       }
+      const srcNode = nodes.find(n => n.id === pendingConnection.sourceId)
+      const { sourceHandle, targetHandle } = bestHandles(
+        srcNode?.position ?? { x: 0, y: 0 },
+        node.position
+      )
       const newEdge: Edge = {
         id: `${pendingConnection.sourceId}-${node.id}-${Date.now()}`,
         source: pendingConnection.sourceId,
         target: node.id,
+        sourceHandle,
+        targetHandle,
         type: edgeType,
         data: edgeData
       }

@@ -139,20 +139,30 @@ export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps
           boxShadow: selected ? `0 0 0 2px ${zoneColor}` : 'none'
         }}
       >
-        {/* Target handles on all four sides — React Flow picks the nearest one automatically */}
+        {/* Target handles — one per side, each with a stable ID so ScadaCanvas can
+            compute the correct targetHandle string based on relative node positions. */}
         <Handle
+          id="t-top"
           type="target"
           position={Position.Top}
           style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
         />
         <Handle
+          id="t-left"
           type="target"
           position={Position.Left}
           style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
         />
         <Handle
+          id="t-right"
           type="target"
           position={Position.Right}
+          style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
+        />
+        <Handle
+          id="t-bottom"
+          type="target"
+          position={Position.Bottom}
           style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
         />
 
@@ -198,20 +208,29 @@ export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps
           )}
         </div>
 
-        {/* Source handles on all four sides — React Flow picks the nearest one automatically */}
+        {/* Source handles — one per side with stable IDs. */}
         <Handle
+          id="s-top"
           type="source"
-          position={Position.Bottom}
+          position={Position.Top}
           style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
         />
         <Handle
+          id="s-left"
           type="source"
           position={Position.Left}
           style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
         />
         <Handle
+          id="s-right"
           type="source"
           position={Position.Right}
+          style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
+        />
+        <Handle
+          id="s-bottom"
+          type="source"
+          position={Position.Bottom}
           style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
         />
       </div>
