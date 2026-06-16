@@ -6,8 +6,9 @@
  *   - The device's ISA-5.1 icon (from DeviceIcons.tsx), colored by zone
  *   - A label (device category name, e.g., "PLC", "Pump")
  *   - The device's static IP address
- *   - A top Handle (connection target) and bottom Handle (connection source)
- *     for drawing protocol edges between devices
+ *   - Handles on all four sides so edges can approach from any direction.
+ *     React Flow automatically picks the nearest handle pair, so PLC→Valve
+ *     routes to the left side of the valve while Tank→Valve routes to the top.
  *
  * Visual feedback:
  *   - Border color matches the device's zone (OT=teal, IT=blue, DMZ=gold, External=red)
@@ -138,10 +139,30 @@ export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps
           boxShadow: selected ? `0 0 0 2px ${zoneColor}` : 'none'
         }}
       >
-        {/* Incoming connection handle — positioned at the top of the node */}
+        {/* Target handles — one per side, each with a stable ID so ScadaCanvas can
+            compute the correct targetHandle string based on relative node positions. */}
         <Handle
+          id="t-top"
           type="target"
           position={Position.Top}
+          style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
+        />
+        <Handle
+          id="t-left"
+          type="target"
+          position={Position.Left}
+          style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
+        />
+        <Handle
+          id="t-right"
+          type="target"
+          position={Position.Right}
+          style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
+        />
+        <Handle
+          id="t-bottom"
+          type="target"
+          position={Position.Bottom}
           style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
         />
 
@@ -187,8 +208,27 @@ export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps
           )}
         </div>
 
-        {/* Outgoing connection handle — positioned at the bottom of the node */}
+        {/* Source handles — one per side with stable IDs. */}
         <Handle
+          id="s-top"
+          type="source"
+          position={Position.Top}
+          style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
+        />
+        <Handle
+          id="s-left"
+          type="source"
+          position={Position.Left}
+          style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
+        />
+        <Handle
+          id="s-right"
+          type="source"
+          position={Position.Right}
+          style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}
+        />
+        <Handle
+          id="s-bottom"
           type="source"
           position={Position.Bottom}
           style={{ background: zoneColor, border: 'none', width: 8, height: 8 }}

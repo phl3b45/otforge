@@ -300,6 +300,11 @@ export function PipeEdge({
   const opacity = isNone ? 0.3 : selected ? 1 : 0.85
   const displayLabel = edgeData?.label ?? (isNone ? '' : (PROTOCOL_LABELS[protocol] ?? protocol))
 
+  // For horizontal edges the label sits on the pipe stroke, so push it above.
+  // For vertical edges the label crossing through the line is acceptable (no offset).
+  const isHorizontalDominant = Math.abs(targetX - sourceX) >= Math.abs(targetY - sourceY)
+  const labelOffsetY = isHorizontalDominant ? -16 : 0
+
   // Travel duration for fluid icons — 3 seconds for one full traversal.
   const travelDuration = '3s'
   // Icon opacity: slightly transparent so they don't overpower the pipe.
@@ -398,7 +403,7 @@ export function PipeEdge({
               className="cable-type-chip"
               style={{
                 position: 'absolute',
-                transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY - 20}px)`,
+                transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + labelOffsetY - 20}px)`,
                 borderColor: cableColor,
                 color: cableColor,
                 pointerEvents: 'all'
@@ -411,7 +416,7 @@ export function PipeEdge({
             className={`pipe-edge-label${selected ? ' selected' : ''}`}
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + (cableType ? 8 : 0)}px)`,
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + labelOffsetY + (cableType ? 8 : 0)}px)`,
               borderColor: strokeColor,
               color: strokeColor,
               pointerEvents: 'all'

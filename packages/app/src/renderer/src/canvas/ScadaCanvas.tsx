@@ -29,12 +29,14 @@ import {
   Controls,
   MiniMap,
   addEdge,
+  reconnectEdge,
   useNodesState,
   useEdgesState,
   BackgroundVariant,
   type NodeTypes,
   type EdgeTypes,
   type OnConnect,
+  type Connection,
   type Node,
   type Edge,
   type ReactFlowInstance,
@@ -49,6 +51,7 @@ import type {
   DeviceConfig,
   Protocol,
   CableType,
+  FluidType,
   RtuConfig,
   SiteRegion
 } from '@otforge/schema'
@@ -87,6 +90,20 @@ const CONNECTION_OPTIONS: { protocol: Protocol; label: string; color: string }[]
   { protocol: 'iec61850', label: 'IEC 61850', color: '#a371f7' },
   { protocol: 'mqtt', label: 'MQTT', color: '#e87040' },
   { protocol: 'none', label: 'Unspecified / Ethernet', color: '#484f58' }
+]
+
+/**
+ * Fluid type options shown in the "Fluid Type" section of the OT-layer connection menu.
+ * Selecting a fluid type is OPTIONAL — the pipe is created regardless.
+ * When a fluid type is pre-selected, it is stored on the edge and drives the animated
+ * substance icons in PipeEdge.tsx once the simulation is running.
+ */
+const FLUID_OPTIONS: { fluid: FluidType; label: string; color: string }[] = [
+  { fluid: 'water', label: 'Water / Process Water', color: '#38bdf8' },
+  { fluid: 'oil', label: 'Oil / Hydraulic Fluid', color: '#78350f' },
+  { fluid: 'gas', label: 'Gas / Steam / Pneumatic Air', color: '#94a3b8' },
+  { fluid: 'chemical', label: 'Chemical / Reagent', color: '#4ade80' },
+  { fluid: 'electric', label: 'Electrical Signal / Power', color: '#facc15' }
 ]
 
 /**
@@ -136,6 +153,24 @@ interface ContextMenuState {
    * Carried into PendingConnectionState when the user then clicks a protocol item.
    */
   pendingCable?: CableType
+  /**
+   * Fluid type pre-selected from the Fluid Type section of the OT-layer menu.
+   * Carried into PendingConnectionState when the user clicks a protocol item.
+   * Drives the animated substance icons on the resulting PipeEdge.
+   */
+  pendingFluid?: FluidType
+  /**
+   * When true, the context menu renders its "Freehand Connection" sub-view instead
+   * of the normal protocol/cable list. The user types a custom label, picks any
+   * fluid type, then clicks "Draw Freehand" to start the edge — no Purdue-model
+   * validation is applied when they click the target node.
+   */
+  freehandMode?: boolean
+  /**
+   * Custom label text typed by the user in freehand mode.
+   * Written into the resulting edge's data.label field.
+   */
+  pendingLabel?: string
 }
 
 /**
@@ -153,6 +188,22 @@ interface PendingConnectionState {
    * Undefined when the user only selected a protocol without choosing a cable.
    */
   cableType?: CableType
+  /**
+   * Fluid type pre-selected from the OT-layer menu (optional).
+   * Written into the new PipeEdge's data.fluidType field.
+   */
+  fluidType?: FluidType
+  /**
+   * When true, Purdue-model / connection-rules validation is skipped entirely.
+   * The user can connect any two nodes on the canvas with any fluid type and label.
+   * Set by the "Draw Freehand Connection" option in the right-click context menu.
+   */
+  freehand?: boolean
+  /**
+   * Custom label text supplied in freehand mode.
+   * Written into the resulting edge's data.label field verbatim.
+   */
+  freeLabel?: string
 }
 
 /** Registration map: React Flow node type key → component. */
@@ -461,31 +512,71 @@ function scenarioToNodes(scenario: OTForgeScenario, activeLayer: NetworkZone): D
  * OT layer → PipeEdgeType (orthogonal P&ID routing)
  * All other layers → ProtocolEdgeType (bezier curves)
  */
+
+/**
+ * Picks the best source/target handle IDs based on which axis dominates between
+ * the two nodes. Handle IDs must match the `id` props on DeviceNode's Handles.
+ * This is called both when loading edges from the scenario and when creating new
+ * edges via two-click, so every edge is routed to the geometrically nearest side.
+ */
+export function bestHandles(
+  srcPos: { x: number; y: number },
+  tgtPos: { x: number; y: number }
+): { sourceHandle: string; targetHandle: string } {
+  const dx = tgtPos.x - srcPos.x
+  const dy = tgtPos.y - srcPos.y
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0
+      ? { sourceHandle: 's-right', targetHandle: 't-left' }
+      : { sourceHandle: 's-left', targetHandle: 't-right' }
+  } else {
+    return dy >= 0
+      ? { sourceHandle: 's-bottom', targetHandle: 't-top' }
+      : { sourceHandle: 's-top', targetHandle: 't-bottom' }
+  }
+}
+
 function scenarioToEdges(
   scenario: OTForgeScenario,
   activeLayer: NetworkZone,
   layerNodeIds: Set<string>
 ): (ProtocolEdgeType | PipeEdgeType)[] {
   const edgeType = activeLayer === 'ot' ? ('pipeEdge' as const) : ('protocolEdge' as const)
+  const nodePositions = new Map(scenario.visual.nodes.map(n => [n.id, n.position]))
+
   return scenario.visual.edges
     .filter(ce => layerNodeIds.has(ce.source) && layerNodeIds.has(ce.target))
-    .map(ce => ({
-      id: ce.id,
-      source: ce.source,
-      target: ce.target,
-      type: edgeType,
-      data: {
-        protocol: ce.data.protocol,
-        ...(ce.data.label !== undefined ? { label: ce.data.label } : {}),
-        // Pass optional cable type through to the edge component for chip rendering.
-        ...(ce.data.cableType !== undefined ? { cableType: ce.data.cableType } : {}),
-        // Pass coilSource through to PipeEdge so the ScadaCanvas polling loop
-        // knows which PLC coil drives this edge's flow-state animation.
-        ...(activeLayer === 'ot' && ce.data.coilSource !== undefined
-          ? { coilSource: ce.data.coilSource }
-          : {})
+    .map(ce => {
+      // Use explicit handles from the scenario JSON when present; fall back to automatic
+      // bestHandles() computation. Explicit handles are needed when the auto-computed
+      // path would route through intermediate nodes (e.g., a long backward edge that
+      // crosses other devices). See CanvasEdge.sourceHandle / targetHandle in schema.
+      const auto = bestHandles(
+        nodePositions.get(ce.source) ?? { x: 0, y: 0 },
+        nodePositions.get(ce.target) ?? { x: 0, y: 0 }
+      )
+      const sourceHandle = ce.sourceHandle ?? auto.sourceHandle
+      const targetHandle = ce.targetHandle ?? auto.targetHandle
+      return {
+        id: ce.id,
+        source: ce.source,
+        target: ce.target,
+        sourceHandle,
+        targetHandle,
+        type: edgeType,
+        data: {
+          protocol: ce.data.protocol,
+          ...(ce.data.label !== undefined ? { label: ce.data.label } : {}),
+          ...(ce.data.cableType !== undefined ? { cableType: ce.data.cableType } : {}),
+          ...(activeLayer === 'ot' && ce.data.fluidType !== undefined
+            ? { fluidType: ce.data.fluidType }
+            : {}),
+          ...(activeLayer === 'ot' && ce.data.coilSource !== undefined
+            ? { coilSource: ce.data.coilSource }
+            : {})
+        }
       }
-    }))
+    })
 }
 
 interface ScadaCanvasProps {
@@ -924,7 +1015,14 @@ export function ScadaCanvas({
         : deviceNodes)
     ]
     setNodes(allNodes)
-    setEdges(scenarioToEdges(scenario, activeLayer, layerNodeIds) as Edge[])
+    // Mark every edge as reconnectable so the user can drag endpoints to reroute
+    // connections without having to delete and recreate them (read-only mode excluded).
+    setEdges(
+      (scenarioToEdges(scenario, activeLayer, layerNodeIds) as Edge[]).map(e => ({
+        ...e,
+        reconnectable: !readOnly
+      }))
+    )
     // Only re-fit when the active layer tab changes — not on every node/edge mutation.
     // Scenario edits (drops, drags, connections) must not re-center the viewport.
     if (prevLayerRef.current !== activeLayer) {
@@ -1235,7 +1333,7 @@ export function ScadaCanvas({
   /**
    * Called when the user picks a protocol from the right-click context menu.
    * Transitions from "menu open" to "awaiting target click" mode, carrying the
-   * optional pre-selected cable type into the pending connection state.
+   * optional pre-selected cable type and fluid type into the pending connection state.
    * The canvas cursor changes to a crosshair (via .connecting CSS class) to
    * signal that the next node click will complete the connection.
    */
@@ -1245,7 +1343,8 @@ export function ScadaCanvas({
       setPendingConnection({
         sourceId: contextMenu.nodeId,
         protocol,
-        cableType: contextMenu.pendingCable
+        cableType: contextMenu.pendingCable,
+        fluidType: contextMenu.pendingFluid
       })
       setContextMenu(null)
     },
@@ -1262,6 +1361,51 @@ export function ScadaCanvas({
       prev ? { ...prev, pendingCable: prev.pendingCable === cable ? undefined : cable } : null
     )
   }, [])
+
+  /**
+   * Toggles the pre-selected fluid type in the open OT-layer context menu.
+   * Clicking an already-selected fluid deselects it (undefined = no fluid icon).
+   * The menu stays open so the user can select a fluid AND THEN click a protocol.
+   */
+  const selectFluid = useCallback((fluid: FluidType) => {
+    setContextMenu(prev =>
+      prev ? { ...prev, pendingFluid: prev.pendingFluid === fluid ? undefined : fluid } : null
+    )
+  }, [])
+
+  /** Switch the context menu into its freehand sub-view. */
+  const enterFreehandMode = useCallback(() => {
+    setContextMenu(prev => (prev ? { ...prev, freehandMode: true, pendingLabel: '' } : null))
+  }, [])
+
+  /** Return from the freehand sub-view back to the normal protocol list. */
+  const exitFreehandMode = useCallback(() => {
+    setContextMenu(prev =>
+      prev ? { ...prev, freehandMode: false, pendingLabel: undefined } : null
+    )
+  }, [])
+
+  /** Update the custom label text the user is typing in freehand sub-view. */
+  const updateFreehandLabel = useCallback((label: string) => {
+    setContextMenu(prev => (prev ? { ...prev, pendingLabel: label } : null))
+  }, [])
+
+  /**
+   * Starts a freehand (validation-free) pending connection.
+   * Uses whatever fluid type is pre-selected in the menu plus the typed label.
+   * Protocol is always 'none' so the edge renders at the unvalidated style width.
+   */
+  const startFreehandConnection = useCallback(() => {
+    if (!contextMenu) return
+    setPendingConnection({
+      sourceId: contextMenu.nodeId,
+      protocol: 'none' as Protocol,
+      fluidType: contextMenu.pendingFluid,
+      freehand: true,
+      freeLabel: contextMenu.pendingLabel || undefined
+    })
+    setContextMenu(null)
+  }, [contextMenu])
 
   /**
    * Click on a canvas device node.
@@ -1292,6 +1436,47 @@ export function ScadaCanvas({
       // Site region nodes are not valid connection targets — ignore clicks on them
       // while a pending connection is active so the connection stays live.
       if (node.type === 'siteNode') return
+
+      // ── Freehand mode — bypass all validation ─────────────────────────────
+      // When the user chose "Draw Freehand Connection" from the right-click menu
+      // all Purdue-model and cable checks are skipped. The edge is created with
+      // whatever fluid type and custom label the user specified.
+      if (pendingConnection.freehand) {
+        const edgeType = activeLayer === 'ot' ? 'pipeEdge' : 'protocolEdge'
+        const fhData: { protocol: Protocol; fluidType?: FluidType; label?: string } = {
+          protocol: pendingConnection.protocol,
+          ...(pendingConnection.fluidType ? { fluidType: pendingConnection.fluidType } : {}),
+          ...(pendingConnection.freeLabel ? { label: pendingConnection.freeLabel } : {})
+        }
+        const srcNodeFh = nodes.find(n => n.id === pendingConnection.sourceId)
+        const { sourceHandle: fhSrcHandle, targetHandle: fhTgtHandle } = bestHandles(
+          srcNodeFh?.position ?? { x: 0, y: 0 },
+          node.position
+        )
+        const fhEdge: Edge = {
+          id: `freehand-${pendingConnection.sourceId}-${node.id}-${Date.now()}`,
+          source: pendingConnection.sourceId,
+          target: node.id,
+          sourceHandle: fhSrcHandle,
+          targetHandle: fhTgtHandle,
+          type: edgeType,
+          reconnectable: true,
+          data: fhData
+        }
+        setEdges(eds => addEdge(fhEdge, eds))
+        onScenarioChange(prev => {
+          if (!prev) return prev
+          const ce = {
+            id: fhEdge.id,
+            source: pendingConnection.sourceId,
+            target: node.id,
+            data: fhData
+          }
+          return { ...prev, visual: { ...prev.visual, edges: [...prev.visual.edges, ce] } }
+        })
+        setPendingConnection(null)
+        return
+      }
 
       // ── Protocol / Purdue-model validation ────────────────────────────────
       // Look up both ends of the attempted connection and check the matrix.
@@ -1349,14 +1534,22 @@ export function ScadaCanvas({
 
       // ── Valid connection — create the edge ────────────────────────────────
       const edgeType = activeLayer === 'ot' ? 'pipeEdge' : 'protocolEdge'
-      const edgeData: { protocol: Protocol; cableType?: CableType } = {
+      const edgeData: { protocol: Protocol; cableType?: CableType; fluidType?: FluidType } = {
         protocol: pendingConnection.protocol,
-        ...(pendingConnection.cableType ? { cableType: pendingConnection.cableType } : {})
+        ...(pendingConnection.cableType ? { cableType: pendingConnection.cableType } : {}),
+        ...(pendingConnection.fluidType ? { fluidType: pendingConnection.fluidType } : {})
       }
+      const srcNode = nodes.find(n => n.id === pendingConnection.sourceId)
+      const { sourceHandle, targetHandle } = bestHandles(
+        srcNode?.position ?? { x: 0, y: 0 },
+        node.position
+      )
       const newEdge: Edge = {
         id: `${pendingConnection.sourceId}-${node.id}-${Date.now()}`,
         source: pendingConnection.sourceId,
         target: node.id,
+        sourceHandle,
+        targetHandle,
         type: edgeType,
         data: edgeData
       }
@@ -1423,6 +1616,48 @@ export function ScadaCanvas({
       }
     },
     [simRunning, activeLayer, coilStates]
+  )
+
+  /**
+   * Edge reconnection handler — fires when the user drags an edge endpoint to a
+   * new node. React Flow's `reconnectEdge` helper swaps the source or target in
+   * the internal edge list; we mirror that change into the scenario JSON so it
+   * persists across saves and layer switches.
+   *
+   * Handle overrides from the original edge (explicit sourceHandle/targetHandle set
+   * during authoring) are cleared so bestHandles() re-routes the edge automatically
+   * for the new node positions — the user can always re-pin them via JSON if needed.
+   */
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      // Update the React Flow edges state first (optimistic, purely visual)
+      setEdges(eds =>
+        reconnectEdge(oldEdge, newConnection, eds).map(e => ({ ...e, reconnectable: true }))
+      )
+      // Persist the new source/target into the scenario model
+      onScenarioChange(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          visual: {
+            ...prev.visual,
+            edges: prev.visual.edges.map(ce =>
+              ce.id !== oldEdge.id
+                ? ce
+                : {
+                    ...ce,
+                    source: newConnection.source ?? ce.source,
+                    target: newConnection.target ?? ce.target,
+                    // Clear pinned handles — let bestHandles() auto-route from new positions
+                    sourceHandle: undefined,
+                    targetHandle: undefined
+                  }
+            )
+          }
+        }
+      })
+    },
+    [setEdges, onScenarioChange]
   )
 
   // Escape key cancels the open menu or pending connection
@@ -1605,6 +1840,7 @@ export function ScadaCanvas({
         onNodeContextMenu={onNodeContextMenu}
         onNodeClick={onNodeClick}
         onEdgeClick={onEdgeClick}
+        onReconnect={readOnly ? undefined : onReconnect}
         onPaneClick={cancelConnection}
         nodesDraggable={!readOnly}
         nodesConnectable={!readOnly}
@@ -1733,40 +1969,27 @@ export function ScadaCanvas({
           }}
           onContextMenu={e => e.preventDefault()}
         >
-          <div className="connection-context-menu-title">Connect via…</div>
+          <div className="connection-context-menu-title">
+            {isOT ? 'Draw Pipe Connection' : 'Connect via…'}
+          </div>
 
-          {/* ── Section 1: Application Protocol ── */}
-          <div className="connection-context-menu-section-title">Application Protocol</div>
-          <div className="connection-context-menu-sep" />
-          {filteredConnectionOptions.map(opt => (
-            <button
-              key={opt.protocol}
-              className="connection-context-menu-item"
-              onClick={() => startConnection(opt.protocol)}
-            >
-              <span className="connection-context-menu-dot" style={{ background: opt.color }} />
-              {opt.label}
-            </button>
-          ))}
-
-          {/* ── Section 2: Physical Cable (optional pre-selection) ── */}
-          {filteredCableOptions.length > 0 && (
+          {/* ── Section 0 (OT layer only): Fluid Type pre-selection ── */}
+          {isOT && (
             <>
-              <div className="connection-context-menu-sep" style={{ marginTop: 6 }} />
               <div className="connection-context-menu-section-title">
-                Physical Cable
-                {contextMenu.pendingCable && (
-                  <span className="connection-context-menu-cable-hint"> — then click protocol</span>
+                Fluid / Substance
+                {contextMenu.pendingFluid && (
+                  <span className="connection-context-menu-cable-hint"> — then click signal</span>
                 )}
               </div>
               <div className="connection-context-menu-sep" />
-              {filteredCableOptions.map(opt => {
-                const isSelected = contextMenu.pendingCable === opt.cable
+              {FLUID_OPTIONS.map(opt => {
+                const isSelected = contextMenu.pendingFluid === opt.fluid
                 return (
                   <button
-                    key={opt.cable}
+                    key={opt.fluid}
                     className={`connection-context-menu-item${isSelected ? ' connection-context-menu-item--selected' : ''}`}
-                    onClick={() => selectCable(opt.cable)}
+                    onClick={() => selectFluid(opt.fluid)}
                   >
                     <span
                       className="connection-context-menu-dot"
@@ -1780,6 +2003,116 @@ export function ScadaCanvas({
                   </button>
                 )
               })}
+              <div className="connection-context-menu-sep" style={{ marginTop: 6 }} />
+            </>
+          )}
+
+          {/* ── Section 1 (normal) or Freehand sub-view ─────────────────── */}
+          {contextMenu.freehandMode ? (
+            /* ── Freehand sub-view ───────────────────────────────────────────── */
+            <>
+              <div className="connection-context-menu-section-title">Freehand Connection</div>
+              <div className="connection-context-menu-sep" />
+              {/* Custom label input — written into edge data.label verbatim */}
+              <div style={{ padding: '2px 8px 6px' }}>
+                <input
+                  autoFocus
+                  className="connection-context-menu-label-input"
+                  placeholder="Label (optional)"
+                  value={contextMenu.pendingLabel ?? ''}
+                  onChange={e => updateFreehandLabel(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') startFreehandConnection()
+                    if (e.key === 'Escape') cancelConnection()
+                  }}
+                  // Stop click from propagating to ReactFlow canvas (which would
+                  // trigger onPaneClick and cancel the menu before the user is done)
+                  onClick={e => e.stopPropagation()}
+                />
+              </div>
+              <div className="connection-context-menu-sep" />
+              {/* Draw button — starts the pending freehand connection */}
+              <button
+                className="connection-context-menu-item connection-context-menu-freehand-draw"
+                onClick={startFreehandConnection}
+              >
+                <span style={{ marginRight: 6 }}>✏</span>
+                Draw — then click target
+              </button>
+              <div className="connection-context-menu-sep" style={{ marginTop: 4 }} />
+              <button
+                className="connection-context-menu-item"
+                style={{ fontSize: 12, opacity: 0.75 }}
+                onClick={exitFreehandMode}
+              >
+                ← Back
+              </button>
+            </>
+          ) : (
+            /* ── Normal protocol + cable list ────────────────────────────────── */
+            <>
+              {/* Section 1: ICS Signal Protocol */}
+              <div className="connection-context-menu-section-title">
+                {isOT ? 'ICS Control Signal' : 'Application Protocol'}
+              </div>
+              <div className="connection-context-menu-sep" />
+              {filteredConnectionOptions.map(opt => (
+                <button
+                  key={opt.protocol}
+                  className="connection-context-menu-item"
+                  onClick={() => startConnection(opt.protocol)}
+                >
+                  <span className="connection-context-menu-dot" style={{ background: opt.color }} />
+                  {opt.label}
+                </button>
+              ))}
+
+              {/* Section 2: Physical Cable (optional pre-selection) */}
+              {filteredCableOptions.length > 0 && (
+                <>
+                  <div className="connection-context-menu-sep" style={{ marginTop: 6 }} />
+                  <div className="connection-context-menu-section-title">
+                    Physical Cable
+                    {contextMenu.pendingCable && (
+                      <span className="connection-context-menu-cable-hint">
+                        {' '}
+                        — then click protocol
+                      </span>
+                    )}
+                  </div>
+                  <div className="connection-context-menu-sep" />
+                  {filteredCableOptions.map(opt => {
+                    const isSelected = contextMenu.pendingCable === opt.cable
+                    return (
+                      <button
+                        key={opt.cable}
+                        className={`connection-context-menu-item${isSelected ? ' connection-context-menu-item--selected' : ''}`}
+                        onClick={() => selectCable(opt.cable)}
+                      >
+                        <span
+                          className="connection-context-menu-dot"
+                          style={{
+                            background: isSelected ? opt.color : 'transparent',
+                            borderColor: opt.color
+                          }}
+                        />
+                        {opt.label}
+                        {isSelected && <span className="connection-context-menu-check">✓</span>}
+                      </button>
+                    )
+                  })}
+                </>
+              )}
+
+              {/* Freehand option — skips protocol validation entirely */}
+              <div className="connection-context-menu-sep" style={{ marginTop: 6 }} />
+              <button
+                className="connection-context-menu-item connection-context-menu-freehand"
+                onClick={enterFreehandMode}
+              >
+                <span style={{ marginRight: 6 }}>✏</span>
+                Draw Freehand Connection…
+              </button>
             </>
           )}
 
@@ -1794,10 +2127,23 @@ export function ScadaCanvas({
       )}
 
       {/* ── Connecting mode hint banner ──────────────────────────────────────── */}
-      {/* Shown at the bottom of the canvas while awaiting a target node click. */}
+      {/* Shown at the bottom of the canvas while awaiting a target node click.
+          Freehand mode shows a distinct amber label so students know validation
+          is bypassed for this draw operation. */}
       {pendingConnection && (
-        <div className="connection-mode-hint">
-          Click a device to connect — press <kbd>Esc</kbd> to cancel
+        <div
+          className={`connection-mode-hint${pendingConnection.freehand ? ' connection-mode-hint--freehand' : ''}`}
+        >
+          {pendingConnection.freehand ? (
+            <>
+              <span style={{ marginRight: 6 }}>✏</span>
+              Freehand — click any device to connect — press <kbd>Esc</kbd> to cancel
+            </>
+          ) : (
+            <>
+              Click a device to connect — press <kbd>Esc</kbd> to cancel
+            </>
+          )}
         </div>
       )}
 
