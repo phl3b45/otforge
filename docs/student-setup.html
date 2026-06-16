@@ -383,7 +383,7 @@ npm run build:packages
 npm run dev</code></pre>
 
   <blockquote class="note">
-    <p>The <code>node node_modules/electron/install.js</code> step downloads the Electron desktop runtime (~90 MB). It is only required on macOS &mdash; Windows handles this automatically during <code>npm ci</code>.</p>
+    <p>The <code>node node_modules/electron/install.js</code> step downloads the Electron desktop runtime (~90 MB). If the download fails or you see an Electron error later, run <code>.\fix-electron.ps1</code> (Windows) &mdash; it checks a local cache before downloading so it works on most campus networks.</p>
   </blockquote>
 
   <hr>
