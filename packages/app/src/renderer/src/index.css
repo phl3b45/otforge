@@ -2963,6 +2963,49 @@ code.prop-value {
   color: var(--text-primary);
 }
 
+/* Freehand option button — subtle amber tint to distinguish from protocol entries */
+.connection-context-menu-freehand {
+  color: #f59e0b;
+  font-size: 0.78rem;
+}
+
+.connection-context-menu-freehand:hover {
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+}
+
+/* Draw button shown in the freehand sub-view — more prominent amber fill */
+.connection-context-menu-freehand-draw {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.connection-context-menu-freehand-draw:hover {
+  background: rgba(251, 191, 36, 0.15);
+}
+
+/* Label text input inside the freehand sub-view */
+.connection-context-menu-label-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color, #3f4756);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.connection-context-menu-label-input:focus {
+  border-color: #f59e0b;
+}
+
+.connection-context-menu-label-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
 .connection-context-menu-item--selected:hover {
   background: rgba(57, 208, 176, 0.15);
 }
@@ -3070,6 +3113,17 @@ code.prop-value {
   font-size: 0.75rem;
   font-family: 'Cascadia Code', 'Fira Code', monospace;
   color: var(--text-primary);
+}
+
+/* Freehand variant — amber tint to signal that validation is bypassed */
+.connection-mode-hint--freehand {
+  border-color: rgba(245, 158, 11, 0.6);
+  color: #fbbf24;
+}
+
+.connection-mode-hint--freehand kbd {
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
 }
 
 /*
