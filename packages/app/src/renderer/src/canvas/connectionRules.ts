@@ -266,12 +266,24 @@ export const VALID_CONNECTIONS: Partial<
   // ── Physics process unit (Modbus TCP server — PLC polls it) ──────────────────
   // Phase 11: The process-unit container exposes a Modbus TCP server. The PLC is
   // the Modbus master — it reads sensor registers and writes control coils/setpoints.
-  // Process units do not initiate connections; they only accept inbound Modbus polls.
+  //
+  // P&ID physical connections: on a real P&ID diagram, physical pipe and signal
+  // connections run between the process vessel and the field devices attached to it
+  // (inlet pump feeds the tank, outlet valve drains it, sensors measure it). These
+  // are drawn as process-unit ↔ field-device edges with a fluidType that conveys
+  // the substance (water, electric signal, etc.). Use 'modbus-tcp' for fluid/signal
+  // connections so the pipe renders at full opacity with animated icons; 'none' is
+  // also permitted for untagged physical connections.
   'process-unit': {
-    // A process unit should not appear as a connection source in normal operation.
-    // (It is a passive Modbus server.) If a student tries to draw FROM a process
-    // unit, only switch/router infrastructure connections are permitted —
-    // they represent the Ethernet port on the process instrument panel.
+    pump: ['modbus-tcp', 'none'], // inlet / discharge pipe
+    valve: ['modbus-tcp', 'none'], // outlet / control valve pipe
+    sensor: ['modbus-tcp', 'none'], // sensor measures vessel (e.g., level sensor on tank)
+    actuator: ['modbus-tcp', 'none'], // actuator driven by vessel state (e.g., ESD damper)
+    'flow-meter': ['modbus-tcp', 'none'], // flow measurement on inlet or outlet pipe
+    'level-transmitter': ['modbus-tcp', 'none'], // level transmitter mounted on vessel
+    'pressure-transmitter': ['modbus-tcp', 'none'], // pressure tap on vessel
+    analyzer: ['modbus-tcp', 'none'], // inline analyzer (pH, TOC, conductivity)
+    'process-unit': ['modbus-tcp', 'none'], // vessel-to-vessel pipe (e.g., tank feeds reactor)
     switch: ['none'],
     router: ['none'],
     firewall: ['none'],
@@ -329,15 +341,34 @@ export const VALID_CONNECTIONS: Partial<
   // ── Field devices — Modbus slaves, polled by PLC, RTU, DCS, or SIS master ───
   // Note: field devices do NOT connect to HMI/Historian directly; all process
   // data must flow through a PLC, RTU, or DCS controller (a common student error).
+  // ── Field devices — Modbus slaves + P&ID physical connections ───────────────
+  //
+  // Two connection types coexist on the OT layer canvas:
+  //
+  //   Protocol connections (PLC/RTU → field device): Modbus TCP/RTU polling and
+  //     coil writes that represent the digital control signal. These are the
+  //     connections students learn to attack (e.g., Modbus coil write attack).
+  //
+  //   P&ID physical connections (field device ↔ process-unit / field device):
+  //     Physical pipe, mechanical, or analog signal connections that show up on
+  //     a real P&ID drawing. e.g., Pump → Tank (fluid pipe), Valve → Actuator
+  //     (mechanical stem), Sensor → Process-Unit (measurement tap).
+  //     Use 'modbus-tcp' so the pipe renders at full opacity with fluid icons;
+  //     'none' is also permitted for untagged physical connections.
+  //
+  // Note: field devices do NOT connect directly to HMI/Historian —
+  // all process data flows through a PLC, RTU, or DCS (common student error).
   sensor: {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp', 'dnp3'],
     ied: ['dnp3'],
     'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
     'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
-    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // polled by S7 master (Phase 10)
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'], // polled by IEC 104 RTU (Phase 10)
-    'iot-gateway': ['mqtt', 'modbus-tcp'] // wireless sensors may connect via gateway
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
+    'iot-gateway': ['mqtt', 'modbus-tcp'],
+    'process-unit': ['modbus-tcp', 'none'], // P&ID: sensor mounted on / measuring the vessel
+    actuator: ['modbus-tcp', 'none'] // P&ID: positioner feedback — sensor reads actuator position
   },
   actuator: {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
@@ -345,8 +376,11 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['dnp3'],
     'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
     'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
-    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // controlled by S7 master (Phase 10)
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // controlled by IEC 104 RTU (Phase 10)
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
+    'process-unit': ['modbus-tcp', 'none'], // P&ID: actuator driven by / attached to vessel
+    valve: ['modbus-tcp', 'none'], // P&ID: actuator drives the valve stem (electric/pneumatic)
+    sensor: ['modbus-tcp', 'none'] // P&ID: positioner feedback sensor on actuator
   },
   pump: {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
@@ -354,17 +388,26 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['dnp3'],
     'safety-plc': ['modbus-tcp', 'modbus-rtu'],
     'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
-    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
+    'process-unit': ['modbus-tcp', 'none'], // P&ID: pump feeds or drains the vessel
+    valve: ['modbus-tcp', 'none'], // P&ID: discharge / suction valve on pump line
+    'flow-meter': ['modbus-tcp', 'none'], // P&ID: flow meter inline on pump discharge
+    'pressure-transmitter': ['modbus-tcp', 'none'] // P&ID: pressure tap on pump discharge
   },
   valve: {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp'],
     ied: ['dnp3'],
-    'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'], // shutdown valves (ESD)
+    'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
     'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
-    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
+    'process-unit': ['modbus-tcp', 'none'], // P&ID: valve on vessel outlet / bypass
+    actuator: ['modbus-tcp', 'none'], // P&ID: actuator mounted on valve body
+    pump: ['modbus-tcp', 'none'], // P&ID: valve on pump suction or discharge line
+    'flow-meter': ['modbus-tcp', 'none'], // P&ID: flow meter downstream of valve
+    'pressure-transmitter': ['modbus-tcp', 'none'] // P&ID: pressure tap downstream of valve
   },
   'flow-meter': {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
@@ -372,8 +415,11 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['dnp3'],
     'safety-plc': ['modbus-tcp', 'modbus-rtu'],
     'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
-    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
+    'process-unit': ['modbus-tcp', 'none'], // P&ID: flow meter on vessel inlet/outlet pipe
+    pump: ['modbus-tcp', 'none'], // P&ID: inline on pump line
+    valve: ['modbus-tcp', 'none'] // P&ID: inline adjacent to valve
   },
   'pressure-transmitter': {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
@@ -381,19 +427,23 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['dnp3'],
     'safety-plc': ['modbus-tcp', 'modbus-rtu'],
     'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
-    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
+    'process-unit': ['modbus-tcp', 'none'], // P&ID: pressure tap on vessel
+    pump: ['modbus-tcp', 'none'], // P&ID: pressure on pump discharge
+    valve: ['modbus-tcp', 'none'] // P&ID: pressure downstream of valve
   },
 
-  // ── Level Transmitter (ISA instrument — polled like a sensor, but specifically level) ──
+  // ── Level Transmitter (ISA instrument — polled like a sensor, specifically level) ──
   'level-transmitter': {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
     rtu: ['modbus-rtu', 'modbus-tcp', 'dnp3'],
     ied: ['dnp3'],
     'safety-plc': ['modbus-tcp', 'modbus-rtu'],
     'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
-    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'], // Phase 10
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'] // Phase 10
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
+    'process-unit': ['modbus-tcp', 'none'] // P&ID: level transmitter mounted on vessel
   },
 
   // ── Process Analyzer (online chromatograph, pH, TOC, conductivity) ───────────
@@ -403,8 +453,9 @@ export const VALID_CONNECTIONS: Partial<
     plc: ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
     rtu: ['modbus-rtu', 'modbus-tcp'],
     'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
-    historian: ['opc-ua', 'modbus-tcp'], // analyzers often connect directly to historian
-    'iot-gateway': ['mqtt', 'modbus-tcp'] // some analyzers publish MQTT in IIoT deployments
+    historian: ['opc-ua', 'modbus-tcp'],
+    'iot-gateway': ['mqtt', 'modbus-tcp'],
+    'process-unit': ['modbus-tcp', 'none'] // P&ID: inline analyzer on vessel stream
   },
 
   // ── PMU — Phasor Measurement Unit (IEEE C37.118, synchrophasor, GPS-timed) ───
