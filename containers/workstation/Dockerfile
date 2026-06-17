@@ -91,7 +91,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libtool \
     git \
     && rm -rf /var/lib/apt/lists/* \
-    && git clone --depth 1 \
+    && git clone --depth 1 --recurse-submodules \
        https://github.com/thiagoralves/OpenPLC_Editor.git \
        /opt/openplc-editor \
     # Compile MatIEC — the IEC 61131-3 to ANSI C translator embedded in the
