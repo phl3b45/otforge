@@ -93,10 +93,10 @@ RUN git clone --depth 1 \
        /opt/openplc-editor \
     && cd /opt/openplc-editor \
     && git submodule update --init --depth 1 editor \
-    && EDITOR_PY=$(find /opt/openplc-editor \( -name 'OpenPLC_Editor.py' -o -name 'Beremiz.py' \) | head -1) \
-    && test -n "$EDITOR_PY" \
-    && chmod +x "$EDITOR_PY" \
-    && ln -sf "$EDITOR_PY" /usr/local/bin/openplc-editor
+    && test -f /opt/openplc-editor/editor/Beremiz.py \
+    && printf '#!/bin/bash\n# GDK_BACKEND=x11 is required for GTK3 apps in a VNC X session.\n# Without it GTK silently fails to render (no Wayland available in VNC).\nexport GDK_BACKEND=x11\ncd /opt/openplc-editor/editor\nexec python3 Beremiz.py "$@"\n' \
+       > /usr/local/bin/openplc-editor \
+    && chmod +x /usr/local/bin/openplc-editor
 
 # ── Layer 5: noVNC WebSocket bridge ───────────────────────────────────────────
 RUN pip3 install --no-cache-dir websockify \
