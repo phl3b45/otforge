@@ -93,7 +93,9 @@ RUN git clone --depth 1 \
        /opt/openplc-editor \
     && cd /opt/openplc-editor \
     && git submodule update --init --depth 1 editor \
-    && EDITOR_PY=$(find /opt/openplc-editor -name 'OpenPLC_Editor.py' | head -1) \
+    && echo "=== main repo ===" && ls /opt/openplc-editor/ \
+    && echo "=== editor submodule ===" && ls /opt/openplc-editor/editor/ \
+    && EDITOR_PY=$(find /opt/openplc-editor \( -name 'OpenPLC_Editor.py' -o -name 'Beremiz.py' \) | head -1) \
     && test -n "$EDITOR_PY" \
     && chmod +x "$EDITOR_PY" \
     && ln -sf "$EDITOR_PY" /usr/local/bin/openplc-editor
