@@ -62,13 +62,54 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         dnp3-python \
         python-snap7
 
-# ── Layer 4: noVNC WebSocket bridge ───────────────────────────────────────────
+# ── Layer 4: OpenPLC Editor (IEC 61131-3 PLC programming IDE) ─────────────────
+#
+# The OpenPLC Editor is a wxPython-based desktop IDE for writing PLC programs
+# in Ladder Diagram (LD), Function Block Diagram (FBD), Sequential Function
+# Chart (SFC), Instruction List (IL), and Structured Text (ST). Students write
+# their program here, then upload the exported .st file to the OpenPLC Runtime
+# via its web UI (the Firefox shortcut on the desktop links there directly).
+#
+# python3-wxgtk4.0 must come from the Ubuntu apt repo — the pip wxPython wheel
+# requires a full GUI build toolchain and fails in headless Docker builds.
+# MatIEC (the embedded IEC 61131-3 → ANSI C compiler) is compiled from source
+# using autotools; bison/flex/libboost-dev are its build prerequisites.
+#
+# We run the steps from install.sh manually (no sudo calls needed — we are root).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-wxgtk4.0 \
+    python3-six \
+    python3-lxml \
+    python3-dateutil \
+    python3-requests \
+    python3-future \
+    bison \
+    flex \
+    libboost-dev \
+    autoconf \
+    automake \
+    libtool \
+    && rm -rf /var/lib/apt/lists/* \
+    && git clone --depth 1 \
+       https://github.com/thiagoralves/OpenPLC_Editor.git \
+       /opt/openplc-editor \
+    # Compile MatIEC — the IEC 61131-3 to ANSI C translator embedded in the
+    # editor. This is what the editor uses to validate programs before export.
+    && cd /opt/openplc-editor/matiec \
+    && autoreconf -i \
+    && ./configure \
+    && make \
+    # Place the editor launch script on PATH so the .desktop shortcut is simple
+    && ln -sf /opt/openplc-editor/OpenPLC_Editor.py /usr/local/bin/openplc-editor \
+    && chmod +x /opt/openplc-editor/OpenPLC_Editor.py
+
+# ── Layer 5: noVNC WebSocket bridge ───────────────────────────────────────────
 RUN pip3 install --no-cache-dir websockify \
     && mkdir -p /opt/novnc \
     && curl -fsSL https://github.com/novnc/noVNC/archive/refs/tags/v1.5.0.tar.gz \
        | tar -xz --strip-components=1 -C /opt/novnc
 
-# ── Layer 5: Protocol sample scripts ──────────────────────────────────────────
+# ── Layer 6: Protocol sample scripts ──────────────────────────────────────────
 # Pre-placed on the Desktop so students can run them without typing in noVNC.
 COPY scripts/ /root/Desktop/Protocols/
 RUN chmod +x /root/Desktop/Protocols/*.py 2>/dev/null || true

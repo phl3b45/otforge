@@ -40,6 +40,25 @@ Categories=Network;
 EOF
 chmod +x /root/Desktop/Grafana.desktop
 
+# ── OpenPLC Editor shortcut ───────────────────────────────────────────────────
+# Launches the IEC 61131-3 desktop IDE so students can write Ladder Diagram,
+# Function Block Diagram, or Structured Text programs. After writing a program,
+# students export the .st file and upload it via the OpenPLC Runtime web UI
+# (use the "OpenPLC: <device>" shortcut below to open that interface).
+cat > /root/Desktop/OpenPLC-Editor.desktop << 'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=OpenPLC Editor
+Comment=Write IEC 61131-3 PLC programs (LD, FBD, ST, SFC, IL)
+Exec=bash -c "cd /opt/openplc-editor && python3 OpenPLC_Editor.py"
+Icon=applications-development
+Terminal=false
+Categories=Development;
+EOF
+chmod +x /root/Desktop/OpenPLC-Editor.desktop
+echo "[ics-workstation] Shortcut: OpenPLC Editor → /opt/openplc-editor"
+
 # ── Dynamic shortcuts for PLC OpenPLC web IDEs ───────────────────────────────
 # WS_PLC_WEBUIS is injected by the compose generator as a comma-separated list
 # of "label|url" pairs, e.g.:
