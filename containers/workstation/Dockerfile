@@ -86,11 +86,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-requests \
     python3-future \
     git \
-    && rm -rf /var/lib/apt/lists/* \
-    && git clone --depth 1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 \
        https://github.com/thiagoralves/OpenPLC_Editor.git \
        /opt/openplc-editor \
-    # Place the editor launch script on PATH so the .desktop shortcut is simple
     && ln -sf /opt/openplc-editor/OpenPLC_Editor.py /usr/local/bin/openplc-editor \
     && chmod +x /opt/openplc-editor/OpenPLC_Editor.py
 
