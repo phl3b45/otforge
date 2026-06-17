@@ -143,10 +143,13 @@ export class DockerClient {
    *   1. Create `<workDir>/<projectName>/` if it does not exist.
    *   2. Write the YAML string as `docker-compose.yml` in that directory.
    *   3. Fire `onPullNeeded()` so the renderer shows an "Importing Containers" overlay
-   *      before the compose up begins (always — we always pull latest images).
-   *   4. Run `docker compose up --pull always -d --remove-orphans` to launch all services.
-   *      `--pull always` checks GHCR on every start and downloads any updated layers,
-   *      ensuring students always run the newest container images without a manual pull.
+   *      before the compose up begins when new images need to be downloaded.
+   *   4. Run `docker compose up --pull missing -d --remove-orphans` to launch all services.
+   *      `--pull missing` pulls an image only when it is not already present in the
+   *      local Docker cache.  If a locally built or previously pulled image exists it
+   *      is used as-is, which lets instructors test custom builds without having them
+   *      overwritten by GHCR on every start.  Students who have never run a scenario
+   *      still get all images pulled automatically on first launch.
    *      `--remove-orphans` removes containers from a previous run of the same
    *      project that are no longer defined in the new compose file.
    *
@@ -234,15 +237,15 @@ export class DockerClient {
   }
 
   /**
-   * Runs `docker compose up --pull always` via spawn so output can be streamed
+   * Runs `docker compose up --pull missing` via spawn so output can be streamed
    * line-by-line. This avoids the maxBuffer limit of execAsync and lets the caller
    * detect when Docker actually starts pulling images (rather than just checking
    * digests), so the "Updating Images" overlay is shown only when a download is
    * in progress.
    *
    * onPullNeeded fires at most once, when the first line containing "Pulling"
-   * appears. If all images are already current Docker only prints container-start
-   * lines and onPullNeeded never fires — no overlay is shown.
+   * appears. If all images are already present locally Docker only prints
+   * container-start lines and onPullNeeded never fires — no overlay is shown.
    */
   private _composeUp(
     projectName: string,
@@ -264,7 +267,7 @@ export class DockerClient {
           composeFile,
           'up',
           '--pull',
-          'always',
+          'missing',
           '-d',
           '--remove-orphans'
         ],
@@ -354,7 +357,7 @@ export class DockerClient {
     try {
       // codeql[js/shell-command-constructed-from-input] -- projectName is sanitized to [a-z0-9-] by toProjectName()
       await run(`docker compose -p ${projectName} -f "${composeFile}" down --volumes`)
-      // Remove dangling images (<none>:<none>) left by --pull always on each start.
+      // Remove dangling images (<none>:<none>) left when Docker replaces a local image.
       // When Docker pulls a newer digest for a tagged image it untags the old one,
       // producing a dangling layer that consumes real disk space but is unreachable
       // by name. Best-effort — if prune fails (e.g. another compose is running) the

@@ -40,6 +40,25 @@ Categories=Network;
 EOF
 chmod +x /root/Desktop/Grafana.desktop
 
+# ── OpenPLC Editor shortcut ───────────────────────────────────────────────────
+# Launches the IEC 61131-3 desktop IDE (Beremiz-based) so students can write
+# Ladder Diagram, FBD, or Structured Text programs.  The launcher script at
+# /usr/local/bin/openplc-editor sets GDK_BACKEND=x11 before starting the app —
+# required for GTK3 to render correctly inside a VNC X session.
+cat > /root/Desktop/OpenPLC-Editor.desktop << 'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=OpenPLC Editor
+Comment=Write IEC 61131-3 PLC programs (LD, FBD, ST, SFC, IL)
+Exec=openplc-editor
+Icon=applications-development
+Terminal=false
+Categories=Development;
+EOF
+chmod +x /root/Desktop/OpenPLC-Editor.desktop
+echo "[ics-workstation] Shortcut: OpenPLC Editor (Beremiz) ready"
+
 # ── Dynamic shortcuts for PLC OpenPLC web IDEs ───────────────────────────────
 # WS_PLC_WEBUIS is injected by the compose generator as a comma-separated list
 # of "label|url" pairs, e.g.:

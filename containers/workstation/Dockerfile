@@ -62,13 +62,76 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         dnp3-python \
         python-snap7
 
-# ── Layer 4: noVNC WebSocket bridge ───────────────────────────────────────────
+# ── Layer 4: OpenPLC Editor (IEC 61131-3 PLC programming IDE) ─────────────────
+#
+# The OpenPLC Editor is a wxPython-based desktop IDE for writing PLC programs
+# in Ladder Diagram (LD), Function Block Diagram (FBD), Sequential Function
+# Chart (SFC), Instruction List (IL), and Structured Text (ST). Students write
+# here, then upload the saved project to the OpenPLC Runtime via its web UI.
+#
+# wxPython must be 4.1.0+ for wx.svg support. The Ubuntu apt package
+# python3-wxgtk4.0 is version 4.0.7 and is missing that module, causing
+# Beremiz.py to crash at import. We use the pre-built wheel from the official
+# wxPython extras repo instead (fast — no source compilation needed).
+#
+# GDK_BACKEND=x11 is set in the launcher script — required for GTK3 apps
+# to render correctly inside a VNC X session (LabShock uses the same fix).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgtk-3-0 \
+    libglib2.0-0 \
+    libgdk-pixbuf2.0-0 \
+    libnotify4 \
+    libsdl2-2.0-0 \
+    libxtst6 \
+    libsm6 \
+    libpcre2-32-0 \
+    git \
+    g++ \
+    make \
+    autoconf \
+    automake \
+    bison \
+    flex \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir \
+    -f https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-22.04/ \
+    "wxPython==4.2.0" \
+    && pip3 install --no-cache-dir \
+    "lxml" \
+    matplotlib \
+    zeroconf \
+    pyserial \
+    pypubsub \
+    Pyro5 \
+    attrdict3 \
+    Jinja2 \
+    future
+
+RUN git clone --depth 1 \
+       https://github.com/thiagoralves/OpenPLC_Editor.git \
+       /opt/openplc-editor \
+    && cd /opt/openplc-editor \
+    && git submodule update --init --depth 1 editor \
+    && git clone --depth 1 https://github.com/thiagoralves/matiec \
+       /opt/openplc-editor/matiec \
+    && cd /opt/openplc-editor/matiec \
+    && autoreconf -f -i \
+    && ./configure --disable-dependency-tracking \
+    && make \
+    && cd /opt/openplc-editor \
+    && test -f editor/Beremiz.py \
+    && printf '#!/bin/bash\nexport GDK_BACKEND=x11\ncd /opt/openplc-editor/editor\nexec python3 Beremiz.py "$@"\n' \
+       > /usr/local/bin/openplc-editor \
+    && chmod +x /usr/local/bin/openplc-editor
+
+# ── Layer 5: noVNC WebSocket bridge ───────────────────────────────────────────
 RUN pip3 install --no-cache-dir websockify \
     && mkdir -p /opt/novnc \
     && curl -fsSL https://github.com/novnc/noVNC/archive/refs/tags/v1.5.0.tar.gz \
        | tar -xz --strip-components=1 -C /opt/novnc
 
-# ── Layer 5: Protocol sample scripts ──────────────────────────────────────────
+# ── Layer 6: Protocol sample scripts ──────────────────────────────────────────
 # Pre-placed on the Desktop so students can run them without typing in noVNC.
 COPY scripts/ /root/Desktop/Protocols/
 RUN chmod +x /root/Desktop/Protocols/*.py 2>/dev/null || true
