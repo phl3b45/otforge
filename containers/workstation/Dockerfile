@@ -84,7 +84,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsdl2-2.0-0 \
     libxtst6 \
     libsm6 \
+    libpcre2-32-0 \
     git \
+    g++ \
+    make \
+    autoconf \
+    automake \
+    bison \
+    flex \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir \
@@ -106,7 +113,14 @@ RUN git clone --depth 1 \
        /opt/openplc-editor \
     && cd /opt/openplc-editor \
     && git submodule update --init --depth 1 editor \
-    && test -f /opt/openplc-editor/editor/Beremiz.py \
+    && git clone --depth 1 https://github.com/thiagoralves/matiec \
+       /opt/openplc-editor/matiec \
+    && cd /opt/openplc-editor/matiec \
+    && autoreconf -f -i \
+    && ./configure --disable-dependency-tracking \
+    && make \
+    && cd /opt/openplc-editor \
+    && test -f editor/Beremiz.py \
     && printf '#!/bin/bash\nexport GDK_BACKEND=x11\ncd /opt/openplc-editor/editor\nexec python3 Beremiz.py "$@"\n' \
        > /usr/local/bin/openplc-editor \
     && chmod +x /usr/local/bin/openplc-editor
