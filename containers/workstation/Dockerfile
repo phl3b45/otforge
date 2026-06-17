@@ -90,15 +90,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     automake \
     libtool \
     git \
+    g++ \
+    make \
     && rm -rf /var/lib/apt/lists/* \
     && git clone --depth 1 --recurse-submodules \
        https://github.com/thiagoralves/OpenPLC_Editor.git \
        /opt/openplc-editor \
     # Compile MatIEC — the IEC 61131-3 to ANSI C translator embedded in the
-    # editor. This is what the editor uses to validate programs before export.
+    # editor. MatIEC is C++ code; g++ is required or configure fails to set up
+    # C++ dependency tracking and aborts before Makefile generation completes.
     && cd /opt/openplc-editor/matiec \
     && autoreconf -i \
-    && ./configure \
+    && ./configure --disable-dependency-tracking \
     && make \
     # Place the editor launch script on PATH so the .desktop shortcut is simple
     && ln -sf /opt/openplc-editor/OpenPLC_Editor.py /usr/local/bin/openplc-editor \
