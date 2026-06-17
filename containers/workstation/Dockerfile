@@ -120,6 +120,7 @@ RUN git clone --depth 1 \
     && ./configure --disable-dependency-tracking \
     && make \
     && cd /opt/openplc-editor \
+    && rm -f editor/arduino/bin/arduino-cli* \
     && test -f editor/Beremiz.py \
     && printf '#!/bin/bash\nexport GDK_BACKEND=x11\ncd /opt/openplc-editor/editor\nexec python3 Beremiz.py "$@"\n' \
        > /usr/local/bin/openplc-editor \

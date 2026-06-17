@@ -109,12 +109,8 @@ npm run dev
 **macOS (Terminal — from `~/OTForge`):**
 ```bash
 npm ci
-node node_modules/electron/install.js
-npm run build:packages
 npm run dev
 ```
-
-> The `node node_modules/electron/install.js` step downloads the Electron desktop runtime (~90 MB). If the download fails or you see an Electron error later, run `.\fix-electron.ps1` (Windows) — it checks a local cache before downloading so it works on most campus networks.
 
 ---
 
@@ -144,9 +140,7 @@ git pull
 npm run dev
 ```
 
-That's it. `git pull` downloads the latest code and `npm run dev` rebuilds and relaunches the app automatically.
-
-> **If your instructor announces that new packages were added**, run `.\get-updates.ps1` (Windows) or `bash get-updates.sh` (macOS) instead of `git pull`. This is rare — most updates are source-code only and need nothing more than `git pull`.
+That's it. `git pull` downloads the latest code and `npm run dev` installs any new dependencies and relaunches the app automatically.
 
 ---
 
@@ -172,16 +166,10 @@ If the spinner still does not clear:
 
 If none of the above work, restart your computer and relaunch Docker Desktop. A full reboot clears stuck WSL instances and stalled service states.
 
-### `npm run dev` fails — Electron not installed (macOS)
-```bash
-node node_modules/electron/install.js
-npm run dev
+### `npm run dev` fails — Electron not installed
 ```
-
-### `npm run dev` fails — Electron not installed (Windows)
-Run the included repair script from `C:\OTForge`:
-```powershell
-.\fix-electron.ps1
+npm install
+npm run dev
 ```
 
 ### `TypeError: crypto.hash is not a function`
@@ -237,6 +225,7 @@ New-NetFirewallRule `
 | Launch OTForge | `npm run dev` | `npm run dev` |
 | Scenarios folder | `C:\OTForge\scenarios\` | `~/OTForge/scenarios/` |
 | Get updates | `git pull` then `npm run dev` | `git pull` then `npm run dev` |
+
 
 ---
 
