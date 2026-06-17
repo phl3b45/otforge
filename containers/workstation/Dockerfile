@@ -89,6 +89,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     automake \
     libtool \
+    git \
     && rm -rf /var/lib/apt/lists/* \
     && git clone --depth 1 \
        https://github.com/thiagoralves/OpenPLC_Editor.git \
