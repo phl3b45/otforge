@@ -67,15 +67,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # The OpenPLC Editor is a wxPython-based desktop IDE for writing PLC programs
 # in Ladder Diagram (LD), Function Block Diagram (FBD), Sequential Function
 # Chart (SFC), Instruction List (IL), and Structured Text (ST). Students write
-# their program here, then upload the exported .st file to the OpenPLC Runtime
-# via its web UI (the Firefox shortcut on the desktop links there directly).
+# their program here, then upload the saved .st project file to the OpenPLC
+# Runtime via its web UI — the Runtime handles compilation, not the editor.
+#
+# MatIEC (the embedded IEC 61131-3 → ANSI C compiler) is NOT compiled here.
+# It is only needed for the editor's internal "Compile" button, which generates
+# a C preview. Our student workflow never uses that button — students save in
+# the editor, then upload to the Runtime which does its own compilation.
+# Skipping the MatIEC build avoids a fragile autotools/g++ chain in Docker.
 #
 # python3-wxgtk4.0 must come from the Ubuntu apt repo — the pip wxPython wheel
 # requires a full GUI build toolchain and fails in headless Docker builds.
-# MatIEC (the embedded IEC 61131-3 → ANSI C compiler) is compiled from source
-# using autotools; bison/flex/libboost-dev are its build prerequisites.
-#
-# We run the steps from install.sh manually (no sudo calls needed — we are root).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-wxgtk4.0 \
     python3-six \
@@ -83,26 +85,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dateutil \
     python3-requests \
     python3-future \
-    bison \
-    flex \
-    libboost-dev \
-    autoconf \
-    automake \
-    libtool \
     git \
-    g++ \
-    make \
     && rm -rf /var/lib/apt/lists/* \
-    && git clone --depth 1 --recurse-submodules \
+    && git clone --depth 1 \
        https://github.com/thiagoralves/OpenPLC_Editor.git \
        /opt/openplc-editor \
-    # Compile MatIEC — the IEC 61131-3 to ANSI C translator embedded in the
-    # editor. MatIEC is C++ code; g++ is required or configure fails to set up
-    # C++ dependency tracking and aborts before Makefile generation completes.
-    && cd /opt/openplc-editor/matiec \
-    && autoreconf -i \
-    && ./configure --disable-dependency-tracking \
-    && make \
     # Place the editor launch script on PATH so the .desktop shortcut is simple
     && ln -sf /opt/openplc-editor/OpenPLC_Editor.py /usr/local/bin/openplc-editor \
     && chmod +x /opt/openplc-editor/OpenPLC_Editor.py
