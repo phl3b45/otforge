@@ -67,26 +67,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # The OpenPLC Editor is a wxPython-based desktop IDE for writing PLC programs
 # in Ladder Diagram (LD), Function Block Diagram (FBD), Sequential Function
 # Chart (SFC), Instruction List (IL), and Structured Text (ST). Students write
-# their program here, then upload the saved .st project file to the OpenPLC
-# Runtime via its web UI — the Runtime handles compilation, not the editor.
+# here, then upload the saved project to the OpenPLC Runtime via its web UI.
 #
-# MatIEC (the embedded IEC 61131-3 → ANSI C compiler) is NOT compiled here.
-# It is only needed for the editor's internal "Compile" button, which generates
-# a C preview. Our student workflow never uses that button — students save in
-# the editor, then upload to the Runtime which does its own compilation.
-# Skipping the MatIEC build avoids a fragile autotools/g++ chain in Docker.
+# wxPython must be 4.1.0+ for wx.svg support. The Ubuntu apt package
+# python3-wxgtk4.0 is version 4.0.7 and is missing that module, causing
+# Beremiz.py to crash at import. We use the pre-built wheel from the official
+# wxPython extras repo instead (fast — no source compilation needed).
 #
-# python3-wxgtk4.0 must come from the Ubuntu apt repo — the pip wxPython wheel
-# requires a full GUI build toolchain and fails in headless Docker builds.
+# GDK_BACKEND=x11 is set in the launcher script — required for GTK3 apps
+# to render correctly inside a VNC X session (LabShock uses the same fix).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3-wxgtk4.0 \
-    python3-six \
-    python3-lxml \
-    python3-dateutil \
-    python3-requests \
-    python3-future \
+    libgtk-3-0 \
+    libglib2.0-0 \
+    libgdk-pixbuf2.0-0 \
+    libnotify4 \
+    libsdl2-2.0-0 \
+    libxtst6 \
+    libsm6 \
     git \
     && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir \
+    -f https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-22.04/ \
+    "wxPython==4.2.0" \
+    && pip3 install --no-cache-dir \
+    "lxml" \
+    matplotlib \
+    zeroconf \
+    pyserial \
+    pypubsub \
+    Pyro5 \
+    attrdict3 \
+    Jinja2 \
+    future
 
 RUN git clone --depth 1 \
        https://github.com/thiagoralves/OpenPLC_Editor.git \
@@ -94,7 +107,7 @@ RUN git clone --depth 1 \
     && cd /opt/openplc-editor \
     && git submodule update --init --depth 1 editor \
     && test -f /opt/openplc-editor/editor/Beremiz.py \
-    && printf '#!/bin/bash\n# GDK_BACKEND=x11 is required for GTK3 apps in a VNC X session.\n# Without it GTK silently fails to render (no Wayland available in VNC).\nexport GDK_BACKEND=x11\ncd /opt/openplc-editor/editor\nexec python3 Beremiz.py "$@"\n' \
+    && printf '#!/bin/bash\nexport GDK_BACKEND=x11\ncd /opt/openplc-editor/editor\nexec python3 Beremiz.py "$@"\n' \
        > /usr/local/bin/openplc-editor \
     && chmod +x /usr/local/bin/openplc-editor
 
