@@ -91,8 +91,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN git clone --depth 1 \
        https://github.com/thiagoralves/OpenPLC_Editor.git \
        /opt/openplc-editor \
-    && ln -sf /opt/openplc-editor/OpenPLC_Editor.py /usr/local/bin/openplc-editor \
-    && chmod +x /opt/openplc-editor/OpenPLC_Editor.py
+    && cd /opt/openplc-editor \
+    && git submodule update --init --depth 1 editor \
+    && EDITOR_PY=$(find /opt/openplc-editor -name 'OpenPLC_Editor.py' | head -1) \
+    && test -n "$EDITOR_PY" \
+    && chmod +x "$EDITOR_PY" \
+    && ln -sf "$EDITOR_PY" /usr/local/bin/openplc-editor
 
 # ── Layer 5: noVNC WebSocket bridge ───────────────────────────────────────────
 RUN pip3 install --no-cache-dir websockify \

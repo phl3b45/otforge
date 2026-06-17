@@ -45,19 +45,24 @@ chmod +x /root/Desktop/Grafana.desktop
 # Function Block Diagram, or Structured Text programs. After writing a program,
 # students export the .st file and upload it via the OpenPLC Runtime web UI
 # (use the "OpenPLC: <device>" shortcut below to open that interface).
-cat > /root/Desktop/OpenPLC-Editor.desktop << 'EOF'
+#
+# OpenPLC_Editor.py lives inside the 'editor' submodule, so we resolve the
+# real path via the symlink that was set at build time instead of hardcoding.
+_EDITOR_PY=$(readlink -f /usr/local/bin/openplc-editor 2>/dev/null || echo "")
+_EDITOR_DIR=$(dirname "$_EDITOR_PY")
+cat > /root/Desktop/OpenPLC-Editor.desktop << EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=OpenPLC Editor
 Comment=Write IEC 61131-3 PLC programs (LD, FBD, ST, SFC, IL)
-Exec=bash -c "cd /opt/openplc-editor && python3 OpenPLC_Editor.py"
+Exec=bash -c "cd ${_EDITOR_DIR} && python3 ${_EDITOR_PY}"
 Icon=applications-development
 Terminal=false
 Categories=Development;
 EOF
 chmod +x /root/Desktop/OpenPLC-Editor.desktop
-echo "[ics-workstation] Shortcut: OpenPLC Editor → /opt/openplc-editor"
+echo "[ics-workstation] Shortcut: OpenPLC Editor → ${_EDITOR_PY}"
 
 # ── Dynamic shortcuts for PLC OpenPLC web IDEs ───────────────────────────────
 # WS_PLC_WEBUIS is injected by the compose generator as a comma-separated list
