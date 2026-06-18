@@ -714,6 +714,60 @@ function IotGatewaySvg() {
 }
 
 /**
+ * Temperature Sensor / Transmitter — ISA instrument bubble with an internal
+ * vertical bar representing a mercury/RTD element. Follows ISA-5.1 "TT" symbol
+ * (Temperature Transmitter). 4-20 mA or HART output to PLC/DCS.
+ */
+function TemperatureSensorSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* ISA instrument bubble */}
+      <circle cx="12" cy="13" r="9" />
+      {/* RTD / thermometer element — vertical bar with bulb */}
+      <line x1="12" y1="7" x2="12" y2="14" />
+      <circle cx="12" cy="15.5" r="1.5" fill="currentColor" stroke="none" />
+      {/* Connection nub at top */}
+      <line x1="12" y1="4" x2="12" y2="4" />
+    </svg>
+  )
+}
+
+/**
+ * Gas Detector — ISA instrument bubble with a stylized cloud / plume indicating
+ * the gas sensing element. Represents fixed combustible gas (LEL), toxic gas
+ * (H₂S, CO), or oxygen-depletion detectors common in oil & gas and water treatment.
+ */
+function GasDetectorSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* ISA instrument bubble */}
+      <circle cx="12" cy="14" r="8" />
+      {/* Gas plume — bumpy cloud shape above center */}
+      <path d="M8 12 Q9 9 12 10 Q13 7.5 16 9 Q17 11 16 12" />
+      {/* Center sensing element dot */}
+      <circle cx="12" cy="14" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+/**
+ * Vibration Sensor / Accelerometer — ISA instrument bubble with three sine-wave
+ * arcs representing mechanical vibration. Used for rotating machinery health
+ * monitoring (bearings, pumps, compressors) via 4-20 mA or IIoT wireless.
+ */
+function VibrationSensorSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* ISA instrument bubble */}
+      <circle cx="12" cy="13" r="9" />
+      {/* Vibration wave lines */}
+      <path d="M7 11 Q8.5 9 10 11 Q11.5 13 13 11 Q14.5 9 16 11" />
+      <path d="M7 14 Q8.5 12 10 14 Q11.5 16 13 14 Q14.5 12 16 14" />
+    </svg>
+  )
+}
+
+/**
  * SCADA Server / Master Station — horizontal workstation-style chassis with a
  * mini P&ID display on the front panel (a sensor bubble + pipe + pump circle),
  * representing the process visualization running on the SCADA backend. Distinct
@@ -855,6 +909,9 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   pmu: PmuSvg, // IEEE C37.118 Phasor Measurement Unit
   'iiot-sensor': IiotSensorSvg, // IIoT wireless sensor node
   'iot-gateway': IotGatewaySvg, // IIoT protocol gateway / Modbus-to-MQTT bridge
+  'temperature-sensor': TemperatureSensorSvg, // RTD/thermocouple temperature transmitter
+  'gas-detector': GasDetectorSvg, // fixed combustible/toxic gas detector
+  'vibration-sensor': VibrationSensorSvg, // rotating machinery vibration / accelerometer
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: HmiSvg,
   historian: HistorianSvg,
