@@ -497,8 +497,20 @@ function createWindow(): void {
     }
   })
 
-  // Show the window only after the renderer has painted — avoids white-flash
-  mainWindow.on('ready-to-show', () => mainWindow!.show())
+  // Show maximized/fullscreen after the renderer has painted — avoids white-flash
+  // and ensures the tutorial panel and canvas have full screen real estate on launch.
+  // macOS: show() first (window must be visible before setFullScreen animates);
+  //        then setFullScreen(true) triggers the native green-button fullscreen mode.
+  // Windows/Linux: maximize() before show() prevents the flash of a smaller window.
+  mainWindow.on('ready-to-show', () => {
+    if (process.platform === 'darwin') {
+      mainWindow!.show()
+      mainWindow!.setFullScreen(true)
+    } else {
+      mainWindow!.maximize()
+      mainWindow!.show()
+    }
+  })
 
   // Any link that would normally open a new Electron window should open in the system browser
   mainWindow.webContents.setWindowOpenHandler(details => {

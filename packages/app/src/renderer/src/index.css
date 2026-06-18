@@ -5248,7 +5248,7 @@ code.prop-value {
 .tutorial-panel {
   position: fixed;
   z-index: 150;
-  width: 440px;
+  width: min(440px, calc(100vw - 48px));
   background: #161b22;
   border: 1px solid #30363d;
   border-radius: 8px;

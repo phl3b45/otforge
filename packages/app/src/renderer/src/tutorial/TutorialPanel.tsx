@@ -247,6 +247,27 @@ export function TutorialPanel({ steps, devices, onClose }: TutorialPanelProps): 
     return () => window.removeEventListener('keydown', handleKey)
   }, [currentIndex, total])
 
+  // ── Re-clamp position on window resize ──────────────────────────────────────
+  // The panel position is set in pixels at mount time. If the user resizes or
+  // un-maximizes the window the panel can slide below or outside the viewport.
+  // Re-clamp on every resize so the panel stays fully visible.
+  useEffect(() => {
+    function handleResize(): void {
+      setPosition(prev => {
+        if (prev.x < 0) return prev // not yet initialised
+        const panel = panelRef.current
+        const panelW = panel?.offsetWidth ?? 440
+        const panelH = panel?.offsetHeight ?? 200
+        return {
+          x: Math.max(0, Math.min(prev.x, window.innerWidth - panelW)),
+          y: Math.max(0, Math.min(prev.y, window.innerHeight - panelH))
+        }
+      })
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   // ── Drag handlers ────────────────────────────────────────────────────────────
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
