@@ -106,7 +106,10 @@ const deviceCategory = fc.constantFrom(
   'dns-server',
   'process-unit',
   'flow-meter',
-  'pressure-transmitter'
+  'pressure-transmitter',
+  'temperature-sensor',
+  'gas-detector',
+  'vibration-sensor'
 )
 
 /** Well-formed CIDR strings from common RFC 1918 ranges */

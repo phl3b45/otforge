@@ -325,6 +325,9 @@ const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
   pmu: ['dnp3'], // PMUs report via DNP3 by default; IEC 61850 in substation deployments
   'iiot-sensor': ['mqtt'], // wireless IIoT sensor publishes MQTT
   'iot-gateway': ['mqtt'], // gateway bridges MQTT ↔ OPC-UA/historian
+  'temperature-sensor': ['modbus-tcp'], // FUXA Simulator → PLC via Modbus TCP
+  'gas-detector': ['modbus-tcp'],
+  'vibration-sensor': ['modbus-tcp'],
   // ── Control Center (L3) ─────────────────────────────────────────────────────
   hmi: ['none'],
   historian: ['none'],
@@ -376,6 +379,9 @@ const CATEGORY_LABELS: Record<DeviceCategory, string> = {
   pmu: 'PMU',
   'iiot-sensor': 'IIoT Sensor',
   'iot-gateway': 'IoT GW',
+  'temperature-sensor': 'Temp Sensor',
+  'gas-detector': 'Gas Detector',
+  'vibration-sensor': 'Vibration',
   // ── Control Center (L3) ─────────────────────────────────────────────────────
   hmi: 'HMI',
   historian: 'Historian',

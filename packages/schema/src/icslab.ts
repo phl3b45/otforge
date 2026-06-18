@@ -87,6 +87,9 @@ export type DeviceCategory =
   | 'pmu' // Phasor Measurement Unit — IEEE C37.118 synchrophasor, GPS-timestamped grid telemetry
   | 'iiot-sensor' // IIoT wireless sensor node — WirelessHART, ISA100.11a, MQTT publisher
   | 'iot-gateway' // IIoT protocol gateway — Modbus-to-MQTT/REST bridge, edge aggregator
+  | 'temperature-sensor' // Temperature transmitter — RTD/thermocouple, 4-20 mA / HART output
+  | 'gas-detector' // Fixed gas detector — combustible / toxic gas, 4-20 mA / relay output
+  | 'vibration-sensor' // Vibration / proximity sensor — rotating machinery health monitoring
   // ── Control Center (Level 3) ─────────────────────────────────────────────────
   | 'hmi'
   | 'historian'
@@ -575,6 +578,72 @@ export interface RtuConfig {
   siteType?: string
 }
 
+/**
+ * Physics simulation parameters for sensor nodes on the OT canvas.
+ *
+ * Sensor nodes (temperature-sensor, pressure-transmitter, flow-meter,
+ * level-transmitter, gas-detector, vibration-sensor) do NOT spawn Docker
+ * containers. Instead, this config is read at simulation start by
+ * fuxa-provisioning.ts and written into FUXA's device/tag JSON so the
+ * FUXA Simulator device generates realistic synthetic process values.
+ *
+ * The PLC polls sensor values over real Modbus TCP — FUXA exposes each
+ * sensor tag as a holding register at the address in `modbusRegister`.
+ * Students can capture this traffic in Wireshark on the OT network.
+ *
+ * Waveforms map directly to FUXA's Simulator signal types:
+ *   sine     — smooth oscillation between min and max (default for most sensors)
+ *   random   — white noise bounded by min/max (gas detectors, turbulence)
+ *   sawtooth — linear ramp then reset (e.g. tank level during fill/drain cycle)
+ *   square   — two-state output (e.g. discrete level switch, pump run/stop)
+ *   constant — fixed value at (min + max) / 2 (baseline / fault scenario)
+ */
+export interface SensorConfig {
+  /**
+   * FUXA Simulator waveform type for this sensor tag.
+   * Determines the shape of the synthetic process value over time.
+   */
+  waveform: 'sine' | 'random' | 'sawtooth' | 'square' | 'constant'
+  /** Minimum engineering value (bottom of the 4-20 mA / signal range). */
+  minValue: number
+  /** Maximum engineering value (top of the 4-20 mA / signal range). */
+  maxValue: number
+  /** Engineering units string displayed on the FUXA HMI gauge (e.g. "°C", "bar", "L/min", "ppm", "mm/s²"). */
+  units: string
+  /**
+   * Random noise added on top of the waveform as a percentage of the full range.
+   * 0 = clean waveform; 5 = ±5% noise (typical for field instruments); 20 = noisy.
+   */
+  noisePercent: number
+  /**
+   * Modbus holding register address FUXA exposes this tag on (0-based).
+   * The PLC reads this register via FC03 to get the current sensor value.
+   * Assign unique addresses per sensor — duplicates cause silent value collisions.
+   */
+  modbusRegister: number
+  /**
+   * FUXA tag update interval in milliseconds (default 1000).
+   * Lower values produce faster waveforms and higher Modbus polling load.
+   */
+  sampleRateMs?: number
+  /**
+   * Low end of the normal operating band (optional — used for FUXA alarm config).
+   * When the simulated value drops below this threshold, FUXA highlights the tag.
+   */
+  normalMin?: number
+  /**
+   * High end of the normal operating band (optional — used for FUXA alarm config).
+   * When the simulated value exceeds this threshold, FUXA highlights the tag.
+   */
+  normalMax?: number
+  /**
+   * FUXA tag name override. When absent, fuxa-provisioning.ts auto-generates a
+   * name from the device label (e.g. "TT-101" becomes tag "TT_101").
+   * Must be unique within the scenario — FUXA uses this as the tag identifier.
+   */
+  tagName?: string
+}
+
 export interface DeviceConfig {
   nodeId: string // matches CanvasNode.id
   category: DeviceCategory
@@ -595,6 +664,7 @@ export interface DeviceConfig {
   plcProgram?: PLCProgramConfig
   safetyPlc?: SafetyPlcConfig // SIS config for safety-plc devices
   rtuConfig?: RtuConfig // RTU deployment configuration (rtu, iec104-rtu devices)
+  sensor?: SensorConfig // Physics simulation parameters for sensor canvas nodes (no container)
   dockerImage?: string // override default image for this device type
   /**
    * Additional Purdue Model zone networks to attach this device to, beyond the
