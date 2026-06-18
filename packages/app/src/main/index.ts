@@ -497,8 +497,12 @@ function createWindow(): void {
     }
   })
 
-  // Show the window only after the renderer has painted — avoids white-flash
-  mainWindow.on('ready-to-show', () => mainWindow!.show())
+  // Show maximized after the renderer has painted — avoids white-flash and
+  // ensures the tutorial panel and canvas have full screen real estate on launch.
+  mainWindow.on('ready-to-show', () => {
+    mainWindow!.maximize()
+    mainWindow!.show()
+  })
 
   // Any link that would normally open a new Electron window should open in the system browser
   mainWindow.webContents.setWindowOpenHandler(details => {
