@@ -46,7 +46,9 @@ interface PaletteSection {
  *
  * OT tab sections (Levels 0–2):
  *   Primary Control   — PLCs, Safety PLC, DCS Controller, RTU, IED
- *   Field Instruments — sensors, flow/pressure/level transmitters, analyzer
+ *   Field Instruments — sensors, flow/pressure/level transmitters, analyzer,
+ *                       smart sensor (Temperature/Gas/Vibration kind chosen in
+ *                       Properties Panel; FUXA-simulated, no container)
  *   Actuators & Drives — actuator, pump, valve, VFD
  *   IIoT / Wireless   — IIoT sensor node, IoT gateway
  *   Power / Grid      — PMU (power generation / transmission scenarios)
@@ -74,7 +76,8 @@ const PALETTE: PaletteSection[] = [
       { category: 'flow-meter', label: 'Flow Meter' },
       { category: 'pressure-transmitter', label: 'Pressure TX' },
       { category: 'level-transmitter', label: 'Level TX' },
-      { category: 'analyzer', label: 'Analyzer' }
+      { category: 'analyzer', label: 'Analyzer' },
+      { category: 'smart-sensor', label: 'Smart Sensor' }
     ]
   },
   {

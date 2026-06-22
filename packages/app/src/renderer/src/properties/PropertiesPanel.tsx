@@ -28,10 +28,11 @@
  */
 
 import { useEffect, useState } from 'react'
-import type { DeviceConfig, SecurityLayer, RtuConfig } from '@otforge/schema'
+import type { DeviceConfig, SecurityLayer, RtuConfig, SensorConfig } from '@otforge/schema'
 import { DeviceIcon } from '../icons/DeviceIcons'
 import { ZONE_COLORS } from '../canvas/DeviceNode'
 import { FirewallPanel, IDSPanel } from './SecurityPanel'
+import { SensorPanel } from './SensorPanel'
 
 /** Full human-readable names for the properties panel header. */
 const CATEGORY_LABELS: Record<string, string> = {
@@ -46,6 +47,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   valve: 'Control Valve',
   'flow-meter': 'Flow Meter',
   'pressure-transmitter': 'Pressure Transmitter',
+  'smart-sensor': 'Smart Sensor',
   firewall: 'Firewall',
   'ids-ips': 'IDS / IPS',
   switch: 'Network Switch',
@@ -85,7 +87,7 @@ interface PropertiesPanelProps {
    */
   onDeviceChange?: (
     nodeId: string,
-    changes: { ipAddress?: string; label?: string; rtuConfig?: RtuConfig }
+    changes: { ipAddress?: string; label?: string; rtuConfig?: RtuConfig; sensor?: SensorConfig }
   ) => void
   /**
    * Called when the user edits security config in FirewallPanel or IDSPanel.
@@ -116,6 +118,8 @@ interface PropertiesPanelProps {
  *   - Modbus config (if device.modbus is defined)
  *   - DNP3 config (if device.dnp3 is defined)
  *   - OPC UA config (if device.opcua is defined)
+ *   - Sensor config (SensorPanel) if category === 'smart-sensor' — kind dropdown
+ *     (Temperature/Gas/Vibration) plus waveform/range/Modbus register fields
  *   - Attack machine panel — "Open Attack Terminal" button when sim running,
  *     or a "start the simulation" note when idle.
  *
@@ -170,7 +174,12 @@ export function PropertiesPanel({
     <aside className="properties-panel">
       {/* Header: icon + category type label (colored by zone) + node ID */}
       <div className="properties-header">
-        <DeviceIcon category={device.category} size={22} color={zoneColor} />
+        <DeviceIcon
+          category={device.category}
+          sensorKind={device.sensor?.kind}
+          size={22}
+          color={zoneColor}
+        />
         <div className="properties-title">
           <div className="properties-name">{device.nodeId}</div>
           <div className="properties-type" style={{ color: zoneColor }}>
@@ -433,6 +442,16 @@ export function PropertiesPanel({
                 <code className="prop-value">{device.opcua.namespace}</code>
               </div>
             </section>
+          )}
+
+          {/* ── Smart sensor config (Temperature / Gas / Vibration) ────────────── */}
+          {device.category === 'smart-sensor' && (
+            <SensorPanel
+              sensorConfig={device.sensor}
+              nodeId={device.nodeId}
+              readOnly={readOnly}
+              onChange={(nodeId, sensor) => onDeviceChange?.(nodeId, { sensor })}
+            />
           )}
 
           {/* ── Firewall panel (Phase 5) ──────────────────────────────────────── */}

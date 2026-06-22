@@ -80,9 +80,7 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   // STUB: IoT gateway — MQTT broker/bridge stub until otforge-iot-gateway is built.
   'iot-gateway': 'ghcr.io/iburres/alpine:latest',
   // No container — values live in FUXA Simulator; image field satisfies Record type only.
-  'temperature-sensor': '',
-  'gas-detector': '',
-  'vibration-sensor': '',
+  'smart-sensor': '',
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: 'ghcr.io/iburres/fuxa:latest',
   // OPC UA 1.04 server — asyncua Python server on Alpine (containers/opcua)
@@ -163,9 +161,7 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   'iiot-sensor': { memory: 64, cpus: '0.1' }, // IIoT sensor — lightweight MQTT publish loop
   'iot-gateway': { memory: 96, cpus: '0.2' }, // IoT gateway — MQTT broker + protocol bridge
   // No container — zero resource budget; FUXA Simulator provides the synthetic values.
-  'temperature-sensor': { memory: 0, cpus: '0' },
-  'gas-detector': { memory: 0, cpus: '0' },
-  'vibration-sensor': { memory: 0, cpus: '0' },
+  'smart-sensor': { memory: 0, cpus: '0' },
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: { memory: 256, cpus: '0.5' }, // FUXA Node.js HMI
   'scada-server': { memory: 256, cpus: '0.5' }, // OPC UA server (asyncua Python)
@@ -510,17 +506,11 @@ export function generateCompose(
     return `${prefix}${host}`
   }
 
-  // Sensor categories that live entirely inside FUXA's Simulator device — no Docker
-  // container is spawned. fuxa-provisioning.ts reads their SensorConfig and generates
-  // the corresponding FUXA device/tag JSON before compose up.
-  const FUXA_SENSOR_CATEGORIES = new Set<DeviceCategory>([
-    'temperature-sensor',
-    'gas-detector',
-    'vibration-sensor'
-  ])
-
   for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
-    if (FUXA_SENSOR_CATEGORIES.has(device.category)) continue
+    // smart-sensor lives entirely inside FUXA's Simulator device — no Docker container
+    // is spawned. fuxa-provisioning.ts reads its SensorConfig and generates the
+    // corresponding FUXA device/tag JSON before compose up.
+    if (device.category === 'smart-sensor') continue
 
     // Use a custom image if specified (for advanced scenarios), otherwise use the category default
     const image = device.dockerImage ?? DEVICE_IMAGES[device.category]

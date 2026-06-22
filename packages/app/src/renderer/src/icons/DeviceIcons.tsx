@@ -21,7 +21,7 @@
  *   <DeviceIcon category="sensor" size={20} className="my-icon" />
  */
 
-import type { DeviceCategory } from '@otforge/schema'
+import type { DeviceCategory, SensorConfig } from '@otforge/schema'
 
 /**
  * Shared SVG presentation attributes applied to every icon.
@@ -909,9 +909,9 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   pmu: PmuSvg, // IEEE C37.118 Phasor Measurement Unit
   'iiot-sensor': IiotSensorSvg, // IIoT wireless sensor node
   'iot-gateway': IotGatewaySvg, // IIoT protocol gateway / Modbus-to-MQTT bridge
-  'temperature-sensor': TemperatureSensorSvg, // RTD/thermocouple temperature transmitter
-  'gas-detector': GasDetectorSvg, // fixed combustible/toxic gas detector
-  'vibration-sensor': VibrationSensorSvg, // rotating machinery vibration / accelerometer
+  // smart-sensor's icon actually varies by SensorConfig.kind (see SENSOR_KIND_ICONS below);
+  // this entry is the exhaustiveness fallback used only if no kind has been chosen yet.
+  'smart-sensor': TemperatureSensorSvg,
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: HmiSvg,
   historian: HistorianSvg,
@@ -941,13 +941,27 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
 }
 
 /**
+ * Per-kind icon lookup for the smart-sensor category. Unlike every other
+ * category, smart-sensor's icon depends on SensorConfig.kind rather than on
+ * DeviceCategory alone — the Properties Panel dropdown picks Temperature/Gas/
+ * Vibration, and the canvas node icon follows that choice.
+ */
+const SENSOR_KIND_ICONS: Record<SensorConfig['kind'], () => JSX.Element> = {
+  temperature: TemperatureSensorSvg,
+  gas: GasDetectorSvg,
+  vibration: VibrationSensorSvg
+}
+
+/**
  * Renders the ISA-5.1-inspired SVG icon for a given device category.
  *
  * Wraps the raw SVG in a `<span>` with `display: inline-flex` so it flows
  * correctly in both flex containers (palette items) and grid layouts (device nodes).
  * The `flexShrink: 0` prevents the icon from being squeezed in tight horizontal layouts.
  *
- * @param category  - The DeviceCategory to render an icon for.
+ * @param category   - The DeviceCategory to render an icon for.
+ * @param sensorKind - For category === 'smart-sensor', the chosen SensorConfig.kind;
+ *   selects Temperature/Gas/Vibration icon. Ignored for every other category.
  * @param size      - Width and height in pixels (defaults to 24).
  * @param color     - CSS color value passed as `color` to the span, inherited by
  *   `stroke: currentColor` inside the SVG. Defaults to 'currentColor'.
@@ -955,16 +969,19 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
  */
 export function DeviceIcon({
   category,
+  sensorKind,
   size = 24,
   color = 'currentColor',
   className
 }: {
   category: DeviceCategory
+  sensorKind?: SensorConfig['kind']
   size?: number
   color?: string
   className?: string
 }) {
-  const IconComponent = ICON_MAP[category]
+  const IconComponent =
+    category === 'smart-sensor' && sensorKind ? SENSOR_KIND_ICONS[sensorKind] : ICON_MAP[category]
   return (
     <span
       className={className}
