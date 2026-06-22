@@ -87,9 +87,7 @@ export type DeviceCategory =
   | 'pmu' // Phasor Measurement Unit — IEEE C37.118 synchrophasor, GPS-timestamped grid telemetry
   | 'iiot-sensor' // IIoT wireless sensor node — WirelessHART, ISA100.11a, MQTT publisher
   | 'iot-gateway' // IIoT protocol gateway — Modbus-to-MQTT/REST bridge, edge aggregator
-  | 'temperature-sensor' // Temperature transmitter — RTD/thermocouple, 4-20 mA / HART output
-  | 'gas-detector' // Fixed gas detector — combustible / toxic gas, 4-20 mA / relay output
-  | 'vibration-sensor' // Vibration / proximity sensor — rotating machinery health monitoring
+  | 'smart-sensor' // Configurable field sensor (Temperature / Gas / Vibration — pick `kind` in Properties Panel); FUXA-Simulator-driven, no container
   // ── Control Center (Level 3) ─────────────────────────────────────────────────
   | 'hmi'
   | 'historian'
@@ -579,13 +577,17 @@ export interface RtuConfig {
 }
 
 /**
- * Physics simulation parameters for sensor nodes on the OT canvas.
+ * Physics simulation parameters for the smart-sensor canvas node.
  *
- * Sensor nodes (temperature-sensor, pressure-transmitter, flow-meter,
- * level-transmitter, gas-detector, vibration-sensor) do NOT spawn Docker
- * containers. Instead, this config is read at simulation start by
- * fuxa-provisioning.ts and written into FUXA's device/tag JSON so the
- * FUXA Simulator device generates realistic synthetic process values.
+ * smart-sensor does NOT spawn a Docker container. Instead, this config is read
+ * at simulation start by fuxa-provisioning.ts and written into FUXA's device/tag
+ * JSON so the FUXA Simulator device generates realistic synthetic process values.
+ *
+ * `kind` selects which physical instrument this node represents — Temperature,
+ * Gas, or Vibration — chosen from a dropdown in the Properties Panel rather than
+ * a separate DeviceCategory per sensor type. This keeps adding a new sensor type
+ * a config-only change (no new DeviceCategory, no touching every
+ * Record<DeviceCategory, ...> exhaustiveness table across the renderer/orchestrator).
  *
  * The PLC polls sensor values over real Modbus TCP — FUXA exposes each
  * sensor tag as a holding register at the address in `modbusRegister`.
@@ -599,6 +601,8 @@ export interface RtuConfig {
  *   constant — fixed value at (min + max) / 2 (baseline / fault scenario)
  */
 export interface SensorConfig {
+  /** Which physical instrument this node represents. Drives the icon, default units/range, and FUXA tag. */
+  kind: 'temperature' | 'gas' | 'vibration'
   /**
    * FUXA Simulator waveform type for this sensor tag.
    * Determines the shape of the synthetic process value over time.
@@ -664,7 +668,7 @@ export interface DeviceConfig {
   plcProgram?: PLCProgramConfig
   safetyPlc?: SafetyPlcConfig // SIS config for safety-plc devices
   rtuConfig?: RtuConfig // RTU deployment configuration (rtu, iec104-rtu devices)
-  sensor?: SensorConfig // Physics simulation parameters for sensor canvas nodes (no container)
+  sensor?: SensorConfig // Physics simulation parameters for smart-sensor canvas nodes (no container)
   dockerImage?: string // override default image for this device type
   /**
    * Additional Purdue Model zone networks to attach this device to, beyond the

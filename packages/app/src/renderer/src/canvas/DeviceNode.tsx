@@ -181,7 +181,11 @@ export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps
 
         {/* ISA-5.1 device icon, colored by zone — sized to fill the cell */}
         <div className="device-node-icon" style={{ color: zoneColor }}>
-          <DeviceIcon category={data.device.category} size={44} />
+          <DeviceIcon
+            category={data.device.category}
+            sensorKind={data.device.sensor?.kind}
+            size={44}
+          />
         </div>
 
         {/*

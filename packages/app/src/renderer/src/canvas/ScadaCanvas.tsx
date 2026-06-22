@@ -74,6 +74,7 @@ import {
   getCableRejectionReason,
   isProtocolCableCompatible
 } from './connectionRules'
+import { DEFAULT_SENSOR_CONFIG } from '../properties/SensorPanel'
 
 /**
  * Protocol options shown in the "Application Protocol" section of the connection menu.
@@ -325,9 +326,7 @@ const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
   pmu: ['dnp3'], // PMUs report via DNP3 by default; IEC 61850 in substation deployments
   'iiot-sensor': ['mqtt'], // wireless IIoT sensor publishes MQTT
   'iot-gateway': ['mqtt'], // gateway bridges MQTT ↔ OPC-UA/historian
-  'temperature-sensor': ['modbus-tcp'], // FUXA Simulator → PLC via Modbus TCP
-  'gas-detector': ['modbus-tcp'],
-  'vibration-sensor': ['modbus-tcp'],
+  'smart-sensor': ['modbus-tcp'], // FUXA Simulator → PLC via Modbus TCP
   // ── Control Center (L3) ─────────────────────────────────────────────────────
   hmi: ['none'],
   historian: ['none'],
@@ -379,9 +378,7 @@ const CATEGORY_LABELS: Record<DeviceCategory, string> = {
   pmu: 'PMU',
   'iiot-sensor': 'IIoT Sensor',
   'iot-gateway': 'IoT GW',
-  'temperature-sensor': 'Temp Sensor',
-  'gas-detector': 'Gas Detector',
-  'vibration-sensor': 'Vibration',
+  'smart-sensor': 'Smart Sensor',
   // ── Control Center (L3) ─────────────────────────────────────────────────────
   hmi: 'HMI',
   historian: 'Historian',
@@ -1783,6 +1780,13 @@ export function ScadaCanvas({
           powerSource: 'solar-battery'
         }
         device.rtuConfig = defaultRtu
+      }
+
+      // smart-sensor devices get a sensible default sensor config (Temperature kind,
+      // sine waveform, -20..150°C) so the Sensor Configuration panel and canvas icon
+      // are immediately populated. Authors pick the kind via the Properties Panel dropdown.
+      if (category === 'smart-sensor') {
+        device.sensor = DEFAULT_SENSOR_CONFIG
       }
 
       // Use the pack device type's label if available; fall back to the built-in label.

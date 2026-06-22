@@ -1072,9 +1072,7 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
   pmu: 'Phasor Measurement Unit',
   'iiot-sensor': 'IIoT Sensor',
   'iot-gateway': 'IoT Gateway',
-  'temperature-sensor': 'Temperature Sensor',
-  'gas-detector': 'Gas Detector',
-  'vibration-sensor': 'Vibration Sensor',
+  'smart-sensor': 'Smart Sensor',
   hmi: 'HMI',
   historian: 'Historian',
   'scada-server': 'SCADA Server',
@@ -1157,9 +1155,9 @@ const DEVICE_CABLE_CAPABILITIES: Record<DeviceCategory, Set<CableType>> = {
   pmu: new Set(['cat5e', 'cat6', 'mmf', 'smf', 'ac']), // Ethernet/fiber; GPS antenna not modeled
   'iiot-sensor': new Set(['wifi', 'dc']), // wireless only; battery/loop powered
   'iot-gateway': new Set(['rs485', 'cat5e', 'cat6', 'wifi', 'ac']), // bridges serial→Ethernet
-  'temperature-sensor': new Set(['rs485', 'cat5e', 'dc']), // 4-20 mA loop / Modbus RTU / Ethernet
-  'gas-detector': new Set(['rs485', 'cat5e', 'dc']), // 4-20 mA loop / Modbus RTU / relay
-  'vibration-sensor': new Set(['rs485', 'cat5e', 'wifi', 'dc']), // 4-20 mA / wireless IIoT
+  // Union of all three kinds' wiring options (Temperature/Gas: 4-20 mA loop, RS-485,
+  // Ethernet; Vibration adds Wi-Fi for wireless IIoT accelerometers).
+  'smart-sensor': new Set(['rs485', 'cat5e', 'wifi', 'dc']),
 
   // ── Control center (L3) — Ethernet; EWS also has RS-232 console port ─────────────
   // HMI: Cat5e/Cat6 wired; modern panel PCs may also have Wi-Fi for roaming tablets.
