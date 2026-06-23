@@ -23,8 +23,10 @@ import type { OTForgeMeta, Sector } from '@otforge/schema'
 const SECTOR_OPTIONS: { value: Sector; label: string }[] = [
   { value: 'generic', label: 'Generic (no specific sector)' },
   { value: 'oil-gas', label: 'Oil & Gas' },
-  { value: 'power-electric', label: 'Power & Electric' },
+  { value: 'power-generation', label: 'Power Generation' },
+  { value: 'power-distribution', label: 'Power Distribution' },
   { value: 'water-treatment', label: 'Water Treatment' },
+  { value: 'chemical-batch', label: 'Chemical / Batch Processing' },
   { value: 'automotive', label: 'Automotive Manufacturing' }
 ]
 
