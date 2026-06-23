@@ -2,7 +2,14 @@
 // All four layers are present in unlocked scenarios. Locked scenarios omit visual/security
 // layer details to prevent topology extraction by students.
 
-export type Sector = 'oil-gas' | 'power-electric' | 'water-treatment' | 'automotive' | 'generic'
+export type Sector =
+  | 'oil-gas'
+  | 'power-generation'
+  | 'power-distribution'
+  | 'water-treatment'
+  | 'chemical-batch'
+  | 'automotive'
+  | 'generic'
 
 export type Protocol =
   | 'modbus-tcp'
