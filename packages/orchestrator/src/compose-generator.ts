@@ -60,27 +60,17 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   'safety-plc': 'ghcr.io/iburres/otforge-openplc:latest',
   // STUB: DCS Controller — pymodbus on Alpine until otforge-dcs image is built.
   'dcs-controller': 'ghcr.io/iburres/alpine:latest',
-  // STUB: VFD / Motor Drive — Modbus RTU server stub.
-  vfd: 'ghcr.io/iburres/alpine:latest',
   // BACnet/IP device — bacpypes3 Python server on Alpine (containers/bacnet)
   sensor: 'ghcr.io/iburres/otforge-bacnet:latest',
-  actuator: 'ghcr.io/iburres/alpine:latest',
-  pump: 'ghcr.io/iburres/alpine:latest',
-  valve: 'ghcr.io/iburres/alpine:latest',
-  'flow-meter': 'ghcr.io/iburres/alpine:latest',
-  'pressure-transmitter': 'ghcr.io/iburres/alpine:latest',
-  // STUB: Level transmitter — Modbus TCP register server stub.
-  'level-transmitter': 'ghcr.io/iburres/alpine:latest',
-  // STUB: Analyzer — Modbus TCP register server stub.
-  analyzer: 'ghcr.io/iburres/alpine:latest',
-  // STUB: PMU — DNP3 / IEC C37.118 stub until otforge-pmu is built.
-  pmu: 'ghcr.io/iburres/alpine:latest',
   // STUB: IIoT sensor — MQTT publisher stub until otforge-iiot-sensor is built.
   'iiot-sensor': 'ghcr.io/iburres/alpine:latest',
   // STUB: IoT gateway — MQTT broker/bridge stub until otforge-iot-gateway is built.
   'iot-gateway': 'ghcr.io/iburres/alpine:latest',
   // No container — values live in FUXA Simulator; image field satisfies Record type only.
   'smart-sensor': '',
+  // Real Modbus TCP/RTU outstation — same pymodbus server image as rtu (containers/modbus).
+  // Consolidated from the former vfd/actuator/pump/valve STUB categories (Phase 14).
+  'smart-controller': 'ghcr.io/iburres/otforge-modbus:latest',
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: 'ghcr.io/iburres/fuxa:latest',
   // OPC UA 1.04 server — asyncua Python server on Alpine (containers/opcua)
@@ -148,20 +138,12 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   'process-unit': { memory: 96, cpus: '0.25' }, // pymodbus + physics loop on Alpine (Phase 11)
   'safety-plc': { memory: 128, cpus: '0.5' }, // Safety PLC / SIS — same budget as process PLC
   'dcs-controller': { memory: 128, cpus: '0.5' }, // DCS Controller — OPC-UA server + loop logic
-  vfd: { memory: 64, cpus: '0.15' }, // VFD / Motor Drive — Modbus RTU register server
   sensor: { memory: 96, cpus: '0.25' }, // BACnet/IP bacpypes3 Python server
-  actuator: { memory: 64, cpus: '0.15' },
-  pump: { memory: 64, cpus: '0.15' },
-  valve: { memory: 64, cpus: '0.15' },
-  'flow-meter': { memory: 64, cpus: '0.15' },
-  'pressure-transmitter': { memory: 64, cpus: '0.15' },
-  'level-transmitter': { memory: 64, cpus: '0.15' }, // Level TX — Modbus register stub
-  analyzer: { memory: 80, cpus: '0.15' }, // Process analyzer — slightly heavier than simple TX
-  pmu: { memory: 80, cpus: '0.2' }, // PMU — DNP3/IEC C37.118 publisher
   'iiot-sensor': { memory: 64, cpus: '0.1' }, // IIoT sensor — lightweight MQTT publish loop
   'iot-gateway': { memory: 96, cpus: '0.2' }, // IoT gateway — MQTT broker + protocol bridge
   // No container — zero resource budget; FUXA Simulator provides the synthetic values.
   'smart-sensor': { memory: 0, cpus: '0' },
+  'smart-controller': { memory: 80, cpus: '0.25' }, // pymodbus on Alpine, same budget as rtu
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: { memory: 256, cpus: '0.5' }, // FUXA Node.js HMI
   'scada-server': { memory: 256, cpus: '0.5' }, // OPC UA server (asyncua Python)
@@ -610,6 +592,39 @@ export function generateCompose(
         if (device.safetyPlc.safeState) sisEnv.push(`SIS_SAFE_STATE=${device.safetyPlc.safeState}`)
         services[serviceName].environment = sisEnv
       }
+    }
+
+    // Controller-specific env vars — injected for smart-controller devices only.
+    // These are informational (visible in container logs / Properties Panel) — real
+    // protocol behavior comes from the device's generic modbus/dnp3 config blocks.
+    if (device.category === 'smart-controller' && device.controller) {
+      const ctrlEnv: string[] = services[serviceName].environment ?? []
+      ctrlEnv.push(`CONTROLLER_KIND=${device.controller.kind}`)
+      if (device.controller.ratedFlowLpm !== undefined)
+        ctrlEnv.push(`CONTROLLER_RATED_FLOW_LPM=${device.controller.ratedFlowLpm}`)
+      if (device.controller.motorPowerKw !== undefined)
+        ctrlEnv.push(`CONTROLLER_MOTOR_POWER_KW=${device.controller.motorPowerKw}`)
+      if (device.controller.actuatorType)
+        ctrlEnv.push(`CONTROLLER_ACTUATOR_TYPE=${device.controller.actuatorType}`)
+      if (device.controller.failPosition)
+        ctrlEnv.push(`CONTROLLER_FAIL_POSITION=${device.controller.failPosition}`)
+      if (device.controller.maxFrequencyHz !== undefined)
+        ctrlEnv.push(`CONTROLLER_MAX_FREQUENCY_HZ=${device.controller.maxFrequencyHz}`)
+      if (device.controller.travelType)
+        ctrlEnv.push(`CONTROLLER_TRAVEL_TYPE=${device.controller.travelType}`)
+      if (device.controller.signalType)
+        ctrlEnv.push(`CONTROLLER_SIGNAL_TYPE=${device.controller.signalType}`)
+      if (device.controller.chokePositionPercent !== undefined) {
+        ctrlEnv.push(`CONTROLLER_CHOKE_POSITION_PCT=${device.controller.chokePositionPercent}`)
+      }
+      if (device.controller.downholePressureSetpointBar !== undefined) {
+        ctrlEnv.push(
+          `CONTROLLER_DOWNHOLE_PRESSURE_SETPOINT_BAR=${device.controller.downholePressureSetpointBar}`
+        )
+      }
+      if (device.controller.liftMethod)
+        ctrlEnv.push(`CONTROLLER_LIFT_METHOD=${device.controller.liftMethod}`)
+      services[serviceName].environment = ctrlEnv
     }
 
     // Process-unit containers publish their Modbus TCP port (502) on a deterministic

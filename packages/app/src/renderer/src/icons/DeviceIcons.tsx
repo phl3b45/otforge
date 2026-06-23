@@ -21,7 +21,7 @@
  *   <DeviceIcon category="sensor" size={20} className="my-icon" />
  */
 
-import type { DeviceCategory, SensorConfig } from '@otforge/schema'
+import type { ControllerConfig, DeviceCategory, SensorConfig } from '@otforge/schema'
 
 /**
  * Shared SVG presentation attributes applied to every icon.
@@ -146,6 +146,21 @@ function ValveSvg() {
       <polygon points="2,5 12,12 2,19" />
       <polygon points="22,5 12,12 22,19" />
       <line x1="12" y1="2" x2="12" y2="22" />
+    </svg>
+  )
+}
+
+/**
+ * Wellhead Controller — simplified Christmas-tree symbol: wellbore stem with a
+ * master valve (horizontal bar) and choke valve (triangle) stacked above the casing.
+ */
+function WellheadControllerSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      <line x1="12" y1="3" x2="12" y2="21" />
+      <line x1="6" y1="9" x2="18" y2="9" />
+      <polygon points="9,14 15,14 12,19" />
+      <line x1="3" y1="21" x2="21" y2="21" />
     </svg>
   )
 }
@@ -894,24 +909,18 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   ied: IedSvg,
   'safety-plc': SafetyPlcSvg, // IEC 61511 Safety PLC / SIS — Triconex, Siemens Safety
   'dcs-controller': DcsControllerSvg, // Distributed Control System — DeltaV, Experion, 800xA
-  vfd: VfdSvg, // Variable Frequency Drive / motor drive
   'legacy-plc': LegacyPlcSvg, // Siemens S7-300/400/1200/1500 via S7comm (Phase 10)
   'iec104-rtu': Iec104RtuSvg, // IEC 60870-5-104 RTU via conpot emulation (Phase 10)
   'process-unit': ProcessUnitSvg, // physics-simulated process unit (Phase 11)
   sensor: SensorSvg,
-  actuator: ActuatorSvg,
-  pump: PumpSvg,
-  valve: ValveSvg,
-  'flow-meter': FlowMeterSvg,
-  'pressure-transmitter': PressureTransmitterSvg,
-  'level-transmitter': LevelTransmitterSvg, // tank/vessel level measurement
-  analyzer: AnalyzerSvg, // online process analyzer
-  pmu: PmuSvg, // IEEE C37.118 Phasor Measurement Unit
   'iiot-sensor': IiotSensorSvg, // IIoT wireless sensor node
   'iot-gateway': IotGatewaySvg, // IIoT protocol gateway / Modbus-to-MQTT bridge
   // smart-sensor's icon actually varies by SensorConfig.kind (see SENSOR_KIND_ICONS below);
   // this entry is the exhaustiveness fallback used only if no kind has been chosen yet.
   'smart-sensor': TemperatureSensorSvg,
+  // smart-controller's icon actually varies by ControllerConfig.kind (see
+  // CONTROLLER_KIND_ICONS below); this entry is the exhaustiveness fallback.
+  'smart-controller': WellheadControllerSvg,
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: HmiSvg,
   historian: HistorianSvg,
@@ -943,13 +952,32 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
 /**
  * Per-kind icon lookup for the smart-sensor category. Unlike every other
  * category, smart-sensor's icon depends on SensorConfig.kind rather than on
- * DeviceCategory alone — the Properties Panel dropdown picks Temperature/Gas/
- * Vibration, and the canvas node icon follows that choice.
+ * DeviceCategory alone — the Properties Panel dropdown picks the instrument
+ * kind, and the canvas node icon follows that choice. flow/pressure/level/
+ * analyzer/pmu were consolidated from their own former DeviceCategory values.
  */
 const SENSOR_KIND_ICONS: Record<SensorConfig['kind'], () => JSX.Element> = {
   temperature: TemperatureSensorSvg,
   gas: GasDetectorSvg,
-  vibration: VibrationSensorSvg
+  vibration: VibrationSensorSvg,
+  flow: FlowMeterSvg,
+  pressure: PressureTransmitterSvg,
+  level: LevelTransmitterSvg,
+  analyzer: AnalyzerSvg,
+  pmu: PmuSvg
+}
+
+/**
+ * Per-kind icon lookup for the smart-controller category. Mirrors
+ * SENSOR_KIND_ICONS — pump/valve/vfd/actuator were consolidated from their own
+ * former DeviceCategory values; wellhead-controller is the first net-new kind.
+ */
+const CONTROLLER_KIND_ICONS: Record<ControllerConfig['kind'], () => JSX.Element> = {
+  pump: PumpSvg,
+  valve: ValveSvg,
+  vfd: VfdSvg,
+  actuator: ActuatorSvg,
+  'wellhead-controller': WellheadControllerSvg
 }
 
 /**
@@ -959,9 +987,11 @@ const SENSOR_KIND_ICONS: Record<SensorConfig['kind'], () => JSX.Element> = {
  * correctly in both flex containers (palette items) and grid layouts (device nodes).
  * The `flexShrink: 0` prevents the icon from being squeezed in tight horizontal layouts.
  *
- * @param category   - The DeviceCategory to render an icon for.
- * @param sensorKind - For category === 'smart-sensor', the chosen SensorConfig.kind;
- *   selects Temperature/Gas/Vibration icon. Ignored for every other category.
+ * @param category       - The DeviceCategory to render an icon for.
+ * @param sensorKind     - For category === 'smart-sensor', the chosen SensorConfig.kind.
+ *   Ignored for every other category.
+ * @param controllerKind - For category === 'smart-controller', the chosen
+ *   ControllerConfig.kind. Ignored for every other category.
  * @param size      - Width and height in pixels (defaults to 24).
  * @param color     - CSS color value passed as `color` to the span, inherited by
  *   `stroke: currentColor` inside the SVG. Defaults to 'currentColor'.
@@ -970,18 +1000,23 @@ const SENSOR_KIND_ICONS: Record<SensorConfig['kind'], () => JSX.Element> = {
 export function DeviceIcon({
   category,
   sensorKind,
+  controllerKind,
   size = 24,
   color = 'currentColor',
   className
 }: {
   category: DeviceCategory
   sensorKind?: SensorConfig['kind']
+  controllerKind?: ControllerConfig['kind']
   size?: number
   color?: string
   className?: string
 }) {
-  const IconComponent =
-    category === 'smart-sensor' && sensorKind ? SENSOR_KIND_ICONS[sensorKind] : ICON_MAP[category]
+  let IconComponent = ICON_MAP[category]
+  if (category === 'smart-sensor' && sensorKind) IconComponent = SENSOR_KIND_ICONS[sensorKind]
+  if (category === 'smart-controller' && controllerKind) {
+    IconComponent = CONTROLLER_KIND_ICONS[controllerKind]
+  }
   return (
     <span
       className={className}

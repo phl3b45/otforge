@@ -3,11 +3,12 @@
  *
  * Renders the configuration form for the consolidated smart-sensor device type.
  * Rather than a separate DeviceCategory per physical instrument, smart-sensor
- * carries a single `kind` field (Temperature / Gas / Vibration) selected here via
- * dropdown — the canvas icon, default engineering units, and default range follow
- * that choice automatically. This keeps adding a future sensor kind a config-only
- * change: no new DeviceCategory, no touching every Record<DeviceCategory, ...>
- * exhaustiveness table across the renderer and orchestrator packages.
+ * carries a single `kind` field (temperature/gas/vibration/flow/pressure/level/
+ * analyzer/pmu) selected here via dropdown — the canvas icon, default engineering
+ * units, and default range follow that choice automatically. This keeps adding a
+ * future sensor kind a config-only change: no new DeviceCategory, no touching
+ * every Record<DeviceCategory, ...> exhaustiveness table across the renderer and
+ * orchestrator packages.
  *
  * smart-sensor does NOT spawn a Docker container — fuxa-provisioning.ts reads this
  * config at simulation start and writes it into FUXA's Simulator device/tag JSON.
@@ -29,7 +30,12 @@ type Waveform = SensorConfig['waveform']
 const KIND_OPTIONS: { value: SensorKind; label: string }[] = [
   { value: 'temperature', label: 'Temperature' },
   { value: 'gas', label: 'Gas Detector' },
-  { value: 'vibration', label: 'Vibration' }
+  { value: 'vibration', label: 'Vibration' },
+  { value: 'flow', label: 'Flow Meter' },
+  { value: 'pressure', label: 'Pressure Transmitter' },
+  { value: 'level', label: 'Level Transmitter' },
+  { value: 'analyzer', label: 'Process Analyzer' },
+  { value: 'pmu', label: 'Phasor Measurement Unit' }
 ]
 
 const WAVEFORM_OPTIONS: { value: Waveform; label: string }[] = [
@@ -51,7 +57,12 @@ const KIND_DEFAULTS: Record<
 > = {
   temperature: { units: '°C', minValue: -20, maxValue: 150, waveform: 'sine', noisePercent: 5 },
   gas: { units: 'ppm', minValue: 0, maxValue: 100, waveform: 'random', noisePercent: 10 },
-  vibration: { units: 'mm/s²', minValue: 0, maxValue: 50, waveform: 'sine', noisePercent: 15 }
+  vibration: { units: 'mm/s²', minValue: 0, maxValue: 50, waveform: 'sine', noisePercent: 15 },
+  flow: { units: 'L/min', minValue: 0, maxValue: 300, waveform: 'sawtooth', noisePercent: 5 },
+  pressure: { units: 'bar', minValue: 0, maxValue: 16, waveform: 'sine', noisePercent: 5 },
+  level: { units: 'm', minValue: 0, maxValue: 10, waveform: 'sawtooth', noisePercent: 3 },
+  analyzer: { units: 'pH', minValue: 0, maxValue: 14, waveform: 'sine', noisePercent: 8 },
+  pmu: { units: 'Hz', minValue: 49.5, maxValue: 50.5, waveform: 'sine', noisePercent: 2 }
 }
 
 // ── Default config ────────────────────────────────────────────────────────────

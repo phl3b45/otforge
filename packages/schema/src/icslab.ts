@@ -79,22 +79,14 @@ export type DeviceCategory =
   | 'ied'
   | 'safety-plc' // Safety Instrumented System / Safety PLC (IEC 61511) — Triconex, Siemens Safety
   | 'dcs-controller' // Distributed Control System controller — Honeywell, Emerson DeltaV, ABB 800xA
-  | 'vfd' // Variable Frequency Drive / motor drive — AC drives with Modbus/EtherNet/IP
   | 'legacy-plc' // Siemens S7-300/400/1200/1500 via S7comm (Phase 10)
   | 'iec104-rtu' // IEC 60870-5-104 RTU via conpot emulation (Phase 10)
   | 'process-unit' // Physics-simulated process unit: water tank, pipeline, generator (Phase 11)
   | 'sensor'
-  | 'actuator'
-  | 'pump'
-  | 'valve'
-  | 'flow-meter'
-  | 'pressure-transmitter'
-  | 'level-transmitter' // Tank/vessel level measurement — ultrasonic, radar, float (4-20 mA / HART)
-  | 'analyzer' // Online process analyzer — chromatograph, pH, TOC, conductivity
-  | 'pmu' // Phasor Measurement Unit — IEEE C37.118 synchrophasor, GPS-timestamped grid telemetry
   | 'iiot-sensor' // IIoT wireless sensor node — WirelessHART, ISA100.11a, MQTT publisher
   | 'iot-gateway' // IIoT protocol gateway — Modbus-to-MQTT/REST bridge, edge aggregator
-  | 'smart-sensor' // Configurable field sensor (Temperature / Gas / Vibration — pick `kind` in Properties Panel); FUXA-Simulator-driven, no container
+  | 'smart-sensor' // Configurable field sensor (pick `kind` in Properties Panel); FUXA-Simulator-driven, no container
+  | 'smart-controller' // Configurable field controller/actuator (pick `kind` in Properties Panel); real Modbus-backed container
   // ── Control Center (Level 3) ─────────────────────────────────────────────────
   | 'hmi'
   | 'historian'
@@ -590,11 +582,12 @@ export interface RtuConfig {
  * at simulation start by fuxa-provisioning.ts and written into FUXA's device/tag
  * JSON so the FUXA Simulator device generates realistic synthetic process values.
  *
- * `kind` selects which physical instrument this node represents — Temperature,
- * Gas, or Vibration — chosen from a dropdown in the Properties Panel rather than
- * a separate DeviceCategory per sensor type. This keeps adding a new sensor type
- * a config-only change (no new DeviceCategory, no touching every
- * Record<DeviceCategory, ...> exhaustiveness table across the renderer/orchestrator).
+ * `kind` selects which physical instrument this node represents — chosen from a
+ * dropdown in the Properties Panel rather than a separate DeviceCategory per
+ * sensor type. This keeps adding a new sensor type a config-only change (no new
+ * DeviceCategory, no touching every Record<DeviceCategory, ...> exhaustiveness
+ * table across the renderer/orchestrator). flow/pressure/level/analyzer/pmu were
+ * consolidated from their own former STUB DeviceCategory values into this pattern.
  *
  * The PLC polls sensor values over real Modbus TCP — FUXA exposes each
  * sensor tag as a holding register at the address in `modbusRegister`.
@@ -609,7 +602,7 @@ export interface RtuConfig {
  */
 export interface SensorConfig {
   /** Which physical instrument this node represents. Drives the icon, default units/range, and FUXA tag. */
-  kind: 'temperature' | 'gas' | 'vibration'
+  kind: 'temperature' | 'gas' | 'vibration' | 'flow' | 'pressure' | 'level' | 'analyzer' | 'pmu'
   /**
    * FUXA Simulator waveform type for this sensor tag.
    * Determines the shape of the synthetic process value over time.
@@ -655,6 +648,54 @@ export interface SensorConfig {
   tagName?: string
 }
 
+/**
+ * Configuration for the smart-controller canvas node.
+ *
+ * Unlike smart-sensor, smart-controller DOES spawn a real Docker container
+ * (defaults to the same otforge-modbus image rtu uses) — these devices are meant
+ * to be genuinely attackable, not just synthetic FUXA values. Real protocol
+ * behavior (registers, addresses) comes from the existing generic `modbus`/`dnp3`
+ * blocks on DeviceConfig; the fields below are informational/educational only,
+ * injected as CONTROLLER_* env vars (same spirit as SafetyPlcConfig's SIS_* vars)
+ * so students can see them in container logs and the Properties Panel.
+ *
+ * `kind` selects which physical device this node represents — chosen from a
+ * dropdown in the Properties Panel rather than a separate DeviceCategory.
+ * pump/valve/vfd/actuator were consolidated from their own former STUB
+ * DeviceCategory values into this pattern; wellhead-controller is the first
+ * net-new archetype added directly as a kind (oil&gas wellhead/Christmas-tree
+ * controller — choke valve + downhole pressure + artificial-lift control loop).
+ */
+export interface ControllerConfig {
+  /** Which physical device this node represents. Drives the icon and which fields below apply. */
+  kind: 'pump' | 'valve' | 'vfd' | 'actuator' | 'wellhead-controller'
+  // ── pump ──────────────────────────────────────────────────────────────────
+  /** Rated discharge flow at 100% speed, in L/min. */
+  ratedFlowLpm?: number
+  /** Motor nameplate power, in kW. */
+  motorPowerKw?: number
+  // ── valve ─────────────────────────────────────────────────────────────────
+  /** Actuation method. */
+  actuatorType?: 'pneumatic' | 'electric' | 'hydraulic'
+  /** Position the valve drives to on loss of signal/power. */
+  failPosition?: 'open' | 'closed' | 'last'
+  // ── vfd ───────────────────────────────────────────────────────────────────
+  /** Maximum output frequency, in Hz (typically 50/60 base, up to ~120 for overspeed). */
+  maxFrequencyHz?: number
+  // ── actuator ──────────────────────────────────────────────────────────────
+  /** Mechanical motion type. */
+  travelType?: 'linear' | 'rotary'
+  /** Control signal type from the controlling PLC/RTU. */
+  signalType?: '4-20mA' | 'discrete' | 'modbus'
+  // ── wellhead-controller ───────────────────────────────────────────────────
+  /** Current choke valve opening, 0-100%. */
+  chokePositionPercent?: number
+  /** Downhole pressure setpoint, in bar. */
+  downholePressureSetpointBar?: number
+  /** Artificial-lift method used to bring fluid to surface. */
+  liftMethod?: 'natural' | 'rod-pump' | 'esp' | 'gas-lift'
+}
+
 export interface DeviceConfig {
   nodeId: string // matches CanvasNode.id
   category: DeviceCategory
@@ -676,6 +717,7 @@ export interface DeviceConfig {
   safetyPlc?: SafetyPlcConfig // SIS config for safety-plc devices
   rtuConfig?: RtuConfig // RTU deployment configuration (rtu, iec104-rtu devices)
   sensor?: SensorConfig // Physics simulation parameters for smart-sensor canvas nodes (no container)
+  controller?: ControllerConfig // Educational parameters for smart-controller canvas nodes (real container)
   dockerImage?: string // override default image for this device type
   /**
    * Additional Purdue Model zone networks to attach this device to, beyond the

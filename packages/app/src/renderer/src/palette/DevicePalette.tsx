@@ -46,12 +46,13 @@ interface PaletteSection {
  *
  * OT tab sections (Levels 0–2):
  *   Primary Control   — PLCs, Safety PLC, DCS Controller, RTU, IED
- *   Field Instruments — sensors, flow/pressure/level transmitters, analyzer,
- *                       smart sensor (Temperature/Gas/Vibration kind chosen in
- *                       Properties Panel; FUXA-simulated, no container)
- *   Actuators & Drives — actuator, pump, valve, VFD
+ *   Field Instruments — sensor, smart sensor (kind chosen in Properties Panel;
+ *                       covers temperature/gas/vibration/flow/pressure/level/
+ *                       analyzer/pmu; FUXA-simulated, no container)
+ *   Actuators & Drives — smart controller (kind chosen in Properties Panel;
+ *                       covers pump/valve/vfd/actuator/wellhead-controller;
+ *                       real Modbus-backed container, same image as RTU)
  *   IIoT / Wireless   — IIoT sensor node, IoT gateway
- *   Power / Grid      — PMU (power generation / transmission scenarios)
  *   Legacy / Protocol — Siemens S7 PLC, IEC 104 RTU
  *   Process Simulation — physics-simulated process unit
  */
@@ -73,10 +74,9 @@ const PALETTE: PaletteSection[] = [
     layers: ['ot'],
     items: [
       { category: 'sensor', label: 'Sensor' },
-      { category: 'flow-meter', label: 'Flow Meter' },
-      { category: 'pressure-transmitter', label: 'Pressure TX' },
-      { category: 'level-transmitter', label: 'Level TX' },
-      { category: 'analyzer', label: 'Analyzer' },
+      // Kind chosen after drop in the Properties Panel — covers temperature/gas/
+      // vibration plus the consolidated former flow-meter/pressure-transmitter/
+      // level-transmitter/analyzer/pmu categories.
       { category: 'smart-sensor', label: 'Smart Sensor' }
     ]
   },
@@ -84,10 +84,9 @@ const PALETTE: PaletteSection[] = [
     label: 'Actuators & Drives',
     layers: ['ot'],
     items: [
-      { category: 'actuator', label: 'Actuator' },
-      { category: 'pump', label: 'Pump' },
-      { category: 'valve', label: 'Valve' },
-      { category: 'vfd', label: 'VFD / Motor Drive' }
+      // Kind chosen after drop in the Properties Panel — covers the consolidated
+      // former actuator/pump/valve/vfd categories plus wellhead-controller.
+      { category: 'smart-controller', label: 'Smart Controller' }
     ]
   },
   {
@@ -97,11 +96,6 @@ const PALETTE: PaletteSection[] = [
       { category: 'iiot-sensor', label: 'IIoT Sensor' },
       { category: 'iot-gateway', label: 'IoT Gateway' }
     ]
-  },
-  {
-    label: 'Power / Grid',
-    layers: ['ot'],
-    items: [{ category: 'pmu', label: 'Phasor Meas. Unit' }]
   },
   {
     // Phase 10: Siemens S7 and IEC 104 legacy devices for fingerprinting labs.
@@ -216,10 +210,8 @@ const PALETTE_COLORS: Partial<Record<DeviceCategory, string>> = {
   'safety-plc': '#f85149',
   // DCS Controller — cornflower blue (primary process control)
   'dcs-controller': '#58a6ff',
-  // VFD — teal/cyan (motor/drive systems)
-  vfd: '#3dc9b0',
-  // Power/grid device — blue (electrical)
-  pmu: '#388bfd',
+  // Smart Controller — teal/cyan (motor/drive/actuator systems, consolidated from vfd)
+  'smart-controller': '#3dc9b0',
   // IIoT devices — mint green (edge/cloud)
   'iiot-sensor': '#39d0b0',
   'iot-gateway': '#56d364',

@@ -69,14 +69,8 @@ export const VALID_CONNECTIONS: Partial<
   // ── PLC (Modbus master, EtherNet/IP peer, OPC-UA server upward) ────────────
   plc: {
     sensor: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
-    actuator: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
-    pump: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
-    valve: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
-    'flow-meter': ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
-    'pressure-transmitter': ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
-    'level-transmitter': ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
-    analyzer: ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
-    vfd: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'], // PLC drives VFDs via fieldbus
+    'smart-controller': ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
+    'smart-sensor': ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'opc-ua'],
     rtu: ['modbus-tcp', 'modbus-rtu', 'dnp3'],
     ied: ['modbus-tcp', 'iec61850'],
     plc: ['modbus-tcp', 'ethernet-ip'], // peer-to-peer PLC network
@@ -95,15 +89,8 @@ export const VALID_CONNECTIONS: Partial<
   // ── RTU (remote terminal unit — serial concentrator for field and SCADA) ────
   rtu: {
     sensor: ['modbus-rtu', 'modbus-tcp', 'dnp3'],
-    actuator: ['modbus-rtu', 'modbus-tcp', 'dnp3'],
-    pump: ['modbus-rtu', 'modbus-tcp', 'dnp3'],
-    valve: ['modbus-rtu', 'modbus-tcp', 'dnp3'],
-    'flow-meter': ['modbus-rtu', 'modbus-tcp', 'dnp3'],
-    'pressure-transmitter': ['modbus-rtu', 'modbus-tcp', 'dnp3'],
-    'level-transmitter': ['modbus-rtu', 'modbus-tcp', 'dnp3'],
-    analyzer: ['modbus-rtu', 'modbus-tcp'],
-    vfd: ['modbus-rtu', 'modbus-tcp'],
-    pmu: ['dnp3', 'modbus-tcp'], // RTU collects PMU data via DNP3 or Modbus
+    'smart-controller': ['modbus-rtu', 'modbus-tcp', 'dnp3'],
+    'smart-sensor': ['modbus-rtu', 'modbus-tcp', 'dnp3'], // includes former pmu (RTU collects via DNP3/Modbus)
     plc: ['modbus-tcp', 'modbus-rtu', 'dnp3'],
     'legacy-plc': ['s7comm', 'modbus-tcp'], // RTU → Siemens S7 peer (Phase 10)
     'iec104-rtu': ['iec-104', 'modbus-tcp'], // RTU → IEC 104 RTU peer (Phase 10)
@@ -123,7 +110,7 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['iec61850', 'dnp3'], // GOOSE between peer IEDs
     rtu: ['iec61850', 'dnp3'],
     plc: ['iec61850', 'modbus-tcp'],
-    pmu: ['iec61850', 'dnp3'], // IED receives PMU synchrophasor data
+    'smart-sensor': ['iec61850', 'dnp3'], // includes former pmu — IED receives synchrophasor data
     'legacy-plc': ['s7comm'], // IED → Siemens S7 (S7comm read, Phase 10)
     'iec104-rtu': ['iec-104', 'dnp3'], // IED → IEC 104 RTU (Phase 10)
     hmi: ['dnp3', 'iec61850'],
@@ -143,12 +130,8 @@ export const VALID_CONNECTIONS: Partial<
   // serial cross-connections violate ISA-84 separation requirements.
   'safety-plc': {
     sensor: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
-    actuator: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'], // final element ESD valve/relay
-    pump: ['modbus-tcp', 'modbus-rtu'],
-    valve: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
-    'flow-meter': ['modbus-tcp', 'modbus-rtu'],
-    'pressure-transmitter': ['modbus-tcp', 'modbus-rtu'],
-    'level-transmitter': ['modbus-tcp', 'modbus-rtu'],
+    'smart-controller': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'], // final element ESD valve/relay
+    'smart-sensor': ['modbus-tcp', 'modbus-rtu'],
     plc: ['ethernet-ip', 'modbus-tcp'], // read-only status sharing with BPCS
     hmi: ['modbus-tcp', 'opc-ua'], // operator visibility (read-only view of SIS status)
     historian: ['opc-ua'], // safety event logging
@@ -167,14 +150,9 @@ export const VALID_CONNECTIONS: Partial<
   // Modbus/serial (downward to legacy field instruments).
   'dcs-controller': {
     sensor: ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
-    actuator: ['modbus-tcp', 'modbus-rtu'],
-    pump: ['modbus-tcp', 'modbus-rtu'],
-    valve: ['modbus-tcp', 'modbus-rtu'],
-    'flow-meter': ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
-    'pressure-transmitter': ['modbus-tcp', 'modbus-rtu'],
-    'level-transmitter': ['modbus-tcp', 'modbus-rtu'],
-    analyzer: ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
-    vfd: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
+    // Includes former vfd/actuator/pump/valve (Stuxnet manipulated Siemens VFDs this way)
+    'smart-controller': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
+    'smart-sensor': ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
     rtu: ['modbus-tcp'],
     plc: ['opc-ua', 'modbus-tcp'], // data exchange with adjacent PLC system
     hmi: ['opc-ua', 'modbus-tcp'],
@@ -184,20 +162,6 @@ export const VALID_CONNECTIONS: Partial<
     switch: ['none'],
     router: ['none'],
     firewall: ['none'],
-    'ids-ips': ['none']
-  },
-
-  // ── VFD / Motor Drive (polled by PLC, RTU, or DCS; passive Modbus slave) ─────
-  // Variable Frequency Drives are AC motor controllers. They accept speed/torque
-  // setpoints from a master PLC or DCS via Modbus or EtherNet/IP and report
-  // speed, current, fault status. The Stuxnet worm manipulated Siemens VFDs by
-  // intercepting and replaying Modbus write commands to the drive frequency register.
-  vfd: {
-    plc: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
-    rtu: ['modbus-rtu', 'modbus-tcp'],
-    'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
-    switch: ['none'],
-    router: ['none'],
     'ids-ips': ['none']
   },
 
@@ -226,8 +190,7 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['dnp3', 'iec61850'],
     'safety-plc': ['opc-ua'], // logs safety system events
     'dcs-controller': ['opc-ua', 'modbus-tcp'],
-    analyzer: ['opc-ua', 'modbus-tcp'], // analyzers often connect directly to historian
-    pmu: ['dnp3', 'opc-ua'],
+    'smart-sensor': ['opc-ua', 'modbus-tcp', 'dnp3'], // includes former analyzer/pmu
     'iot-gateway': ['mqtt', 'opc-ua'], // IIoT time-series data
     'legacy-plc': ['s7comm', 'opc-ua'], // Historian archives Siemens S7 data (Phase 10)
     'iec104-rtu': ['iec-104'], // Historian archives IEC 104 RTU data (Phase 10)
@@ -251,7 +214,7 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['iec61850', 'dnp3'],
     'dcs-controller': ['opc-ua', 'modbus-tcp'],
     'safety-plc': ['opc-ua', 'modbus-tcp'],
-    pmu: ['dnp3', 'opc-ua'],
+    'smart-sensor': ['dnp3', 'opc-ua'], // includes former pmu
     'iot-gateway': ['opc-ua', 'mqtt'],
     'legacy-plc': ['s7comm', 'opc-ua'], // Phase 10
     'iec104-rtu': ['iec-104'], // Phase 10
@@ -275,14 +238,11 @@ export const VALID_CONNECTIONS: Partial<
   // connections so the pipe renders at full opacity with animated icons; 'none' is
   // also permitted for untagged physical connections.
   'process-unit': {
-    pump: ['modbus-tcp', 'none'], // inlet / discharge pipe
-    valve: ['modbus-tcp', 'none'], // outlet / control valve pipe
     sensor: ['modbus-tcp', 'none'], // sensor measures vessel (e.g., level sensor on tank)
-    actuator: ['modbus-tcp', 'none'], // actuator driven by vessel state (e.g., ESD damper)
-    'flow-meter': ['modbus-tcp', 'none'], // flow measurement on inlet or outlet pipe
-    'level-transmitter': ['modbus-tcp', 'none'], // level transmitter mounted on vessel
-    'pressure-transmitter': ['modbus-tcp', 'none'], // pressure tap on vessel
-    analyzer: ['modbus-tcp', 'none'], // inline analyzer (pH, TOC, conductivity)
+    // Includes former pump/valve/actuator — pipe / control valve / ESD damper attached to vessel
+    'smart-controller': ['modbus-tcp', 'none'],
+    // Includes former flow-meter/level-transmitter/pressure-transmitter/analyzer
+    'smart-sensor': ['modbus-tcp', 'none'],
     'process-unit': ['modbus-tcp', 'none'], // vessel-to-vessel pipe (e.g., tank feeds reactor)
     switch: ['none'],
     router: ['none'],
@@ -296,11 +256,8 @@ export const VALID_CONNECTIONS: Partial<
   // Modbus master to poll classic Modbus field devices.
   'legacy-plc': {
     sensor: ['s7comm', 'modbus-tcp', 'modbus-rtu'],
-    actuator: ['s7comm', 'modbus-tcp', 'modbus-rtu'],
-    pump: ['s7comm', 'modbus-tcp', 'modbus-rtu'],
-    valve: ['s7comm', 'modbus-tcp', 'modbus-rtu'],
-    'flow-meter': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
-    'pressure-transmitter': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    'smart-controller': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    'smart-sensor': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
     plc: ['s7comm', 'modbus-tcp'], // peer PLC
     rtu: ['s7comm', 'modbus-tcp'], // upward to SCADA RTU
     ied: ['s7comm'], // IED in substation
@@ -320,11 +277,8 @@ export const VALID_CONNECTIONS: Partial<
   // SCADA master (HMI/Historian) using the IEC 104 telecontrol protocol.
   'iec104-rtu': {
     sensor: ['modbus-rtu', 'modbus-tcp'],
-    actuator: ['modbus-rtu', 'modbus-tcp'],
-    pump: ['modbus-rtu', 'modbus-tcp'],
-    valve: ['modbus-rtu', 'modbus-tcp'],
-    'flow-meter': ['modbus-rtu', 'modbus-tcp'],
-    'pressure-transmitter': ['modbus-rtu', 'modbus-tcp'],
+    'smart-controller': ['modbus-rtu', 'modbus-tcp'],
+    'smart-sensor': ['modbus-rtu', 'modbus-tcp'],
     plc: ['iec-104', 'modbus-tcp'], // peer PLC / SCADA master
     rtu: ['iec-104'], // peer RTU (RTU concentrator chain)
     ied: ['iec-104', 'dnp3'], // IED in same zone
@@ -368,107 +322,46 @@ export const VALID_CONNECTIONS: Partial<
     'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
     'iot-gateway': ['mqtt', 'modbus-tcp'],
     'process-unit': ['modbus-tcp', 'none'], // P&ID: sensor mounted on / measuring the vessel
-    actuator: ['modbus-tcp', 'none'] // P&ID: positioner feedback — sensor reads actuator position
-  },
-  actuator: {
-    plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
-    rtu: ['modbus-rtu', 'modbus-tcp'],
-    ied: ['dnp3'],
-    'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
-    'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
-    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
-    'process-unit': ['modbus-tcp', 'none'], // P&ID: actuator driven by / attached to vessel
-    valve: ['modbus-tcp', 'none'], // P&ID: actuator drives the valve stem (electric/pneumatic)
-    sensor: ['modbus-tcp', 'none'] // P&ID: positioner feedback sensor on actuator
-  },
-  pump: {
-    plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
-    rtu: ['modbus-rtu', 'modbus-tcp'],
-    ied: ['dnp3'],
-    'safety-plc': ['modbus-tcp', 'modbus-rtu'],
-    'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
-    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
-    'process-unit': ['modbus-tcp', 'none'], // P&ID: pump feeds or drains the vessel
-    valve: ['modbus-tcp', 'none'], // P&ID: discharge / suction valve on pump line
-    'flow-meter': ['modbus-tcp', 'none'], // P&ID: flow meter inline on pump discharge
-    'pressure-transmitter': ['modbus-tcp', 'none'] // P&ID: pressure tap on pump discharge
-  },
-  valve: {
-    plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
-    rtu: ['modbus-rtu', 'modbus-tcp'],
-    ied: ['dnp3'],
-    'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
-    'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
-    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
-    'process-unit': ['modbus-tcp', 'none'], // P&ID: valve on vessel outlet / bypass
-    actuator: ['modbus-tcp', 'none'], // P&ID: actuator mounted on valve body
-    pump: ['modbus-tcp', 'none'], // P&ID: valve on pump suction or discharge line
-    'flow-meter': ['modbus-tcp', 'none'], // P&ID: flow meter downstream of valve
-    'pressure-transmitter': ['modbus-tcp', 'none'] // P&ID: pressure tap downstream of valve
-  },
-  'flow-meter': {
-    plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
-    rtu: ['modbus-rtu', 'modbus-tcp'],
-    ied: ['dnp3'],
-    'safety-plc': ['modbus-tcp', 'modbus-rtu'],
-    'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
-    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
-    'process-unit': ['modbus-tcp', 'none'], // P&ID: flow meter on vessel inlet/outlet pipe
-    pump: ['modbus-tcp', 'none'], // P&ID: inline on pump line
-    valve: ['modbus-tcp', 'none'] // P&ID: inline adjacent to valve
-  },
-  'pressure-transmitter': {
-    plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
-    rtu: ['modbus-rtu', 'modbus-tcp'],
-    ied: ['dnp3'],
-    'safety-plc': ['modbus-tcp', 'modbus-rtu'],
-    'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
-    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
-    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
-    'process-unit': ['modbus-tcp', 'none'], // P&ID: pressure tap on vessel
-    pump: ['modbus-tcp', 'none'], // P&ID: pressure on pump discharge
-    valve: ['modbus-tcp', 'none'] // P&ID: pressure downstream of valve
+    'smart-controller': ['modbus-tcp', 'none'] // P&ID: positioner feedback — sensor reads actuator position
   },
 
-  // ── Level Transmitter (ISA instrument — polled like a sensor, specifically level) ──
-  'level-transmitter': {
+  // ── Smart Controller (consolidated pump/valve/vfd/actuator — real Modbus container) ──
+  // Configurable field controller (kind chosen in Properties Panel). Accepts speed/
+  // position/setpoint writes from a master PLC/RTU/DCS/SIS via Modbus or EtherNet/IP
+  // and reports status — same role the former pump/valve/vfd/actuator categories played.
+  // The Stuxnet worm manipulated Siemens VFDs by replaying Modbus write commands this way.
+  'smart-controller': {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'ethernet-ip'],
+    rtu: ['modbus-rtu', 'modbus-tcp'],
+    ied: ['dnp3'],
+    'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
+    'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip'],
+    'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
+    'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
+    'process-unit': ['modbus-tcp', 'none'], // P&ID: pump/valve/actuator attached to vessel
+    sensor: ['modbus-tcp', 'none'], // P&ID: positioner feedback sensor
+    'smart-sensor': ['modbus-tcp', 'none'], // P&ID: adjacent inline instrument
+    'smart-controller': ['modbus-tcp', 'none'] // P&ID: adjacent actuator/valve/pump on same line
+  },
+
+  // ── Smart Sensor (consolidated flow-meter/pressure/level/analyzer/pmu — FUXA-driven) ──
+  // Configurable field instrument (kind chosen in Properties Panel). No container — FUXA
+  // Simulator generates the value, exposed to the PLC/RTU/historian as a Modbus register
+  // (or DNP3/OPC-UA for the former pmu/analyzer paths). Slower-cycling kinds (analyzer)
+  // and synchrophasor kinds (pmu) reuse the same transport, simplified for lab purposes.
+  'smart-sensor': {
+    plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'opc-ua'],
     rtu: ['modbus-rtu', 'modbus-tcp', 'dnp3'],
-    ied: ['dnp3'],
+    ied: ['dnp3', 'iec61850'],
     'safety-plc': ['modbus-tcp', 'modbus-rtu'],
-    'dcs-controller': ['modbus-tcp', 'modbus-rtu'],
+    'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
     'legacy-plc': ['s7comm', 'modbus-tcp', 'modbus-rtu'],
     'iec104-rtu': ['modbus-rtu', 'modbus-tcp'],
-    'process-unit': ['modbus-tcp', 'none'] // P&ID: level transmitter mounted on vessel
-  },
-
-  // ── Process Analyzer (online chromatograph, pH, TOC, conductivity) ───────────
-  // Analyzers are slower-cycling instruments (0.5–2 min sample cycle) but use the
-  // same Modbus/OPC-UA transport. High-value sabotage targets in oil/gas and water.
-  analyzer: {
-    plc: ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
-    rtu: ['modbus-rtu', 'modbus-tcp'],
-    'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'opc-ua'],
-    historian: ['opc-ua', 'modbus-tcp'],
-    'iot-gateway': ['mqtt', 'modbus-tcp'],
-    'process-unit': ['modbus-tcp', 'none'] // P&ID: inline analyzer on vessel stream
-  },
-
-  // ── PMU — Phasor Measurement Unit (IEEE C37.118, synchrophasor, GPS-timed) ───
-  // PMUs measure voltage/current phasors at 30–60 samples/sec with GPS-synchronized
-  // timestamps. Essential for grid stability monitoring. DNP3 and IEC 61850 are the
-  // two primary transport protocols used by SCADA/WAMS (Wide Area Monitoring Systems).
-  pmu: {
-    rtu: ['dnp3', 'modbus-tcp'],
-    ied: ['iec61850', 'dnp3'],
-    historian: ['dnp3', 'opc-ua'],
+    historian: ['opc-ua', 'modbus-tcp', 'dnp3'],
     'scada-server': ['dnp3', 'opc-ua'],
-    switch: ['none'],
-    router: ['none']
+    'iot-gateway': ['mqtt', 'modbus-tcp'],
+    'process-unit': ['modbus-tcp', 'none'], // P&ID: instrument mounted on vessel
+    'smart-controller': ['modbus-tcp', 'none'] // P&ID: instrument inline with pump/valve
   },
 
   // ── IIoT Wireless Sensor Node ────────────────────────────────────────────────
@@ -488,7 +381,7 @@ export const VALID_CONNECTIONS: Partial<
   'iot-gateway': {
     'iiot-sensor': ['mqtt'], // collects from wireless sensor nodes
     sensor: ['modbus-tcp', 'modbus-rtu'], // also polls wired Modbus sensors
-    analyzer: ['mqtt', 'modbus-tcp'],
+    'smart-sensor': ['mqtt', 'modbus-tcp'], // includes former analyzer
     historian: ['mqtt', 'opc-ua'], // pushes time-series upward
     'scada-server': ['mqtt', 'opc-ua'],
     switch: ['none'],
@@ -650,7 +543,6 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['none'],
     'safety-plc': ['none'],
     'dcs-controller': ['none'],
-    vfd: ['none'],
     'legacy-plc': ['none'], // Phase 10
     'iec104-rtu': ['none'], // Phase 10
     'process-unit': ['none'], // Phase 11
@@ -661,14 +553,8 @@ export const VALID_CONNECTIONS: Partial<
     'database-server': ['none'],
     'engineering-workstation': ['none'],
     sensor: ['none'],
-    actuator: ['none'],
-    pump: ['none'],
-    valve: ['none'],
-    'flow-meter': ['none'],
-    'pressure-transmitter': ['none'],
-    'level-transmitter': ['none'],
-    analyzer: ['none'],
-    pmu: ['none'],
+    'smart-controller': ['none'],
+    'smart-sensor': ['none'],
     'iiot-sensor': ['none'],
     'iot-gateway': ['none'],
     'jump-server': ['none'],
@@ -693,7 +579,6 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['none'],
     'safety-plc': ['none'],
     'dcs-controller': ['none'],
-    vfd: ['none'],
     'legacy-plc': ['none'], // Phase 10
     'iec104-rtu': ['none'], // Phase 10
     'process-unit': ['none'], // Phase 11
@@ -704,14 +589,8 @@ export const VALID_CONNECTIONS: Partial<
     'database-server': ['none'],
     'engineering-workstation': ['none'],
     sensor: ['none'],
-    actuator: ['none'],
-    pump: ['none'],
-    valve: ['none'],
-    'flow-meter': ['none'],
-    'pressure-transmitter': ['none'],
-    'level-transmitter': ['none'],
-    analyzer: ['none'],
-    pmu: ['none'],
+    'smart-controller': ['none'],
+    'smart-sensor': ['none'],
     'iiot-sensor': ['none'],
     'iot-gateway': ['none'],
     'jump-server': ['none'],
@@ -736,7 +615,6 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['none'],
     'safety-plc': ['none'],
     'dcs-controller': ['none'],
-    vfd: ['none'],
     'legacy-plc': ['none'], // Phase 10
     'iec104-rtu': ['none'], // Phase 10
     'process-unit': ['none'], // Phase 11
@@ -747,14 +625,8 @@ export const VALID_CONNECTIONS: Partial<
     'database-server': ['none'],
     'engineering-workstation': ['none'],
     sensor: ['none'],
-    actuator: ['none'],
-    pump: ['none'],
-    valve: ['none'],
-    'flow-meter': ['none'],
-    'pressure-transmitter': ['none'],
-    'level-transmitter': ['none'],
-    analyzer: ['none'],
-    pmu: ['none'],
+    'smart-controller': ['none'],
+    'smart-sensor': ['none'],
     'iiot-sensor': ['none'],
     'iot-gateway': ['none'],
     'jump-server': ['none'],
@@ -779,7 +651,6 @@ export const VALID_CONNECTIONS: Partial<
     ied: ['none'],
     'safety-plc': ['none'],
     'dcs-controller': ['none'],
-    vfd: ['none'],
     'legacy-plc': ['none'], // Phase 10
     'iec104-rtu': ['none'], // Phase 10
     'process-unit': ['none'], // Phase 11
@@ -790,14 +661,8 @@ export const VALID_CONNECTIONS: Partial<
     'database-server': ['none'],
     'engineering-workstation': ['none'],
     sensor: ['none'],
-    actuator: ['none'],
-    pump: ['none'],
-    valve: ['none'],
-    'flow-meter': ['none'],
-    'pressure-transmitter': ['none'],
-    'level-transmitter': ['none'],
-    analyzer: ['none'],
-    pmu: ['none'],
+    'smart-controller': ['none'],
+    'smart-sensor': ['none'],
     'iiot-sensor': ['none'],
     'iot-gateway': ['none'],
     'jump-server': ['none'],
@@ -856,8 +721,6 @@ export const VALID_CONNECTIONS: Partial<
     'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip', 'opc-ua', 'none'],
     // DCS attacks: OPC-UA credential attacks, Modbus setpoint manipulation
     'dcs-controller': ['modbus-tcp', 'modbus-rtu', 'opc-ua', 'none'],
-    // Stuxnet attack vector: Modbus/EtherNet/IP frequency manipulation on Siemens VFDs
-    vfd: ['modbus-tcp', 'modbus-rtu', 'ethernet-ip', 'none'],
     // Siemens S7 attack surface: s7-enumerate (Nmap), siemens_simatic_manager (Metasploit)
     'legacy-plc': [
       's7comm',
@@ -925,7 +788,8 @@ export const VALID_CONNECTIONS: Partial<
       'iec61850',
       'none'
     ],
-    actuator: [
+    // Includes former actuator/pump/valve/vfd — Stuxnet-style Modbus/EtherNet-IP setpoint manipulation
+    'smart-controller': [
       'modbus-tcp',
       'modbus-rtu',
       'dnp3',
@@ -935,7 +799,9 @@ export const VALID_CONNECTIONS: Partial<
       'iec61850',
       'none'
     ],
-    pump: [
+    // Includes former flow-meter/pressure-transmitter/level-transmitter/analyzer/pmu —
+    // GPS spoofing + DNP3 injection attacks apply to the former pmu kind
+    'smart-sensor': [
       'modbus-tcp',
       'modbus-rtu',
       'dnp3',
@@ -945,39 +811,6 @@ export const VALID_CONNECTIONS: Partial<
       'iec61850',
       'none'
     ],
-    valve: [
-      'modbus-tcp',
-      'modbus-rtu',
-      'dnp3',
-      'opc-ua',
-      'bacnet',
-      'ethernet-ip',
-      'iec61850',
-      'none'
-    ],
-    'flow-meter': [
-      'modbus-tcp',
-      'modbus-rtu',
-      'dnp3',
-      'opc-ua',
-      'bacnet',
-      'ethernet-ip',
-      'iec61850',
-      'none'
-    ],
-    'pressure-transmitter': [
-      'modbus-tcp',
-      'modbus-rtu',
-      'dnp3',
-      'opc-ua',
-      'bacnet',
-      'ethernet-ip',
-      'iec61850',
-      'none'
-    ],
-    'level-transmitter': ['modbus-tcp', 'modbus-rtu', 'dnp3', 'opc-ua', 'none'],
-    analyzer: ['modbus-tcp', 'modbus-rtu', 'opc-ua', 'none'],
-    pmu: ['dnp3', 'iec61850', 'none'], // GPS spoofing + DNP3 injection attacks
     // IIoT attack surface: MQTT broker compromise, spoofed sensor readings
     'iiot-sensor': ['mqtt', 'none'],
     'iot-gateway': ['mqtt', 'opc-ua', 'modbus-tcp', 'none'],
@@ -1057,22 +890,14 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
   ied: 'IED',
   'safety-plc': 'Safety PLC / SIS',
   'dcs-controller': 'DCS Controller',
-  vfd: 'VFD / Motor Drive',
   'legacy-plc': 'Siemens S7 PLC', // Phase 10
   'iec104-rtu': 'IEC 104 RTU', // Phase 10
   'process-unit': 'Process Unit', // Phase 11
   sensor: 'Sensor',
-  actuator: 'Actuator',
-  pump: 'Pump',
-  valve: 'Valve',
-  'flow-meter': 'Flow Meter',
-  'pressure-transmitter': 'Pressure Transmitter',
-  'level-transmitter': 'Level Transmitter',
-  analyzer: 'Process Analyzer',
-  pmu: 'Phasor Measurement Unit',
   'iiot-sensor': 'IIoT Sensor',
   'iot-gateway': 'IoT Gateway',
   'smart-sensor': 'Smart Sensor',
+  'smart-controller': 'Smart Controller',
   hmi: 'HMI',
   historian: 'Historian',
   'scada-server': 'SCADA Server',
@@ -1135,8 +960,6 @@ const DEVICE_CABLE_CAPABILITIES: Record<DeviceCategory, Set<CableType>> = {
   'safety-plc': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']),
   // DCS Controller: larger system, fiber uplinks to DCS node bus are common
   'dcs-controller': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'mmf', 'smf', 'ac']),
-  // VFD: RS-485 serial (Modbus RTU) + Cat5e Ethernet (EtherNet/IP) + AC power input
-  vfd: new Set(['rs485', 'cat5e', 'ac']),
   'legacy-plc': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']), // Siemens S7 — same ports
   'iec104-rtu': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']), // IEC 104 RTU — same ports
   'process-unit': new Set(['cat5e', 'cat6', 'ac']), // process sim panel — Ethernet + mains
@@ -1145,19 +968,13 @@ const DEVICE_CABLE_CAPABILITIES: Record<DeviceCategory, Set<CableType>> = {
   // Smart sensors with WirelessHART/ISA100 also support Wi-Fi for wireless polling.
   // DC loop power (4-20 mA / HART) is the standard 24 VDC two-wire instrument supply.
   sensor: new Set(['rs485', 'cat5e', 'wifi', 'dc']),
-  actuator: new Set(['rs485', 'cat5e', 'wifi', 'dc']),
-  pump: new Set(['rs485', 'cat5e', 'ac']), // pumps draw AC from MCC
-  valve: new Set(['rs485', 'cat5e', 'wifi', 'dc']),
-  'flow-meter': new Set(['rs485', 'cat5e', 'wifi', 'dc']),
-  'pressure-transmitter': new Set(['rs485', 'cat5e', 'wifi', 'dc']),
-  'level-transmitter': new Set(['rs485', 'cat5e', 'wifi', 'dc']), // same as pressure-transmitter family
-  analyzer: new Set(['rs485', 'cat5e', 'wifi', 'ac']), // AC powered; RS-485 or Ethernet fieldbus
-  pmu: new Set(['cat5e', 'cat6', 'mmf', 'smf', 'ac']), // Ethernet/fiber; GPS antenna not modeled
   'iiot-sensor': new Set(['wifi', 'dc']), // wireless only; battery/loop powered
   'iot-gateway': new Set(['rs485', 'cat5e', 'cat6', 'wifi', 'ac']), // bridges serial→Ethernet
-  // Union of all three kinds' wiring options (Temperature/Gas: 4-20 mA loop, RS-485,
-  // Ethernet; Vibration adds Wi-Fi for wireless IIoT accelerometers).
+  // Union of all 8 kinds' wiring options (temperature/gas/flow/pressure/level/analyzer:
+  // 4-20 mA loop, RS-485, Ethernet; vibration/pmu add Wi-Fi/fiber for wireless/GPS-timed links).
   'smart-sensor': new Set(['rs485', 'cat5e', 'wifi', 'dc']),
+  // VFD/pump/valve/actuator wiring: RS-485 (Modbus RTU) + Cat5e (EtherNet/IP) + AC from MCC.
+  'smart-controller': new Set(['rs485', 'cat5e', 'wifi', 'dc', 'ac']),
 
   // ── Control center (L3) — Ethernet; EWS also has RS-232 console port ─────────────
   // HMI: Cat5e/Cat6 wired; modern panel PCs may also have Wi-Fi for roaming tablets.
