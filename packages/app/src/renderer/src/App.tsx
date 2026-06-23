@@ -46,6 +46,7 @@ import type {
   ResolvedPackDeviceType,
   RtuConfig,
   SensorConfig,
+  ControllerConfig,
   FluidType
 } from '@otforge/schema'
 import { ScadaCanvas } from './canvas/ScadaCanvas'
@@ -907,7 +908,13 @@ export default function App() {
   const handleDeviceChange = useCallback(
     (
       nodeId: string,
-      changes: { ipAddress?: string; label?: string; rtuConfig?: RtuConfig; sensor?: SensorConfig }
+      changes: {
+        ipAddress?: string
+        label?: string
+        rtuConfig?: RtuConfig
+        sensor?: SensorConfig
+        controller?: ControllerConfig
+      }
     ) => {
       setScenario(prev => {
         if (!prev) return prev

@@ -75,6 +75,7 @@ import {
   isProtocolCableCompatible
 } from './connectionRules'
 import { DEFAULT_SENSOR_CONFIG } from '../properties/SensorPanel'
+import { DEFAULT_CONTROLLER_CONFIG } from '../properties/ControllerPanel'
 
 /**
  * Protocol options shown in the "Application Protocol" section of the connection menu.
@@ -311,22 +312,14 @@ const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
   ied: ['dnp3'],
   'safety-plc': ['modbus-tcp'], // SIS — same Modbus transport as standard PLC
   'dcs-controller': ['opc-ua'], // DCS prefers OPC-UA upward by convention
-  vfd: ['modbus-rtu'], // most VFDs ship with Modbus RTU by default
   'legacy-plc': ['s7comm'], // Siemens S7 — S7comm primary protocol (Phase 10)
   'iec104-rtu': ['iec-104'], // IEC 60870-5-104 RTU (Phase 10)
   'process-unit': ['modbus-tcp'], // physics process sim — Modbus TCP server (Phase 11)
   sensor: ['modbus-tcp'],
-  actuator: ['modbus-tcp'],
-  pump: ['modbus-tcp'],
-  valve: ['modbus-tcp'],
-  'flow-meter': ['modbus-tcp'],
-  'pressure-transmitter': ['modbus-tcp'],
-  'level-transmitter': ['modbus-tcp'],
-  analyzer: ['modbus-tcp'],
-  pmu: ['dnp3'], // PMUs report via DNP3 by default; IEC 61850 in substation deployments
   'iiot-sensor': ['mqtt'], // wireless IIoT sensor publishes MQTT
   'iot-gateway': ['mqtt'], // gateway bridges MQTT ↔ OPC-UA/historian
   'smart-sensor': ['modbus-tcp'], // FUXA Simulator → PLC via Modbus TCP
+  'smart-controller': ['modbus-tcp'], // real pymodbus container → PLC via Modbus TCP
   // ── Control Center (L3) ─────────────────────────────────────────────────────
   hmi: ['none'],
   historian: ['none'],
@@ -363,22 +356,14 @@ const CATEGORY_LABELS: Record<DeviceCategory, string> = {
   ied: 'IED',
   'safety-plc': 'Safety PLC',
   'dcs-controller': 'DCS Ctrl',
-  vfd: 'VFD',
   'legacy-plc': 'S7 PLC', // Phase 10
   'iec104-rtu': 'IEC 104', // Phase 10
   'process-unit': 'Process Unit', // Phase 11
   sensor: 'Sensor',
-  actuator: 'Actuator',
-  pump: 'Pump',
-  valve: 'Valve',
-  'flow-meter': 'Flow Meter',
-  'pressure-transmitter': 'Pressure TX',
-  'level-transmitter': 'Level TX',
-  analyzer: 'Analyzer',
-  pmu: 'PMU',
   'iiot-sensor': 'IIoT Sensor',
   'iot-gateway': 'IoT GW',
   'smart-sensor': 'Smart Sensor',
+  'smart-controller': 'Smart Ctrl',
   // ── Control Center (L3) ─────────────────────────────────────────────────────
   hmi: 'HMI',
   historian: 'Historian',
@@ -1787,6 +1772,13 @@ export function ScadaCanvas({
       // are immediately populated. Authors pick the kind via the Properties Panel dropdown.
       if (category === 'smart-sensor') {
         device.sensor = DEFAULT_SENSOR_CONFIG
+      }
+
+      // smart-controller devices get a sensible default controller config (Pump kind)
+      // so the Controller Configuration panel and canvas icon are immediately populated.
+      // Authors pick the kind via the Properties Panel dropdown.
+      if (category === 'smart-controller') {
+        device.controller = DEFAULT_CONTROLLER_CONFIG
       }
 
       // Use the pack device type's label if available; fall back to the built-in label.

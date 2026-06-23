@@ -28,11 +28,18 @@
  */
 
 import { useEffect, useState } from 'react'
-import type { DeviceConfig, SecurityLayer, RtuConfig, SensorConfig } from '@otforge/schema'
+import type {
+  DeviceConfig,
+  SecurityLayer,
+  RtuConfig,
+  SensorConfig,
+  ControllerConfig
+} from '@otforge/schema'
 import { DeviceIcon } from '../icons/DeviceIcons'
 import { ZONE_COLORS } from '../canvas/DeviceNode'
 import { FirewallPanel, IDSPanel } from './SecurityPanel'
 import { SensorPanel } from './SensorPanel'
+import { ControllerPanel } from './ControllerPanel'
 
 /** Full human-readable names for the properties panel header. */
 const CATEGORY_LABELS: Record<string, string> = {
@@ -42,12 +49,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   hmi: 'Human Machine Interface',
   historian: 'Data Historian',
   sensor: 'Field Sensor',
-  actuator: 'Actuator',
-  pump: 'Pump',
-  valve: 'Control Valve',
-  'flow-meter': 'Flow Meter',
-  'pressure-transmitter': 'Pressure Transmitter',
   'smart-sensor': 'Smart Sensor',
+  'smart-controller': 'Smart Controller',
   firewall: 'Firewall',
   'ids-ips': 'IDS / IPS',
   switch: 'Network Switch',
@@ -87,7 +90,13 @@ interface PropertiesPanelProps {
    */
   onDeviceChange?: (
     nodeId: string,
-    changes: { ipAddress?: string; label?: string; rtuConfig?: RtuConfig; sensor?: SensorConfig }
+    changes: {
+      ipAddress?: string
+      label?: string
+      rtuConfig?: RtuConfig
+      sensor?: SensorConfig
+      controller?: ControllerConfig
+    }
   ) => void
   /**
    * Called when the user edits security config in FirewallPanel or IDSPanel.
@@ -119,7 +128,9 @@ interface PropertiesPanelProps {
  *   - DNP3 config (if device.dnp3 is defined)
  *   - OPC UA config (if device.opcua is defined)
  *   - Sensor config (SensorPanel) if category === 'smart-sensor' — kind dropdown
- *     (Temperature/Gas/Vibration) plus waveform/range/Modbus register fields
+ *     plus waveform/range/Modbus register fields
+ *   - Controller config (ControllerPanel) if category === 'smart-controller' —
+ *     kind dropdown plus kind-specific fields (pump/valve/vfd/actuator/wellhead)
  *   - Attack machine panel — "Open Attack Terminal" button when sim running,
  *     or a "start the simulation" note when idle.
  *
@@ -177,6 +188,7 @@ export function PropertiesPanel({
         <DeviceIcon
           category={device.category}
           sensorKind={device.sensor?.kind}
+          controllerKind={device.controller?.kind}
           size={22}
           color={zoneColor}
         />
@@ -444,13 +456,23 @@ export function PropertiesPanel({
             </section>
           )}
 
-          {/* ── Smart sensor config (Temperature / Gas / Vibration) ────────────── */}
+          {/* ── Smart sensor config (kind chosen in dropdown) ───────────────────── */}
           {device.category === 'smart-sensor' && (
             <SensorPanel
               sensorConfig={device.sensor}
               nodeId={device.nodeId}
               readOnly={readOnly}
               onChange={(nodeId, sensor) => onDeviceChange?.(nodeId, { sensor })}
+            />
+          )}
+
+          {/* ── Smart controller config (kind chosen in dropdown) ───────────────── */}
+          {device.category === 'smart-controller' && (
+            <ControllerPanel
+              controllerConfig={device.controller}
+              nodeId={device.nodeId}
+              readOnly={readOnly}
+              onChange={(nodeId, controller) => onDeviceChange?.(nodeId, { controller })}
             />
           )}
 

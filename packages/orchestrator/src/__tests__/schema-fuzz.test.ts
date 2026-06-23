@@ -93,9 +93,6 @@ const deviceCategory = fc.constantFrom(
   'rtu',
   'ied',
   'sensor',
-  'actuator',
-  'pump',
-  'valve',
   'hmi',
   'historian',
   'scada-server',
@@ -105,9 +102,8 @@ const deviceCategory = fc.constantFrom(
   'attack-machine',
   'dns-server',
   'process-unit',
-  'flow-meter',
-  'pressure-transmitter',
-  'smart-sensor'
+  'smart-sensor',
+  'smart-controller'
 )
 
 /** Well-formed CIDR strings from common RFC 1918 ranges */
