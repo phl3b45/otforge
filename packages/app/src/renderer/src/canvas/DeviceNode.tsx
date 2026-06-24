@@ -184,6 +184,7 @@ export const DeviceNode = memo(function DeviceNode({ data, selected }: NodeProps
           <DeviceIcon
             category={data.device.category}
             sensorKind={data.device.sensor?.kind}
+            controllerKind={data.device.controller?.kind}
             size={44}
           />
         </div>

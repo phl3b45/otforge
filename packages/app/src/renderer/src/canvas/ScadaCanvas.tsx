@@ -53,7 +53,10 @@ import type {
   CableType,
   FluidType,
   RtuConfig,
-  SiteRegion
+  SiteRegion,
+  CanvasNode,
+  ControllerConfig,
+  SensorConfig
 } from '@otforge/schema'
 import {
   DeviceNode,
@@ -427,6 +430,74 @@ function categoryToZone(category: DeviceCategory): NetworkZone {
 }
 
 /**
+ * Maps a legacy (pre-smart-controller/smart-sensor-consolidation) DeviceCategory
+ * string to its modern { category, kind } equivalent. Scenarios authored before that
+ * consolidation (e.g. ICS_Lab_01.otflab) can have visual-only nodes (see
+ * resolveVisualOnlyDevice() below) whose saved `cn.type` is one of these 9 removed
+ * categories -- without this migration, ICON_MAP[cn.type] is undefined and DeviceIcon's
+ * render throws, crashing the whole app (confirmed: this is exactly what broke
+ * ICS_Lab_01 after that consolidation -- inlet-pump-1/outlet-valve-1 are intentionally
+ * container-less decorative nodes with `type: 'pump'`/`'valve'`).
+ */
+const LEGACY_CATEGORY_MIGRATION: Partial<
+  Record<
+    string,
+    {
+      category: DeviceCategory
+      controllerKind?: ControllerConfig['kind']
+      sensorKind?: SensorConfig['kind']
+    }
+  >
+> = {
+  pump: { category: 'smart-controller', controllerKind: 'pump' },
+  valve: { category: 'smart-controller', controllerKind: 'valve' },
+  vfd: { category: 'smart-controller', controllerKind: 'vfd' },
+  actuator: { category: 'smart-controller', controllerKind: 'actuator' },
+  'flow-meter': { category: 'smart-sensor', sensorKind: 'flow' },
+  'pressure-transmitter': { category: 'smart-sensor', sensorKind: 'pressure' },
+  'level-transmitter': { category: 'smart-sensor', sensorKind: 'level' },
+  analyzer: { category: 'smart-sensor', sensorKind: 'analyzer' },
+  pmu: { category: 'smart-sensor', sensorKind: 'pmu' }
+}
+
+/**
+ * Builds the fallback DeviceConfig for a visual-only node (one with a CanvasNode entry
+ * but no devices.devices entry -- by design, for decorative nodes with no container,
+ * e.g. ICS_Lab_01's inlet-pump-1/outlet-valve-1/level-sensor-1). Migrates legacy
+ * pre-consolidation type strings via LEGACY_CATEGORY_MIGRATION so the correct icon
+ * renders instead of crashing on an unrecognized category.
+ */
+function resolveVisualOnlyDevice(cn: CanvasNode): DeviceConfig {
+  const legacy = LEGACY_CATEGORY_MIGRATION[cn.type]
+  const base = {
+    nodeId: cn.id,
+    ipAddress: '',
+    protocols: ['none' as Protocol]
+  }
+  if (legacy?.controllerKind) {
+    return {
+      ...base,
+      category: legacy.category,
+      // Only `kind` is required on ControllerConfig -- no need to borrow
+      // DEFAULT_CONTROLLER_CONFIG's pump-specific defaults onto e.g. a valve.
+      controller: { kind: legacy.controllerKind }
+    }
+  }
+  if (legacy?.sensorKind) {
+    return {
+      ...base,
+      category: legacy.category,
+      sensor: { ...DEFAULT_SENSOR_CONFIG, kind: legacy.sensorKind }
+    }
+  }
+  // Visual-only nodes (pump, valve, sensor) live in visual.nodes but not in
+  // devices.devices because they have no container. Use cn.type (the category
+  // written at drop time) so the correct icon appears instead of defaulting
+  // to 'sensor' for everything. ipAddress '' suppresses the IP label display.
+  return { ...base, category: (cn.type as DeviceCategory) ?? ('sensor' as DeviceCategory) }
+}
+
+/**
  * Converts a scenario's visual layer into React Flow DeviceNode objects,
  * filtered to the given activeLayer only.
  *
@@ -450,16 +521,7 @@ function scenarioToNodes(scenario: OTForgeScenario, activeLayer: NetworkZone): D
         width: CELL_SIZE,
         height: CELL_SIZE,
         data: {
-          device: scenario.devices.devices[cn.id] ?? {
-            nodeId: cn.id,
-            // Visual-only nodes (pump, valve, sensor) live in visual.nodes but not in
-            // devices.devices because they have no container. Use cn.type (the category
-            // written at drop time) so the correct icon appears instead of defaulting
-            // to 'sensor' for everything. ipAddress '' suppresses the IP label display.
-            category: (cn.type as DeviceCategory) ?? ('sensor' as DeviceCategory),
-            ipAddress: '',
-            protocols: ['none' as Protocol]
-          },
+          device: scenario.devices.devices[cn.id] ?? resolveVisualOnlyDevice(cn),
           label: cn.data.label,
           zone: cn.data.zone as NetworkZone
         }
