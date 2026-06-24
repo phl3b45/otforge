@@ -10,9 +10,11 @@
  * every Record<DeviceCategory, ...> exhaustiveness table across the renderer and
  * orchestrator packages.
  *
- * smart-sensor does NOT spawn a Docker container — fuxa-provisioning.ts reads this
- * config at simulation start and writes it into FUXA's Simulator device/tag JSON.
- * The PLC then polls the value over real Modbus TCP at `modbusRegister`.
+ * smart-sensor spawns a real otforge-modbus container (containers/modbus/server.py)
+ * that generates this waveform itself and serves it as a Modbus TCP holding register
+ * at `modbusRegister` — FUXA cannot act as a Modbus server, so it polls this container
+ * as a client (configureFuxa() in main/index.ts) exactly like it does for rtu/sensor.
+ * The PLC polls the same register directly.
  *
  * Author Mode: all fields are editable dropdowns / inputs; changes committed
  *              immediately (select) or on blur (text/number inputs).

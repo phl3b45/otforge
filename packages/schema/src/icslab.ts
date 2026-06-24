@@ -85,7 +85,7 @@ export type DeviceCategory =
   | 'sensor'
   | 'iiot-sensor' // IIoT wireless sensor node — WirelessHART, ISA100.11a, MQTT publisher
   | 'iot-gateway' // IIoT protocol gateway — Modbus-to-MQTT/REST bridge, edge aggregator
-  | 'smart-sensor' // Configurable field sensor (pick `kind` in Properties Panel); FUXA-Simulator-driven, no container
+  | 'smart-sensor' // Configurable field sensor (pick `kind` in Properties Panel); real Modbus-backed container generates the waveform
   | 'smart-controller' // Configurable field controller/actuator (pick `kind` in Properties Panel); real Modbus-backed container
   // ── Control Center (Level 3) ─────────────────────────────────────────────────
   | 'hmi'
@@ -576,11 +576,17 @@ export interface RtuConfig {
 }
 
 /**
- * Physics simulation parameters for the smart-sensor canvas node.
+ * Waveform simulation parameters for the smart-sensor canvas node.
  *
- * smart-sensor does NOT spawn a Docker container. Instead, this config is read
- * at simulation start by fuxa-provisioning.ts and written into FUXA's device/tag
- * JSON so the FUXA Simulator device generates realistic synthetic process values.
+ * smart-sensor DOES spawn a real Docker container — the same otforge-modbus
+ * pymodbus image rtu/smart-controller use (containers/modbus/server.py). FUXA
+ * cannot act as a Modbus server (verified against FUXA's real source — every
+ * device driver it has is a client), so "FUXA generates the value" was never
+ * buildable; the container generates this waveform itself and serves it as a
+ * real Modbus TCP holding register. compose-generator.ts injects this config
+ * as SENSOR_* env vars; configureFuxa() in main/index.ts (not a separate
+ * fuxa-provisioning.ts file) wires FUXA up as a Modbus client polling it,
+ * exactly like it already does for rtu/scada-server/sensor.
  *
  * `kind` selects which physical instrument this node represents — chosen from a
  * dropdown in the Properties Panel rather than a separate DeviceCategory per
@@ -589,11 +595,11 @@ export interface RtuConfig {
  * table across the renderer/orchestrator). flow/pressure/level/analyzer/pmu were
  * consolidated from their own former STUB DeviceCategory values into this pattern.
  *
- * The PLC polls sensor values over real Modbus TCP — FUXA exposes each
+ * The PLC polls sensor values over real Modbus TCP — the container exposes the
  * sensor tag as a holding register at the address in `modbusRegister`.
  * Students can capture this traffic in Wireshark on the OT network.
  *
- * Waveforms map directly to FUXA's Simulator signal types:
+ * Waveforms (see containers/modbus/server.py's _sensor_value_at()):
  *   sine     — smooth oscillation between min and max (default for most sensors)
  *   random   — white noise bounded by min/max (gas detectors, turbulence)
  *   sawtooth — linear ramp then reset (e.g. tank level during fill/drain cycle)
@@ -641,8 +647,8 @@ export interface SensorConfig {
    */
   normalMax?: number
   /**
-   * FUXA tag name override. When absent, fuxa-provisioning.ts auto-generates a
-   * name from the device label (e.g. "TT-101" becomes tag "TT_101").
+   * FUXA tag name override. When absent, buildSensorModbusTag() in main/index.ts
+   * auto-generates a name from the node ID (e.g. "TT-101" becomes tag "TT_101").
    * Must be unique within the scenario — FUXA uses this as the tag identifier.
    */
   tagName?: string
@@ -716,7 +722,7 @@ export interface DeviceConfig {
   plcProgram?: PLCProgramConfig
   safetyPlc?: SafetyPlcConfig // SIS config for safety-plc devices
   rtuConfig?: RtuConfig // RTU deployment configuration (rtu, iec104-rtu devices)
-  sensor?: SensorConfig // Physics simulation parameters for smart-sensor canvas nodes (no container)
+  sensor?: SensorConfig // Waveform simulation parameters for smart-sensor canvas nodes (real container)
   controller?: ControllerConfig // Educational parameters for smart-controller canvas nodes (real container)
   dockerImage?: string // override default image for this device type
   /**

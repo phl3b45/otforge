@@ -344,11 +344,12 @@ export const VALID_CONNECTIONS: Partial<
     'smart-controller': ['modbus-tcp', 'none'] // P&ID: adjacent actuator/valve/pump on same line
   },
 
-  // ── Smart Sensor (consolidated flow-meter/pressure/level/analyzer/pmu — FUXA-driven) ──
-  // Configurable field instrument (kind chosen in Properties Panel). No container — FUXA
-  // Simulator generates the value, exposed to the PLC/RTU/historian as a Modbus register
-  // (or DNP3/OPC-UA for the former pmu/analyzer paths). Slower-cycling kinds (analyzer)
-  // and synchrophasor kinds (pmu) reuse the same transport, simplified for lab purposes.
+  // ── Smart Sensor (consolidated flow-meter/pressure/level/analyzer/pmu) ────────
+  // Configurable field instrument (kind chosen in Properties Panel). Real otforge-modbus
+  // container generates the waveform itself, exposed to the PLC/RTU/historian as a Modbus
+  // register (or DNP3/OPC-UA for the former pmu/analyzer paths). Slower-cycling kinds
+  // (analyzer) and synchrophasor kinds (pmu) reuse the same transport, simplified for lab
+  // purposes — see containers/modbus/server.py and SensorConfig in icslab.ts.
   'smart-sensor': {
     plc: ['modbus-tcp', 'modbus-rtu', 'modbus-ascii', 'opc-ua'],
     rtu: ['modbus-rtu', 'modbus-tcp', 'dnp3'],
