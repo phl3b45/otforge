@@ -362,7 +362,6 @@ export function DevicePalette({
 
   return (
     <aside className="device-palette">
-      <div className="palette-header">Devices</div>
       <div className="palette-sections">
         {visibleSections.map(section => (
           <div

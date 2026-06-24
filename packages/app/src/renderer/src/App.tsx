@@ -1764,7 +1764,11 @@ export default function App() {
 
       {/* Layer tab bar + Run/Stop control */}
       <div className="sim-tabs-row">
-        <div className="sim-tab-left-spacer" style={{ width: sidebarWidth }} />
+        <div className="sim-tab-left-spacer" style={{ width: sidebarWidth }}>
+          {!scenario?.meta.locked && builderModeActive && (
+            <span className="sim-tab-left-spacer-label">Devices</span>
+          )}
+        </div>
         <LayerTabBar
           activeLayer={activeLayer}
           scenario={scenario}

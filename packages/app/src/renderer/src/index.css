@@ -535,17 +535,6 @@ select {
   overflow: hidden;
 }
 
-.palette-header {
-  padding: 0.625rem 0.875rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-primary);
-  border-bottom: 1px solid var(--border-muted);
-  flex-shrink: 0;
-}
-
 .palette-sections {
   flex: 1;
   overflow-y: auto;
@@ -1586,13 +1575,16 @@ code.prop-value {
 
 /* Fixed-width slot matching --sim-slot-w (the properties panel's width) so
    Delete Scenario is centered under the properties panel, not just trailing
-   the container pills. */
+   the container pills. .status-bar has its own 0.75rem right padding that the
+   properties panel doesn't, so the negative margin cancels that inset and the
+   slot's right edge reaches the true window edge, matching the panel below. */
 .status-bar-delete-slot {
   display: flex;
   justify-content: center;
   align-items: center;
   flex-shrink: 0;
   min-width: var(--sim-slot-w);
+  margin-right: -0.75rem;
 }
 
 .status-sep {
@@ -2744,9 +2736,24 @@ code.prop-value {
 
 /* Leading spacer in .sim-tabs-row, width set inline from App.tsx to match
    whichever left sidebar is currently showing (DevicePalette/MissionPanel/none) --
-   see the sidebarWidth computation alongside the .sim-tabs-row render. */
+   see the sidebarWidth computation alongside the .sim-tabs-row render. Holds the
+   "DEVICES" label (moved out of the palette's own former .palette-header) when the
+   DevicePalette is the sidebar showing below it. */
 .sim-tab-left-spacer {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 0.875rem;
+}
+
+.sim-tab-left-spacer-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-primary);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 /* Row 2: layer tabs + Run/Stop */

@@ -251,6 +251,26 @@ const CANVAS_H = GRID_ROWS * CELL_SIZE // 2000 px at zoom = 1
 const CANVAS_BOUNDS = { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H }
 
 /**
+ * How much closer than a plain "fit the whole grid" view should start.
+ * Applied as a zoom multiplier after fitBounds rather than shrinking
+ * CANVAS_BOUNDS itself -- shrinking the fit rect would risk clipping devices
+ * placed in the outer half of the grid, whereas zooming in from the already-
+ * correct full-grid fit (same center point) never cuts anything off.
+ */
+const FIT_ZOOM_BOOST = 1.5
+
+/**
+ * Fits the full canvas grid into view, then zooms in further by FIT_ZOOM_BOOST
+ * around the same center point. Used by every fitBounds call site (initial
+ * mount, layer switch, window resize, empty-scenario placeholder) so the
+ * "too zoomed out" feeling is fixed consistently everywhere, not just on startup.
+ */
+function fitCanvasView(instance: ReactFlowInstance): void {
+  instance.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 })
+  instance.zoomTo(instance.getZoom() * FIT_ZOOM_BOOST, { duration: 0 })
+}
+
+/**
  * Default IP address for newly dropped devices, by zone.
  *
  * Must match ZONE_DEFAULTS in packages/orchestrator/src/network-config.ts — both
@@ -1020,10 +1040,9 @@ export function ScadaCanvas({
       setNodes([])
       setEdges([])
       // No nodes — show the full 25 × 25 canvas area so the user sees the grid
-      setTimeout(
-        () => rfInstance.current?.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 }),
-        100
-      )
+      setTimeout(() => {
+        if (rfInstance.current) fitCanvasView(rfInstance.current)
+      }, 100)
       prevLayerRef.current = null
       return
     }
@@ -1077,10 +1096,9 @@ export function ScadaCanvas({
     // Scenario edits (drops, drags, connections) must not re-center the viewport.
     if (prevLayerRef.current !== activeLayer) {
       prevLayerRef.current = activeLayer
-      setTimeout(
-        () => rfInstance.current?.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 }),
-        50
-      )
+      setTimeout(() => {
+        if (rfInstance.current) fitCanvasView(rfInstance.current)
+      }, 50)
     }
     // Only re-sync when visual layout or device graph changes — security updates
     // (firewallRules, IDS config) share the same scenario object but don't affect
@@ -1099,7 +1117,7 @@ export function ScadaCanvas({
     const handleResize = () => {
       clearTimeout(timer)
       timer = setTimeout(() => {
-        rfInstance.current?.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 })
+        if (rfInstance.current) fitCanvasView(rfInstance.current)
       }, 150)
     }
     window.addEventListener('resize', handleResize)
@@ -1915,7 +1933,7 @@ export function ScadaCanvas({
           // because onInit fires exactly when the React Flow instance is ready and
           // the canvas has its final dimensions. This prevents the flash at zoom=1
           // that would otherwise appear before the useEffect fitBounds fires.
-          instance.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 })
+          fitCanvasView(instance)
         }}
         onDragOver={onDragOver}
         onDrop={onDrop}
