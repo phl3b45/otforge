@@ -1429,6 +1429,12 @@ export default function App() {
     : []
   const hasHmiDevice = hmiDevices.length > 0
 
+  // Width of whichever left sidebar is currently rendered below the layer tabs
+  // (see the locked/builderModeActive branches further down) -- used by
+  // .sim-tab-left-spacer so the tabs start exactly at the canvas's left edge
+  // instead of a hardcoded padding value that drifts when sidebars change.
+  const sidebarWidth = scenario?.meta.locked ? 220 : builderModeActive ? 210 : 0
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (view === 'launch') {
@@ -1754,6 +1760,7 @@ export default function App() {
 
       {/* Layer tab bar + Run/Stop control */}
       <div className="sim-tabs-row">
+        <div className="sim-tab-left-spacer" style={{ width: sidebarWidth }} />
         <LayerTabBar
           activeLayer={activeLayer}
           scenario={scenario}

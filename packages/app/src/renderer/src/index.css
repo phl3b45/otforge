@@ -2576,9 +2576,11 @@ code.prop-value {
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  /* Inset by the palette widths so tabs fill only the canvas column */
-  padding-left: 210px;
-  padding-right: 260px;
+  /* No left/right padding here -- alignment with the palette/properties columns
+     below is handled by real structural spacers (.sim-tab-left-spacer and
+     .sim-control-slot in App.tsx/index.css), not hardcoded padding. A padding-based
+     inset doesn't shrink to make room for new tabs (e.g. the SCADA action button),
+     so it drifted out of sync with the columns below it. */
 }
 
 /*
@@ -2704,15 +2706,22 @@ code.prop-value {
  *   past the vertical divider line that separates Run/Stop from the layer tabs.
  *
  * Row 2 — sim-tabs-row:
- *   [ OT Process | Control Center | Plant DMZ | Enterprise | Internet DMZ ] [ Run Simulation ]
+ *   [ left spacer ] [ OT Process | ... | SCADA ] [ Run Simulation ]
+ *   The left spacer matches whichever sidebar is currently showing in the
+ *   workspace below (DevicePalette/MissionPanel/none) so the tabs start exactly
+ *   at the canvas's left edge — see App.tsx's sidebarWidth computation.
  *
- * --sim-slot-w is shared between .sim-control-slot and .sim-slot-spacer so both
- * rows align on the same vertical boundary.
+ * --sim-slot-w is shared between .sim-control-slot and .sim-slot-spacer (and now
+ * matches .properties-panel's width, not an unrelated value) so all three —
+ * row 1's spacer, row 2's Run/Stop slot, and the properties panel below — align
+ * on the same vertical boundary.
  */
 
-/* Width shared by the Run/Stop slot and the spacer that aligns above it */
+/* Width shared by the Run/Stop slot and the spacer that aligns above it --
+   matches .properties-panel's width (index.css ~line 897) so Run/Stop's left
+   edge lines up with the properties panel's left edge below it. */
 :root {
-  --sim-slot-w: 192px;
+  --sim-slot-w: 260px;
 }
 
 /* Outer wrapper — stacks the two rows vertically */
@@ -2749,6 +2758,13 @@ code.prop-value {
 .sim-slot-spacer {
   flex-shrink: 0;
   min-width: var(--sim-slot-w);
+}
+
+/* Leading spacer in .sim-tabs-row, width set inline from App.tsx to match
+   whichever left sidebar is currently showing (DevicePalette/MissionPanel/none) --
+   see the sidebarWidth computation alongside the .sim-tabs-row render. */
+.sim-tab-left-spacer {
+  flex-shrink: 0;
 }
 
 /* Row 2: layer tabs + Run/Stop */
