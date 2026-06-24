@@ -3508,6 +3508,9 @@ function buildRtuOverviewView(
 const SCADA_VIEW_WIDTH = 1600
 const SCADA_VIEW_HEIGHT = 1000
 const SCADA_VIEW_MARGIN = 100
+// Vertical space reserved for the centered title before any device renders, so
+// devices never crowd up against it.
+const SCADA_HEADER_HEIGHT = 110
 
 /**
  * Live-bound running/stopped colors shared by every pump/vfd/actuator/valve shape.
@@ -3548,13 +3551,13 @@ function normalizeScadaPositions(nodes: OtZoneDevice[]): Map<string, { x: number
   const spanX = Math.max(maxX - minX, 1)
   const spanY = Math.max(maxY - minY, 1)
   const usableW = SCADA_VIEW_WIDTH - 2 * SCADA_VIEW_MARGIN
-  const usableH = SCADA_VIEW_HEIGHT - 2 * SCADA_VIEW_MARGIN
+  const usableH = SCADA_VIEW_HEIGHT - SCADA_HEADER_HEIGHT - SCADA_VIEW_MARGIN
   const scale = Math.min(usableW / spanX, usableH / spanY, 2)
 
   for (const { node } of nodes) {
     positions.set(node.id, {
       x: SCADA_VIEW_MARGIN + (node.position.x - minX) * scale,
-      y: SCADA_VIEW_MARGIN + (node.position.y - minY) * scale
+      y: SCADA_HEADER_HEIGHT + (node.position.y - minY) * scale
     })
   }
   return positions
@@ -3663,7 +3666,7 @@ function buildScadaOverviewView(topology: OtZoneTopology): unknown {
   // real markup in svgcontent. Confirmed visually via a headless-browser screenshot:
   // an items-only entry with no svgcontent backing never appears, regardless of type.
   svgParts.push(
-    `<text x="${SCADA_VIEW_MARGIN}" y="50" font-size="24" font-weight="bold" fill="#58a6ff">SCADA Overview - OT Process</text>`
+    `<text x="${SCADA_VIEW_WIDTH / 2}" y="50" font-size="28" font-weight="bold" fill="#58a6ff" text-anchor="middle">SCADA Dashboard</text>`
   )
 
   // Pipe runs first so device shapes render on top of them.

@@ -1411,6 +1411,13 @@ export default function App() {
     : []
   const firstWorkstationDevice = (workstationDevices[0]?.[1] as DeviceConfig) ?? null
 
+  // HMI device helper — "Open HMI" only makes sense once an author has placed an HMI
+  // device in Control Center; otherwise there's no authored program to open.
+  const hmiDevices = scenario
+    ? Object.entries(scenario.devices.devices).filter(([, d]) => d.category === 'hmi')
+    : []
+  const hasHmiDevice = hmiDevices.length > 0
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (view === 'launch') {
@@ -1649,8 +1656,9 @@ export default function App() {
                 🖥 Workstation
               </button>
             )}
-            {/* Open HMI — only while simulation is running */}
-            {simIsRunning && (
+            {/* Open HMI — only while simulation is running AND an HMI device exists in
+                Control Center; otherwise there's no authored HMI to open. */}
+            {simIsRunning && hasHmiDevice && (
               <button
                 className="btn btn-sm btn-hmi"
                 onClick={handleHmiOpen}
