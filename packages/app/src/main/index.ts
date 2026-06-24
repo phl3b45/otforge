@@ -64,8 +64,10 @@ import {
   toProjectName,
   writeGrafanaProvisioning,
   findFreeSubnets,
-  ZONE_DEFAULTS
+  ZONE_DEFAULTS,
+  getOtZoneTopology
 } from '@otforge/orchestrator'
+import type { OtZoneDevice, OtZoneTopology } from '@otforge/orchestrator'
 import type { NetworkZone, ACLRule } from '@otforge/schema'
 import { initDb, saveActiveScenario, loadActiveScenario, clearActiveScenario } from './db'
 import { parsePlcFile } from './plc-import'
@@ -3096,6 +3098,15 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   if (rtuEntries.length > 0) {
     await postView(buildRtuOverviewView(rtuEntries))
   }
+
+  // ── Create SCADA Overview HMI view (OT-zone only) ──────────────────────────
+  // Auto-generated P&ID-style view scoped to OT-zone devices only, mirroring the
+  // canvas's own layout -- opened via the dedicated `scada:open` window, separate
+  // from the general-purpose FUXA editor/RTU overview above.
+  const otTopology = getOtZoneTopology(scenario)
+  if (otTopology.nodes.length > 0) {
+    await postView(buildScadaOverviewView(otTopology))
+  }
 }
 
 // ── FUXA Modbus tag addressing ─────────────────────────────────────────────────
@@ -3514,6 +3525,234 @@ function buildRtuOverviewView(
     type: 'svg',
     svgcontent: '',
     items: itemsById,
+    variables: {}
+  }
+}
+
+// ── FUXA SCADA Overview view generator (OT-zone only) ─────────────────────────
+
+const SCADA_VIEW_WIDTH = 1600
+const SCADA_VIEW_HEIGHT = 1000
+const SCADA_VIEW_MARGIN = 100
+
+/**
+ * Live-bound running/stopped colors shared by every pump/vfd/actuator/valve shape.
+ * Bound to DI0 (status feedback), not CO0 (last-commanded value) -- DI0 reflects what
+ * the device actually confirmed, matching simulate_controller_reactive()'s contract.
+ */
+const SCADA_RUNNING_RANGES = [
+  { min: 0, max: 0, color: '#f85149', stroke: '#f85149', text: 'STOPPED' },
+  { min: 1, max: 1, color: '#3fb950', stroke: '#3fb950', text: 'RUNNING' }
+]
+
+/** Pipe color per fluid type, mirroring FLUID_COLORS in PipeEdge.tsx. */
+const SCADA_FLUID_COLORS: Record<string, string> = {
+  electric: '#d29922',
+  water: '#388bfd',
+  gas: '#f78166',
+  oil: '#a371f7',
+  chemical: '#39d0b0',
+  none: '#586069'
+}
+
+/**
+ * Maps each OT-zone node's canvas position into the fixed SCADA view canvas,
+ * preserving relative layout so the generated view mirrors the author's arrangement.
+ * Uniform scale (not stretched per-axis) keeps device icons looking correct; capped at
+ * 2x so a sparse two-device layout doesn't blow up into giant icons.
+ */
+function normalizeScadaPositions(nodes: OtZoneDevice[]): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>()
+  if (nodes.length === 0) return positions
+
+  const xs = nodes.map(n => n.node.position.x)
+  const ys = nodes.map(n => n.node.position.y)
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+  const spanX = Math.max(maxX - minX, 1)
+  const spanY = Math.max(maxY - minY, 1)
+  const usableW = SCADA_VIEW_WIDTH - 2 * SCADA_VIEW_MARGIN
+  const usableH = SCADA_VIEW_HEIGHT - 2 * SCADA_VIEW_MARGIN
+  const scale = Math.min(usableW / spanX, usableH / spanY, 2)
+
+  for (const { node } of nodes) {
+    positions.set(node.id, {
+      x: SCADA_VIEW_MARGIN + (node.position.x - minX) * scale,
+      y: SCADA_VIEW_MARGIN + (node.position.y - minY) * scale
+    })
+  }
+  return positions
+}
+
+/**
+ * Builds a live-bound device shape: the <g> SVG markup (drawn with absolute
+ * coordinates, no transform needed) plus the matching `svg-ext-shapes` item FUXA
+ * needs to apply property.ranges-based fill/stroke color on tag value changes.
+ * Confirmed live against a real container: GaugeBaseComponent.walkTreeNodeToSetAttribute
+ * recolors every child element inside the <g>, so multi-element icons work fine.
+ */
+function buildLiveShape(
+  gid: string,
+  svgInner: string,
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+  tagId: string,
+  label: string
+): { svg: string; item: Record<string, unknown> } {
+  return {
+    svg: `<g id="${gid}" type="svg-ext-shapes">${svgInner}</g>`,
+    item: {
+      id: gid,
+      type: 'svg-ext-shapes',
+      name: label,
+      label,
+      x: cx - w / 2,
+      y: cy - h / 2,
+      w,
+      h,
+      rotation: 0,
+      property: {
+        variableId: tagId,
+        bitmask: 0,
+        permission: 0,
+        permissionRoles: { show: [], enabled: [] },
+        ranges: SCADA_RUNNING_RANGES,
+        actions: []
+      }
+    }
+  }
+}
+
+/** Pump/VFD/actuator icon -- a single fillable circle, mirroring PumpSvg's body. */
+function buildPumpShape(gid: string, cx: number, cy: number, tagId: string, label: string) {
+  const svg = `<circle cx="${cx}" cy="${cy}" r="32" fill="#6e7681" stroke="#30363d" stroke-width="3"/>`
+  return buildLiveShape(gid, svg, cx, cy, 64, 64, tagId, label)
+}
+
+/** Valve icon -- two opposing triangles (bowtie), mirroring ValveSvg. */
+function buildValveShape(gid: string, cx: number, cy: number, tagId: string, label: string) {
+  const svg =
+    `<polygon points="${cx - 28},${cy - 18} ${cx},${cy} ${cx - 28},${cy + 18}" fill="#6e7681" stroke="#30363d" stroke-width="2"/>` +
+    `<polygon points="${cx + 28},${cy - 18} ${cx},${cy} ${cx + 28},${cy + 18}" fill="#6e7681" stroke="#30363d" stroke-width="2"/>`
+  return buildLiveShape(gid, svg, cx, cy, 56, 36, tagId, label)
+}
+
+/**
+ * Static fallback for OT categories with no clean live boolean to color by yet
+ * (sensors, PLCs/RTUs, wellhead-controller's setpoint-only registers, process-unit).
+ * Plain native svg-rect -- no svgcontent <g> needed, same pattern buildRtuOverviewView
+ * already uses successfully for static items.
+ */
+function buildFallbackShape(gid: string, cx: number, cy: number): Record<string, unknown> {
+  return {
+    id: gid,
+    type: 'svg-rect',
+    name: '',
+    label: '',
+    x: cx - 30,
+    y: cy - 24,
+    w: 60,
+    h: 48,
+    rotation: 0,
+    property: { bkgcolor: '#388bfd', color: '#1f6feb', borderWidth: 2 }
+  }
+}
+
+/**
+ * Generates the auto-generated SCADA Overview FUXA view: a P&ID-style diagram scoped
+ * to OT-zone devices only, with pump/valve icons colored live from their DI0 status
+ * tag and pipe runs connecting them per the canvas topology.
+ *
+ * @param topology - OT-zone nodes/edges from getOtZoneTopology().
+ * @returns Plain object matching FUXA's view schema, ready for postView().
+ */
+function buildScadaOverviewView(topology: OtZoneTopology): unknown {
+  const positions = normalizeScadaPositions(topology.nodes)
+  const svgParts: string[] = []
+  const items: Record<string, unknown> = {
+    'otf-scada-title': {
+      id: 'otf-scada-title',
+      type: 'svg-text',
+      name: '',
+      label: '',
+      x: SCADA_VIEW_MARGIN,
+      y: 36,
+      w: 640,
+      h: 40,
+      rotation: 0,
+      property: {
+        text: 'SCADA Overview — OT Process',
+        fontSize: '24',
+        fontWeight: 'bold',
+        fontColor: '#58a6ff'
+      }
+    }
+  }
+
+  // Pipe runs first so device shapes render on top of them.
+  for (const edge of topology.edges) {
+    const a = positions.get(edge.source)
+    const b = positions.get(edge.target)
+    if (!a || !b) continue
+    const color = SCADA_FLUID_COLORS[edge.data.fluidType ?? 'none'] ?? SCADA_FLUID_COLORS.none
+    // Single right-angle bend on whichever axis dominates, mirroring bestHandles()'s
+    // dominant-axis routing in ScadaCanvas.tsx.
+    const horizontalDominant = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)
+    const bendX = horizontalDominant ? b.x : a.x
+    const bendY = horizontalDominant ? a.y : b.y
+    svgParts.push(
+      `<polyline points="${a.x},${a.y} ${bendX},${bendY} ${b.x},${b.y}" fill="none" stroke="${color}" stroke-width="3"/>`
+    )
+  }
+
+  for (const { node, device } of topology.nodes) {
+    const pos = positions.get(node.id)
+    if (!pos) continue
+    const ns = node.id.replace(/[^a-z0-9]/gi, '-')
+    const gid = `otf-scada-${ns}`
+    const label = device.label ?? node.id
+    const kind = device.controller?.kind
+
+    if (device.category === 'smart-controller' && kind === 'valve') {
+      const { svg, item } = buildValveShape(gid, pos.x, pos.y, `${ns}-di0`, label)
+      svgParts.push(svg)
+      items[gid] = item
+    } else if (
+      device.category === 'smart-controller' &&
+      (kind === 'pump' || kind === 'vfd' || kind === 'actuator')
+    ) {
+      const { svg, item } = buildPumpShape(gid, pos.x, pos.y, `${ns}-di0`, label)
+      svgParts.push(svg)
+      items[gid] = item
+    } else {
+      items[gid] = buildFallbackShape(gid, pos.x, pos.y)
+    }
+
+    items[`${gid}-label`] = {
+      id: `${gid}-label`,
+      type: 'svg-text',
+      name: '',
+      label,
+      x: pos.x - 50,
+      y: pos.y + 42,
+      w: 100,
+      h: 20,
+      rotation: 0,
+      property: { text: label, fontSize: '12', fontColor: '#e6edf3' }
+    }
+  }
+
+  return {
+    id: 'otf-scada-overview',
+    name: 'SCADA Overview',
+    profile: { width: SCADA_VIEW_WIDTH, height: SCADA_VIEW_HEIGHT, bkcolor: '#0d1117ff' },
+    type: 'svg',
+    svgcontent: `<svg width="${SCADA_VIEW_WIDTH}" height="${SCADA_VIEW_HEIGHT}" xmlns="http://www.w3.org/2000/svg"><g>${svgParts.join('')}</g></svg>`,
+    items,
     variables: {}
   }
 }
