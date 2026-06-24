@@ -591,8 +591,13 @@ export function generateCompose(
     }
 
     // Controller-specific env vars — injected for smart-controller devices only.
-    // These are informational (visible in container logs / Properties Panel) — real
-    // protocol behavior comes from the device's generic modbus/dnp3 config blocks.
+    // Visible in container logs / Properties Panel either way, but CONTROLLER_KIND and
+    // the headline numeric fields (CONTROLLER_RATED_FLOW_LPM, CONTROLLER_MAX_FREQUENCY_HZ,
+    // CONTROLLER_CHOKE_POSITION_PCT, CONTROLLER_DOWNHOLE_PRESSURE_SETPOINT_BAR) also drive
+    // real CO0/DI0/HR0/HR1 behavior in containers/modbus/server.py's
+    // simulate_controller_reactive() — writing CO0 actually starts/stops the device. The
+    // remaining descriptive fields (actuatorType, failPosition, travelType, signalType,
+    // liftMethod) are still informational-only.
     if (device.category === 'smart-controller' && device.controller) {
       const ctrlEnv: string[] = services[serviceName].environment ?? []
       ctrlEnv.push(`CONTROLLER_KIND=${device.controller.kind}`)

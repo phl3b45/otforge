@@ -659,11 +659,15 @@ export interface SensorConfig {
  *
  * Unlike smart-sensor, smart-controller DOES spawn a real Docker container
  * (defaults to the same otforge-modbus image rtu uses) — these devices are meant
- * to be genuinely attackable, not just synthetic FUXA values. Real protocol
- * behavior (registers, addresses) comes from the existing generic `modbus`/`dnp3`
- * blocks on DeviceConfig; the fields below are informational/educational only,
+ * to be genuinely attackable, not just synthetic FUXA values. The fields below are
  * injected as CONTROLLER_* env vars (same spirit as SafetyPlcConfig's SIS_* vars)
- * so students can see them in container logs and the Properties Panel.
+ * so students can see them in container logs and the Properties Panel — but `kind`
+ * and the headline numeric fields (ratedFlowLpm, maxFrequencyHz,
+ * chokePositionPercent, downholePressureSetpointBar) are NOT purely informational:
+ * containers/modbus/server.py's simulate_controller_reactive() reads them to drive
+ * real CO0 (command)/DI0 (status)/HR0/HR1 register behavior — writing CO0 actually
+ * starts/stops the device. The remaining descriptive fields (actuatorType,
+ * failPosition, travelType, signalType, liftMethod) stay informational-only.
  *
  * `kind` selects which physical device this node represents — chosen from a
  * dropdown in the Properties Panel rather than a separate DeviceCategory.
