@@ -1234,6 +1234,18 @@ export default function App() {
     }
   }, [])
 
+  /**
+   * Opens FUXA directly into the auto-generated "SCADA Overview" view (OT-zone
+   * devices only) in a separate Electron BrowserWindow — same mechanism as
+   * handleHmiOpen, scoped to the generated P&ID diagram via the `scada:open` handler.
+   */
+  const handleScadaOpen = useCallback(async () => {
+    const result = await window.electronAPI.scada.open()
+    if (!result.ok) {
+      setSimError(result.error ?? 'Failed to open SCADA Overview window.')
+    }
+  }, [])
+
   // handleAttackMachineLaunch removed — the toolbar button now opens AttackTerminalModal
   // which has both a Terminal tab (docker exec + xterm.js, paste works) and a Desktop
   // tab (noVNC Xfce4, with Paste to Kali button). The modal's own handleLaunchDesktop
@@ -1723,7 +1735,13 @@ export default function App() {
 
       {/* Layer tab bar + Run/Stop control */}
       <div className="sim-tabs-row">
-        <LayerTabBar activeLayer={activeLayer} scenario={scenario} onLayerChange={setActiveLayer} />
+        <LayerTabBar
+          activeLayer={activeLayer}
+          scenario={scenario}
+          onLayerChange={setActiveLayer}
+          simIsRunning={simIsRunning}
+          onScadaOpen={handleScadaOpen}
+        />
         <div className="sim-control-slot">
           {simShowStop ? (
             <button

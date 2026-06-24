@@ -2661,6 +2661,23 @@ code.prop-value {
   font-weight: 400;
 }
 
+/* Trailing SCADA action button — narrower than the five flexible Purdue tabs, and a
+   subtle background hints it's an action (opens a window) rather than a zone filter. */
+.layer-tab-action {
+  flex: 0 0 auto;
+  min-width: 140px;
+  background: rgba(57, 208, 176, 0.06);
+}
+
+.layer-tab-action:hover:not(:disabled) {
+  background: rgba(57, 208, 176, 0.14);
+}
+
+.layer-tab-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 /* ── Mode badge row — below toolbar identity row ──────────────────────────────
  *
  * Thin bar that sits between the toolbar and the layer-tab bar row.

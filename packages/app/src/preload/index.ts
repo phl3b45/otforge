@@ -340,6 +340,19 @@ const api = {
     open: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('hmi:open')
   },
 
+  // ── SCADA Overview window ───────────────────────────────────────────────────────
+  scada: {
+    /**
+     * Opens FUXA directly into the auto-generated "SCADA Overview" view (OT-zone
+     * devices only) in a separate Electron BrowserWindow — same mechanism as `hmi.open`,
+     * but scoped to the generated P&ID diagram rather than FUXA's home/editor root.
+     *
+     * @returns { ok: true } on success, { ok: false, error } if the simulation is not
+     *   running or FUXA is not yet accepting connections on port 1881.
+     */
+    open: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('scada:open')
+  },
+
   // ── Community scenario packs (Phase 9) ───────────────────────────────────────
   packs: {
     /**

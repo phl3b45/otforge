@@ -2502,6 +2502,61 @@ function registerIPCHandlers(): void {
     return { ok: true }
   })
 
+  // ── SCADA Overview window ───────────────────────────────────────────────────────
+
+  /**
+   * Opens FUXA directly into the auto-generated "SCADA Overview" view (OT-zone
+   * devices only) in a standalone Electron BrowserWindow — mirrors `hmi:open` exactly,
+   * except it loads straight into the generated view rather than FUXA's home/editor
+   * root, so students land on the P&ID diagram immediately.
+   *
+   * `?viewName=` is a query param FUXA's HomeComponent reads on startup
+   * (`route.snapshot.queryParamMap.get('viewName')`) to pick the start view by exact
+   * name match — confirmed against FUXA's client source. FUXA uses Angular's default
+   * PathLocationStrategy (no hash routing).
+   *
+   * @returns { ok: true } on success, { ok: false, error } if simulation is not
+   *   running or FUXA's port is not yet accepting connections.
+   */
+  ipcMain.handle('scada:open', async (): Promise<{ ok: boolean; error?: string }> => {
+    if (!activeProjectName) {
+      return { ok: false, error: 'No simulation is running.' }
+    }
+
+    const ready = await isPortOpen(1881)
+    if (!ready) {
+      return {
+        ok: false,
+        error:
+          'FUXA HMI is not ready yet (port 1881 is not open). ' +
+          'Wait a few seconds for the container to finish starting, then try again.'
+      }
+    }
+
+    const scadaWindow = new BrowserWindow({
+      width: 1280,
+      height: 900,
+      minWidth: 800,
+      minHeight: 600,
+      title: 'SCADA Overview — OT Process',
+      autoHideMenuBar: true,
+      backgroundColor: '#0d1117',
+      webPreferences: {
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        webviewTag: false
+      }
+    })
+
+    scadaWindow.loadURL(
+      `http://localhost:1881/home?viewName=${encodeURIComponent('SCADA Overview')}`
+    )
+    scadaWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
+    return { ok: true }
+  })
+
   // ── PLC firmware import ────────────────────────────────────────────────────────
 
   /**
