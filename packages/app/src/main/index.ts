@@ -2943,17 +2943,21 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 2000))
 
   /**
-   * POST a single device entry to FUXA's /api/device endpoint.
-   * Silently ignores duplicate-id errors (HTTP 400) — these are expected when the
-   * named volume already contains devices from a previous run of the same scenario.
+   * POST a single value to FUXA's /api/projectData endpoint under the given command.
+   * This is the one real contract FUXA exposes for writing devices/views/alarms into
+   * its running project (verified against frangoteam/fuxa's actual server routes —
+   * `/api/device` and `/api/view` are NOT creation endpoints, see callers below).
+   * Best-effort: errors are swallowed so one failure doesn't block the rest of
+   * provisioning, and a format mismatch between FUXA versions degrades gracefully.
    */
-  async function postDevice(payload: string): Promise<void> {
+  async function postProjectData(cmd: string, data: unknown): Promise<void> {
+    const payload = JSON.stringify({ cmd, data })
     try {
       await httpPost(
         {
           host: 'localhost',
           port: FUXA_PORT,
-          path: '/api/device',
+          path: '/api/projectData',
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2969,29 +2973,24 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   }
 
   /**
-   * POST a view definition to FUXA's /api/view endpoint.
-   * Best-effort: errors are swallowed so a format mismatch between FUXA versions
-   * never prevents data sources and tags from being provisioned.
+   * Create/update a device in FUXA's project via cmd: 'set-device'.
+   * NOTE: `POST /api/device` (the endpoint this used to target) is not a device-
+   * creation endpoint in FUXA — it only sets a device's `security` sub-property and
+   * rejects everything else. Confirmed by curling a standalone instance of the
+   * exact vendored image (ghcr.io/iburres/fuxa) — the old path returned 400 and
+   * persisted nothing.
+   */
+  async function postDevice(device: unknown): Promise<void> {
+    await postProjectData('set-device', device)
+  }
+
+  /**
+   * Create/update a view in FUXA's project via cmd: 'set-view'.
+   * NOTE: `POST /api/view` (the endpoint this used to target) does not exist as a
+   * route in FUXA's server at all — every prior call has been silently swallowed.
    */
   async function postView(view: unknown): Promise<void> {
-    const payload = JSON.stringify(view)
-    try {
-      await httpPost(
-        {
-          host: 'localhost',
-          port: FUXA_PORT,
-          path: '/api/view',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(payload)
-          }
-        },
-        payload
-      )
-    } catch {
-      // View creation is best-effort; data sources + tags still work without it.
-    }
+    await postProjectData('set-view', view)
   }
 
   // ── Provision Modbus TCP (PLCs / RTUs / smart-sensor / smart-controller) ───
@@ -3020,18 +3019,16 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     // incidentally, so they keep the "(Modbus)" suffix for clarity in FUXA's list.
     const isModbusNative = isRtu || isSmartSensor || device.category === 'smart-controller'
 
-    await postDevice(
-      JSON.stringify({
-        id: nodeId,
-        name: isModbusNative ? `${displayName}` : `${displayName} (Modbus)`,
-        enabled: true,
-        type: 'MODBUSTCP',
-        polling: 1000,
-        request: 30_000,
-        property: { address, port, uid },
-        tags
-      })
-    )
+    await postDevice({
+      id: nodeId,
+      name: isModbusNative ? `${displayName}` : `${displayName} (Modbus)`,
+      enabled: true,
+      type: 'MODBUSTCP',
+      polling: 1000,
+      request: 30_000,
+      property: { address, port, uid },
+      tags
+    })
   }
 
   // ── Provision OPC UA (SCADA servers) ──────────────────────────────────────
@@ -3043,25 +3040,23 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     const port = device.opcua?.port ?? 4840
     const endpointUrl = `opc.tcp://${address}:${port}`
 
-    await postDevice(
-      JSON.stringify({
-        id: nodeId,
-        name: `${nodeId} (OPC UA)`,
-        enabled: true,
-        type: 'OPCUA',
-        polling: 2000,
-        request: 30_000,
-        // FUXA OPC UA plugin reads 'address' as the full endpoint URL.
-        // Security/policy/mode left at None — matches the server container defaults.
-        property: {
-          address: endpointUrl,
-          security: 'None',
-          policy: 'None',
-          mode: 'Anonymous'
-        },
-        tags: {}
-      })
-    )
+    await postDevice({
+      id: nodeId,
+      name: `${nodeId} (OPC UA)`,
+      enabled: true,
+      type: 'OPCUA',
+      polling: 2000,
+      request: 30_000,
+      // FUXA OPC UA plugin reads 'address' as the full endpoint URL.
+      // Security/policy/mode left at None — matches the server container defaults.
+      property: {
+        address: endpointUrl,
+        security: 'None',
+        policy: 'None',
+        mode: 'Anonymous'
+      },
+      tags: {}
+    })
   }
 
   // ── Provision BACnet/IP (sensors) ─────────────────────────────────────────
@@ -3072,18 +3067,16 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     const address = device.ipAddress.split('/')[0]
     const port = device.bacnet?.port ?? 47808
 
-    await postDevice(
-      JSON.stringify({
-        id: nodeId,
-        name: `${nodeId} (BACnet)`,
-        enabled: true,
-        type: 'BACnet',
-        polling: 2000,
-        request: 30_000,
-        property: { address, port },
-        tags: {}
-      })
-    )
+    await postDevice({
+      id: nodeId,
+      name: `${nodeId} (BACnet)`,
+      enabled: true,
+      type: 'BACnet',
+      polling: 2000,
+      request: 30_000,
+      property: { address, port },
+      tags: {}
+    })
   }
 
   // ── Create RTU Overview HMI view ───────────────────────────────────────────
@@ -3395,14 +3388,25 @@ function buildRtuOverviewView(
   const viewHeight = MARGIN + HEADER_H + totalRows * (CARD_H + GAP) + MARGIN
   const viewWidth = MARGIN + COLS * (CARD_W + GAP) + MARGIN
 
+  // FUXA's View model (client/src/app/_models/hmi.ts) keys `items` by item id
+  // (a dict, not an array) and nests width/height/background under `profile`.
+  const itemsById: Record<string, unknown> = {}
+  for (const item of items as Array<{ id: string }>) {
+    itemsById[item.id] = item
+  }
+
   return {
     id: 'otf-rtu-overview',
     name: 'RTU Overview',
-    width: Math.max(1400, viewWidth),
-    height: Math.max(720, viewHeight),
-    background: '#0d1117',
-    items,
-    variables: []
+    profile: {
+      width: Math.max(1400, viewWidth),
+      height: Math.max(720, viewHeight),
+      bkcolor: '#0d1117ff'
+    },
+    type: 'svg',
+    svgcontent: '',
+    items: itemsById,
+    variables: {}
   }
 }
 
