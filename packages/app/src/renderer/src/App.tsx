@@ -58,7 +58,7 @@ import { PlcIdePanel } from './properties/PlcIdePanel'
 import { AttackTerminalModal } from './terminal/AttackTerminalModal'
 import { MonitorPanel } from './monitor/MonitorPanel'
 import { SettingsModal } from './settings/SettingsModal'
-import { MetadataModal } from './metadata/MetadataModal'
+import { MetadataModal, SECTOR_OPTIONS } from './metadata/MetadataModal'
 import { ExportModal } from './export/ExportModal'
 import { MissionPanel } from './mission/MissionPanel'
 import { PackManagerModal } from './packs/PackManagerModal'
@@ -304,39 +304,44 @@ function StatusBar({
         )}
       </div>
       <div className="status-bar-right">
-        {/* Show up to 6 container health pills with color-coded borders */}
-        {containerStatuses.slice(0, 6).map(c => (
-          <span
-            key={c.nodeId}
-            className="container-pill"
-            title={`${c.nodeId}: ${c.status}`}
-            style={{
-              borderColor:
-                c.status === 'running' ? '#3fb950' : c.status === 'error' ? '#f85149' : '#484f58'
-            }}
-          >
+        <div className="status-bar-pills">
+          {/* Show up to 6 container health pills with color-coded borders */}
+          {containerStatuses.slice(0, 6).map(c => (
             <span
-              className={`status-dot xs ${c.status === 'running' ? 'ok' : c.status === 'error' ? 'error' : 'checking'}`}
-            />
-            {c.nodeId}
-          </span>
-        ))}
-        {/* Overflow count when more than 6 containers are present */}
-        {containerStatuses.length > 6 && (
-          <span className="container-pill-more">+{containerStatuses.length - 6}</span>
-        )}
+              key={c.nodeId}
+              className="container-pill"
+              title={`${c.nodeId}: ${c.status}`}
+              style={{
+                borderColor:
+                  c.status === 'running' ? '#3fb950' : c.status === 'error' ? '#f85149' : '#484f58'
+              }}
+            >
+              <span
+                className={`status-dot xs ${c.status === 'running' ? 'ok' : c.status === 'error' ? 'error' : 'checking'}`}
+              />
+              {c.nodeId}
+            </span>
+          ))}
+          {/* Overflow count when more than 6 containers are present */}
+          {containerStatuses.length > 6 && (
+            <span className="container-pill-more">+{containerStatuses.length - 6}</span>
+          )}
+        </div>
         {/*
-         * Delete Scenario — shown in the bottom-right corner in Author mode while idle.
-         * Separated from the container pills by the existing right-flex layout.
+         * Delete Scenario — shown in Author mode while idle, in its own fixed-width
+         * slot (matching --sim-slot-w / the properties panel width) so it's centered
+         * under the properties panel rather than just trailing the container pills.
          */}
         {showDelete && onDelete && (
-          <button
-            className="btn btn-sm btn-delete-scenario btn-delete-status-bar"
-            onClick={onDelete}
-            title="Clear all devices from this scenario and optionally delete the file from disk"
-          >
-            Delete Scenario
-          </button>
+          <div className="status-bar-delete-slot">
+            <button
+              className="btn btn-sm btn-delete-scenario"
+              onClick={onDelete}
+              title="Clear all devices from this scenario and optionally delete the file from disk"
+            >
+              Delete Scenario
+            </button>
+          </div>
         )}
       </div>
     </footer>
@@ -757,12 +762,6 @@ export default function App() {
     setSelectedZone(null)
     setSimError(null)
   }, [scenario, currentFilePath])
-
-  /** Returns to the launch screen. Blocked while a simulation is running. */
-  const handleHome = useCallback(() => {
-    if (simStatus === 'running') return
-    setView('launch')
-  }, [simStatus])
 
   /**
    * Updates the selected device state when the user clicks a canvas node.
@@ -1578,12 +1577,21 @@ export default function App() {
             </button>
           </div>
 
-          {/* Center: scenario name + device count (Home button moved to status row) */}
+          {/* Center: scenario name [sector] + device count */}
           <div className="toolbar-actions-center">
             {scenario && (
               <div className="toolbar-scenario">
                 <span className="toolbar-scenario-name">
                   {scenario.meta.name ?? 'Untitled Scenario'}
+                  {scenario.meta.sector && scenario.meta.sector !== 'generic' && (
+                    <span className="toolbar-scenario-sector">
+                      {' '}
+                      [
+                      {SECTOR_OPTIONS.find(s => s.value === scenario.meta.sector)?.label ??
+                        scenario.meta.sector}
+                      ]
+                    </span>
+                  )}
                 </span>
                 {simDeviceCount > 0 && (
                   <span className="toolbar-scenario-meta">
@@ -1697,12 +1705,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Row 2 — OTForge Home (left) + simulation status badge (centred) */}
+        {/* Row 2 — simulation status badge (centred) */}
         <div className="toolbar-status-row">
-          <button className="toolbar-logo toolbar-status-home" onClick={handleHome} title="Home">
-            <span className="logo-ot-sm">OT</span>
-            <span className="logo-forge-sm">Forge</span>
-          </button>
           <SimStatusBadge status={simStatus} />
         </div>
       </header>

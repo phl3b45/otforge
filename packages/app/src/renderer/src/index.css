@@ -258,21 +258,6 @@ select {
   background-clip: text;
 }
 
-/* ── Toolbar (small) brand mark ───────────────────────────────────────────── */
-/* OT/Forge color split kept for brand identity; font is identical across both spans */
-.logo-ot-sm {
-  font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--accent-teal);
-}
-.logo-forge-sm {
-  font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--text-primary);
-}
-
 /* Legacy classes kept so nothing referencing them breaks */
 .logo-bracket {
   color: var(--accent-teal);
@@ -415,20 +400,6 @@ select {
   justify-content: center;
   padding: 3px 0.75rem;
   min-height: 28px;
-  /* Needed so .toolbar-status-home can be positioned absolutely on the left */
-  position: relative;
-}
-
-/*
- * OTForge Home button in the status row — sits on the far left directly below
- * the New button. Using absolute positioning keeps the status badge perfectly
- * centred regardless of the button width.
- */
-.toolbar-status-home {
-  position: absolute;
-  left: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
 }
 
 /* Legacy identity-row kept for reference — now unused */
@@ -462,22 +433,6 @@ select {
   min-width: 160px;
 }
 
-.toolbar-logo {
-  display: flex;
-  align-items: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0 0.25rem;
-  color: inherit;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  font-size: 0.875rem;
-}
-.toolbar-logo:hover .logo-text-sm {
-  color: var(--accent-teal);
-}
-
 .toolbar-scenario {
   display: flex;
   align-items: baseline;
@@ -495,6 +450,12 @@ select {
   font-size: 0.75rem;
   color: var(--text-muted);
   flex-shrink: 0;
+}
+
+/* Sector tag inline with the scenario name, e.g. "Pamko Petroleum [Oil & Gas]" */
+.toolbar-scenario-sector {
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 .toolbar-divider {
@@ -1611,6 +1572,27 @@ code.prop-value {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+/* Container pills flow normally and take the remaining space left of the
+   delete slot below. */
+.status-bar-pills {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Fixed-width slot matching --sim-slot-w (the properties panel's width) so
+   Delete Scenario is centered under the properties panel, not just trailing
+   the container pills. */
+.status-bar-delete-slot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: var(--sim-slot-w);
 }
 
 .status-sep {
@@ -3697,14 +3679,6 @@ code.prop-value {
 .btn-delete-scenario:hover {
   background: var(--accent-red);
   color: #fff;
-}
-
-/*
- * Status-bar variant — rendered inside the right section of the footer ribbon.
- * A left margin pushes it away from the container health pills.
- */
-.btn-delete-status-bar {
-  margin-left: 0.75rem;
 }
 
 /*
