@@ -476,6 +476,26 @@ export function PropertiesPanel({
             />
           )}
 
+          {/* ── HMI panel — authoring happens entirely inside FUXA's own editor, same ─
+              philosophy as the PLC IDE using the real OpenPLC editor rather than a
+              custom one. Hidden in Student mode, like the PLC controls above. */}
+          {!readOnly && device.category === 'hmi' && (
+            <section className="prop-section">
+              <div className="prop-section-title">HMI Program</div>
+              <button
+                className="btn btn-primary"
+                onClick={() => window.electronAPI.hmi.openEditor()}
+                title="Open FUXA's editor to build this device's HMI — find/create its view named otf-hmi-<device id> in the Views sidebar"
+              >
+                Open HMI Editor ↗
+              </button>
+              <p className="prop-attack-idle">
+                Build the program in FUXA, then use the toolbar&apos;s &quot;Open HMI&quot; button
+                to view it at runtime.
+              </p>
+            </section>
+          )}
+
           {/* ── Firewall panel (Phase 5) ──────────────────────────────────────── */}
           {/* Hidden in Student mode — security config is stripped from locked exports. */}
           {!readOnly && device.category === 'firewall' && security && (

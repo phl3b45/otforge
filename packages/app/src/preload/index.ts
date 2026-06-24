@@ -324,13 +324,26 @@ const api = {
     }> => ipcRenderer.invoke('settings:detectSubnets')
   },
 
-  // ── HMI window ───────────────────────────────────────────────────────────────
+  // ── HMI windows ───────────────────────────────────────────────────────────────
   hmi: {
     /**
-     * Opens FUXA's editor (localhost:1881/editor) in a separate Electron BrowserWindow
-     * — for building a new HMI view or editing/browsing any existing one. Distinct from
-     * `scada.open()`, which jumps straight into the read-only auto-generated SCADA
-     * Overview view.
+     * Opens the FUXA view linked to a specific HMI device at runtime, in a separate
+     * Electron BrowserWindow. Distinct from `scada.open()` (the auto-generated SCADA
+     * Overview) and `hmi.openEditor()` (the unscoped authoring editor).
+     *
+     * @param viewName - The FUXA view name to open — compute it the same way
+     *   configureFuxa() did when bootstrapping the device's placeholder (see
+     *   buildHmiViewName() in packages/app/src/main/index.ts: `otf-hmi-${sanitized nodeId}`).
+     * @returns { ok: true } on success, { ok: false, error } if the simulation is not
+     *   running or FUXA is not yet accepting connections on port 1881.
+     */
+    open: (viewName: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('hmi:open', viewName),
+
+    /**
+     * Opens FUXA's editor (localhost:1881/editor), unscoped, in a separate Electron
+     * BrowserWindow — for an author to build/edit any view, including an HMI device's
+     * bootstrapped placeholder (already visible by name in FUXA's own Views sidebar).
      *
      * FUXA is auto-started as part of every simulation. Modbus-TCP PLC connections are
      * provisioned automatically by configureFuxa() in the main process after simulation
@@ -339,7 +352,7 @@ const api = {
      * @returns { ok: true } on success, { ok: false, error } if the simulation is not
      *   running or FUXA is not yet accepting connections on port 1881.
      */
-    open: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('hmi:open')
+    openEditor: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('hmi:openEditor')
   },
 
   // ── SCADA Overview window ───────────────────────────────────────────────────────

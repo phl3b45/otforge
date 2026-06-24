@@ -1228,11 +1228,18 @@ export default function App() {
    * provisioned automatically by configureFuxa() in the main process after start.
    */
   const handleHmiOpen = useCallback(async () => {
-    const result = await window.electronAPI.hmi.open()
+    const firstHmiNodeId = scenario
+      ? Object.entries(scenario.devices.devices).find(([, d]) => d.category === 'hmi')?.[0]
+      : undefined
+    if (!firstHmiNodeId) return
+    // Must match buildHmiViewName() in packages/app/src/main/index.ts exactly --
+    // that's what configureFuxa() used when bootstrapping this device's placeholder.
+    const viewName = `otf-hmi-${firstHmiNodeId.replace(/[^a-z0-9]/gi, '-')}`
+    const result = await window.electronAPI.hmi.open(viewName)
     if (!result.ok) {
       setSimError(result.error ?? 'Failed to open FUXA HMI window.')
     }
-  }, [])
+  }, [scenario])
 
   /**
    * Opens FUXA directly into the auto-generated "SCADA Overview" view (OT-zone
@@ -1412,7 +1419,11 @@ export default function App() {
   const firstWorkstationDevice = (workstationDevices[0]?.[1] as DeviceConfig) ?? null
 
   // HMI device helper — "Open HMI" only makes sense once an author has placed an HMI
-  // device in Control Center; otherwise there's no authored program to open.
+  // device in Control Center; otherwise there's no authored program to open. The
+  // toolbar button opens the first one found (mirrors firstWorkstationDevice/
+  // firstAttackDevice's "pick first" pattern above) -- handleHmiOpen recomputes the
+  // same lookup itself from `scenario` to avoid a closure-ordering dependency on this
+  // const declared after it.
   const hmiDevices = scenario
     ? Object.entries(scenario.devices.devices).filter(([, d]) => d.category === 'hmi')
     : []

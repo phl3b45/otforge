@@ -2442,34 +2442,25 @@ function registerIPCHandlers(): void {
     }
   )
 
-  // ── HMI window ────────────────────────────────────────────────────────────────
+  // ── FUXA windows (HMI editor, device-specific HMI, SCADA Overview) ────────────
 
   /**
-   * Opens FUXA's editor in a standalone Electron BrowserWindow — for building a new
-   * HMI view from scratch or editing/browsing any existing one (RTU Overview, SCADA
-   * Overview, or anything the instructor has authored), distinct from `scada:open`
-   * which jumps straight into the read-only auto-generated SCADA Overview view.
+   * Opens a FUXA path in a standalone, sandboxed Electron BrowserWindow. Shared by
+   * `hmi:open`, `hmi:openEditor`, and `scada:open` -- they're all structurally
+   * identical (same guard, same webPreferences), differing only in title/path/color.
    *
-   * FUXA is always started as part of the simulation infrastructure (it runs
-   * alongside InfluxDB, Grafana, etc.). Loads `/editor` directly rather than the bare
-   * root — the root lands on whatever view is configured as the project's start view
-   * (currently whichever view was posted last), which made this button and
-   * `scada:open` look like they did the same thing.
-   *
-   * The window can be moved to a second monitor independently of the main app.
-   * If FUXA is not yet ready (port 1881 not open) the handler returns an error
-   * rather than opening a blank window — same guard used by attack:launchWindow.
-   *
-   * @returns { ok: true } on success, { ok: false, error } if simulation is not
-   *   running or FUXA's port is not yet accepting connections.
+   * If FUXA is not yet ready (port 1881 not open) returns an error rather than opening
+   * a blank window — same guard used by attack:launchWindow.
    */
-  ipcMain.handle('hmi:open', async (): Promise<{ ok: boolean; error?: string }> => {
+  async function openFuxaWindow(
+    title: string,
+    path: string,
+    backgroundColor: string
+  ): Promise<{ ok: boolean; error?: string }> {
     if (!activeProjectName) {
       return { ok: false, error: 'No simulation is running.' }
     }
 
-    // Verify FUXA's port is accepting connections before opening the window.
-    // The container may still be starting (Node.js init takes a few seconds).
     const ready = await isPortOpen(1881)
     if (!ready) {
       return {
@@ -2480,15 +2471,14 @@ function registerIPCHandlers(): void {
       }
     }
 
-    const hmiWindow = new BrowserWindow({
+    const fuxaWindow = new BrowserWindow({
       width: 1280,
       height: 900,
       minWidth: 800,
       minHeight: 600,
-      title: 'FUXA — Process HMI',
+      title,
       autoHideMenuBar: true,
-      // Dark background matches FUXA's default editor theme and prevents white flash
-      backgroundColor: '#1e1e2e',
+      backgroundColor,
       webPreferences: {
         // Full sandbox — the FUXA page is a third-party web app with no Electron APIs
         sandbox: true,
@@ -2498,68 +2488,71 @@ function registerIPCHandlers(): void {
       }
     })
 
-    hmiWindow.loadURL('http://localhost:1881/editor')
-
+    fuxaWindow.loadURL(`http://localhost:1881${path}`)
     // Prevent FUXA from opening pop-out windows that bypass our sandbox settings
-    hmiWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    fuxaWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
     return { ok: true }
-  })
-
-  // ── SCADA Overview window ───────────────────────────────────────────────────────
+  }
 
   /**
-   * Opens FUXA directly into the auto-generated "SCADA Overview" view (OT-zone
-   * devices only) in a standalone Electron BrowserWindow — mirrors `hmi:open` exactly,
-   * except it loads straight into the generated view rather than FUXA's home/editor
-   * root, so students land on the P&ID diagram immediately.
+   * Opens the FUXA view linked to a specific HMI device at runtime (the view an
+   * author built via `hmi:openEditor`, named deterministically from the device's
+   * nodeId by `buildHmiViewName()` in configureFuxa()).
    *
    * `?viewName=` is a query param FUXA's HomeComponent reads on startup
    * (`route.snapshot.queryParamMap.get('viewName')`) to pick the start view by exact
    * name match — confirmed against FUXA's client source. FUXA uses Angular's default
    * PathLocationStrategy (no hash routing).
    *
+   * @param viewName - The FUXA view name to open (computed by the renderer the same
+   *   way configureFuxa() computed it when bootstrapping the placeholder).
    * @returns { ok: true } on success, { ok: false, error } if simulation is not
    *   running or FUXA's port is not yet accepting connections.
    */
-  ipcMain.handle('scada:open', async (): Promise<{ ok: boolean; error?: string }> => {
-    if (!activeProjectName) {
-      return { ok: false, error: 'No simulation is running.' }
-    }
+  ipcMain.handle(
+    'hmi:open',
+    async (_event, viewName: string): Promise<{ ok: boolean; error?: string }> =>
+      openFuxaWindow(
+        'FUXA — Process HMI',
+        `/home?viewName=${encodeURIComponent(viewName)}`,
+        '#1e1e2e'
+      )
+  )
 
-    const ready = await isPortOpen(1881)
-    if (!ready) {
-      return {
-        ok: false,
-        error:
-          'FUXA HMI is not ready yet (port 1881 is not open). ' +
-          'Wait a few seconds for the container to finish starting, then try again.'
-      }
-    }
+  /**
+   * Opens FUXA's editor, unscoped — for an author to build/edit any view, including
+   * an HMI device's bootstrapped placeholder (already visible by name in FUXA's own
+   * Views sidebar; FUXA's editor route has no query-param-based view selector to deep
+   * link into, confirmed against its client source, so manual selection there is the
+   * expected flow).
+   *
+   * @returns { ok: true } on success, { ok: false, error } if simulation is not
+   *   running or FUXA's port is not yet accepting connections.
+   */
+  ipcMain.handle(
+    'hmi:openEditor',
+    async (): Promise<{ ok: boolean; error?: string }> =>
+      openFuxaWindow('FUXA — Editor', '/editor', '#1e1e2e')
+  )
 
-    const scadaWindow = new BrowserWindow({
-      width: 1280,
-      height: 900,
-      minWidth: 800,
-      minHeight: 600,
-      title: 'SCADA Overview — OT Process',
-      autoHideMenuBar: true,
-      backgroundColor: '#0d1117',
-      webPreferences: {
-        sandbox: true,
-        contextIsolation: true,
-        nodeIntegration: false,
-        webviewTag: false
-      }
-    })
-
-    scadaWindow.loadURL(
-      `http://localhost:1881/home?viewName=${encodeURIComponent('SCADA Overview')}`
-    )
-    scadaWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-
-    return { ok: true }
-  })
+  /**
+   * Opens FUXA directly into the auto-generated "SCADA Overview" view (OT-zone
+   * devices only) — students land on the P&ID diagram immediately rather than FUXA's
+   * home/editor root.
+   *
+   * @returns { ok: true } on success, { ok: false, error } if simulation is not
+   *   running or FUXA's port is not yet accepting connections.
+   */
+  ipcMain.handle(
+    'scada:open',
+    async (): Promise<{ ok: boolean; error?: string }> =>
+      openFuxaWindow(
+        'SCADA Overview — OT Process',
+        `/home?viewName=${encodeURIComponent('SCADA Overview')}`,
+        '#0d1117'
+      )
+  )
 
   // ── PLC firmware import ────────────────────────────────────────────────────────
 
@@ -2984,7 +2977,15 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     ([, d]) => d.category === 'sensor'
   )
 
-  const totalDevices = modbusNodeIds.size + opcuaEntries.length + bacnetEntries.length
+  // ── Collect HMI devices (Control Center zone, not OT) ──────────────────────
+  // Each gets an author-built FUXA view bootstrapped below, linked by a name derived
+  // from its stable nodeId (not its editable label) -- see buildHmiViewName().
+  const hmiEntries = Object.entries(scenario.devices.devices).filter(
+    ([, d]) => d.category === 'hmi'
+  )
+
+  const totalDevices =
+    modbusNodeIds.size + opcuaEntries.length + bacnetEntries.length + hmiEntries.length
   if (totalDevices === 0) return
 
   // ── Wait for FUXA HTTP API (up to 60 s) ────────────────────────────────────
@@ -3070,6 +3071,25 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
    */
   async function postLayout(layout: unknown): Promise<void> {
     await postProjectData('layout', layout)
+  }
+
+  /**
+   * Reads the names of views that already exist in FUXA's project. Used only to decide
+   * whether to bootstrap a placeholder HMI view — unlike the SCADA/RTU overview views
+   * (always overwritten by id every run), an HMI device's view holds an author's
+   * hand-built content once they start editing it, so it must never be silently
+   * regenerated. Best-effort: an empty set on failure just means we might re-attempt
+   * the bootstrap next run, which is harmless (postView no-ops on an existing id match
+   * via FUXA's own setView()).
+   */
+  async function getExistingViewNames(): Promise<Set<string>> {
+    try {
+      const body = await httpGet(`http://localhost:${FUXA_PORT}/api/project`)
+      const project = JSON.parse(body) as { hmi?: { views?: Array<{ name?: string }> } }
+      return new Set((project.hmi?.views ?? []).map(v => v.name).filter((n): n is string => !!n))
+    } catch {
+      return new Set()
+    }
   }
 
   // ── Provision Modbus TCP (PLCs / RTUs / smart-sensor / smart-controller) ───
@@ -3237,6 +3257,56 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
         customStyles: ''
       })
     }
+  }
+
+  // ── Bootstrap a placeholder HMI view per HMI device (Control Center) ──────
+  // Author-built content, never overwritten once it exists -- see
+  // getExistingViewNames()'s doc comment for why this can't follow the SCADA/RTU
+  // overview views' always-overwrite-by-id pattern.
+  if (hmiEntries.length > 0) {
+    const existingViewNames = await getExistingViewNames()
+    for (const [nodeId, device] of hmiEntries) {
+      const viewName = buildHmiViewName(nodeId)
+      if (existingViewNames.has(viewName)) continue
+      await postView(buildHmiPlaceholderView(viewName, device.label ?? nodeId))
+    }
+  }
+}
+
+// ── FUXA HMI device view ────────────────────────────────────────────────────────
+
+/**
+ * Deterministic FUXA view id/name for an `hmi` device's author-built program.
+ * Derived from the stable nodeId, not the editable device label, so renaming the
+ * device on the canvas never orphans the link to its FUXA view. id and name are kept
+ * identical (FUXA's setView() matches by id for overwrite, by name for the duplicate
+ * check, and the runtime `?viewName=` lookup matches by name -- using the same value
+ * for both sidesteps any drift between the two).
+ */
+function buildHmiViewName(nodeId: string): string {
+  return `otf-hmi-${nodeId.replace(/[^a-z0-9]/gi, '-')}`
+}
+
+/**
+ * Minimal placeholder view for a newly-detected HMI device -- just enough that opening
+ * it for the first time (via the Properties Panel's "Open HMI Editor" button) shows a
+ * clear starting point instead of a blank void. The author builds the real content
+ * from here using FUXA's own editor; this function is never called again for a device
+ * once its view already exists (see the existingViewNames check at the call site).
+ */
+function buildHmiPlaceholderView(viewName: string, label: string): unknown {
+  return {
+    id: viewName,
+    name: viewName,
+    profile: { width: 1280, height: 800, bkcolor: '#0d1117ff' },
+    type: 'svg',
+    svgcontent:
+      `<svg width="1280" height="800" xmlns="http://www.w3.org/2000/svg"><g>` +
+      `<text x="640" y="380" font-size="20" fill="#8b949e" text-anchor="middle">Author your HMI for "${label}" here</text>` +
+      `<text x="640" y="410" font-size="14" fill="#6e7681" text-anchor="middle">Use the Controls/Shape/Widgets palette on the left, then Save</text>` +
+      `</g></svg>`,
+    items: {},
+    variables: {}
   }
 }
 
