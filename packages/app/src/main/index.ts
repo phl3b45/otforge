@@ -2995,6 +2995,15 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     await postProjectData('set-view', view)
   }
 
+  /**
+   * Create/update an alarm definition in FUXA's project via cmd: 'set-alarm'.
+   * Alarms apply live (FUXA's runtime resets its alarm manager on this command) —
+   * no FUXA restart needed. Confirmed via a live container before relying on it.
+   */
+  async function postAlarm(alarm: unknown): Promise<void> {
+    await postProjectData('set-alarm', alarm)
+  }
+
   // ── Provision Modbus TCP (PLCs / RTUs / smart-sensor / smart-controller) ───
   for (const nodeId of modbusNodeIds) {
     const device = scenario.devices.devices[nodeId]
@@ -3106,6 +3115,9 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   const otTopology = getOtZoneTopology(scenario)
   if (otTopology.nodes.length > 0) {
     await postView(buildScadaOverviewView(otTopology))
+    for (const alarm of buildScadaAlarms(otTopology.nodes)) {
+      await postAlarm(alarm)
+    }
   }
 }
 
@@ -3755,6 +3767,57 @@ function buildScadaOverviewView(topology: OtZoneTopology): unknown {
     items,
     variables: {}
   }
+}
+
+/**
+ * Builds one FUXA alarm per pump/vfd/actuator smart-controller device, bound to its
+ * DI0 status tag: DI0=0 ("stopped") is the alarm condition, matching the reference
+ * screenshot's "Pump 2 has stopped working" exactly. Valves are intentionally excluded
+ * -- a closed valve (DI0=0) is frequently the normal state, not a fault, so auto-firing
+ * an alarm on it would be misleading. wellhead-controller has no DI0 to bind to.
+ *
+ * @param nodes - OT-zone nodes from getOtZoneTopology().
+ * @returns Array of Alarm-shaped objects, ready for postAlarm().
+ */
+function buildScadaAlarms(nodes: OtZoneDevice[]): unknown[] {
+  const alarms: unknown[] = []
+
+  for (const { node, device } of nodes) {
+    if (device.category !== 'smart-controller') continue
+    const kind = device.controller?.kind
+    if (kind !== 'pump' && kind !== 'vfd' && kind !== 'actuator') continue
+
+    const ns = node.id.replace(/[^a-z0-9]/gi, '-')
+    const label = device.label ?? node.id
+
+    alarms.push({
+      name: `otf-scada-alarm-${ns}-stopped`,
+      property: {
+        variableId: `${ns}-di0`,
+        permission: 0,
+        permissionRoles: { show: [], enabled: [] }
+      },
+      low: {
+        enabled: true,
+        checkdelay: 1,
+        min: 0,
+        max: 0,
+        timedelay: 0,
+        text: `${label} has stopped working`,
+        group: 'process',
+        ackmode: 'alarm.ack-active',
+        bkcolor: '#d29922',
+        color: '#0d1117'
+      },
+      high: {},
+      highhigh: {},
+      info: {},
+      actions: { enabled: false, values: [] },
+      value: ''
+    })
+  }
+
+  return alarms
 }
 
 // ── OpenPLC HTTP API helpers ───────────────────────────────────────────────────
