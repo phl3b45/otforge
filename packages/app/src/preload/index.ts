@@ -324,20 +324,48 @@ const api = {
     }> => ipcRenderer.invoke('settings:detectSubnets')
   },
 
-  // ── HMI window ───────────────────────────────────────────────────────────────
+  // ── HMI windows ───────────────────────────────────────────────────────────────
   hmi: {
     /**
-     * Opens the FUXA web HMI in a separate Electron BrowserWindow (localhost:1881).
+     * Opens the FUXA view linked to a specific HMI device at runtime, in a separate
+     * Electron BrowserWindow. Distinct from `scada.open()` (the auto-generated SCADA
+     * Overview) and `hmi.openEditor()` (the unscoped authoring editor).
      *
-     * FUXA is auto-started as part of every simulation. This call opens its process
-     * graphics editor in a standalone OS window that can be moved to a second monitor.
-     * Modbus-TCP PLC connections are provisioned automatically by configureFuxa() in
-     * the main process after simulation start — no manual FUXA configuration needed.
+     * @param viewName - The FUXA view name to open — compute it the same way
+     *   configureFuxa() did when bootstrapping the device's placeholder (see
+     *   buildHmiViewName() in packages/app/src/main/index.ts: `otf-hmi-${sanitized nodeId}`).
+     * @returns { ok: true } on success, { ok: false, error } if the simulation is not
+     *   running or FUXA is not yet accepting connections on port 1881.
+     */
+    open: (viewName: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('hmi:open', viewName),
+
+    /**
+     * Opens FUXA's editor (localhost:1881/editor), unscoped, in a separate Electron
+     * BrowserWindow — for an author to build/edit any view, including an HMI device's
+     * bootstrapped placeholder (already visible by name in FUXA's own Views sidebar).
+     *
+     * FUXA is auto-started as part of every simulation. Modbus-TCP PLC connections are
+     * provisioned automatically by configureFuxa() in the main process after simulation
+     * start — no manual FUXA configuration needed.
      *
      * @returns { ok: true } on success, { ok: false, error } if the simulation is not
      *   running or FUXA is not yet accepting connections on port 1881.
      */
-    open: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('hmi:open')
+    openEditor: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('hmi:openEditor')
+  },
+
+  // ── SCADA Overview window ───────────────────────────────────────────────────────
+  scada: {
+    /**
+     * Opens FUXA directly into the auto-generated "SCADA Overview" view (OT-zone
+     * devices only) in a separate Electron BrowserWindow — same mechanism as `hmi.open`,
+     * but scoped to the generated P&ID diagram rather than FUXA's home/editor root.
+     *
+     * @returns { ok: true } on success, { ok: false, error } if the simulation is not
+     *   running or FUXA is not yet accepting connections on port 1881.
+     */
+    open: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('scada:open')
   },
 
   // ── Community scenario packs (Phase 9) ───────────────────────────────────────

@@ -258,21 +258,6 @@ select {
   background-clip: text;
 }
 
-/* ── Toolbar (small) brand mark ───────────────────────────────────────────── */
-/* OT/Forge color split kept for brand identity; font is identical across both spans */
-.logo-ot-sm {
-  font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--accent-teal);
-}
-.logo-forge-sm {
-  font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--text-primary);
-}
-
 /* Legacy classes kept so nothing referencing them breaks */
 .logo-bracket {
   color: var(--accent-teal);
@@ -415,20 +400,6 @@ select {
   justify-content: center;
   padding: 3px 0.75rem;
   min-height: 28px;
-  /* Needed so .toolbar-status-home can be positioned absolutely on the left */
-  position: relative;
-}
-
-/*
- * OTForge Home button in the status row — sits on the far left directly below
- * the New button. Using absolute positioning keeps the status badge perfectly
- * centred regardless of the button width.
- */
-.toolbar-status-home {
-  position: absolute;
-  left: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
 }
 
 /* Legacy identity-row kept for reference — now unused */
@@ -462,22 +433,6 @@ select {
   min-width: 160px;
 }
 
-.toolbar-logo {
-  display: flex;
-  align-items: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0 0.25rem;
-  color: inherit;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  font-size: 0.875rem;
-}
-.toolbar-logo:hover .logo-text-sm {
-  color: var(--accent-teal);
-}
-
 .toolbar-scenario {
   display: flex;
   align-items: baseline;
@@ -495,6 +450,12 @@ select {
   font-size: 0.75rem;
   color: var(--text-muted);
   flex-shrink: 0;
+}
+
+/* Sector tag inline with the scenario name, e.g. "Pamko Petroleum [Oil & Gas]" */
+.toolbar-scenario-sector {
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 .toolbar-divider {
@@ -572,17 +533,6 @@ select {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-.palette-header {
-  padding: 0.625rem 0.875rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-primary);
-  border-bottom: 1px solid var(--border-muted);
-  flex-shrink: 0;
 }
 
 .palette-sections {
@@ -1613,6 +1563,30 @@ code.prop-value {
   gap: 0.5rem;
 }
 
+/* Container pills flow normally and take the remaining space left of the
+   delete slot below. */
+.status-bar-pills {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Fixed-width slot matching --sim-slot-w (the properties panel's width) so
+   Delete Scenario is centered under the properties panel, not just trailing
+   the container pills. .status-bar has its own 0.75rem right padding that the
+   properties panel doesn't, so the negative margin cancels that inset and the
+   slot's right edge reaches the true window edge, matching the panel below. */
+.status-bar-delete-slot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: var(--sim-slot-w);
+  margin-right: -0.75rem;
+}
+
 .status-sep {
   color: var(--border);
 }
@@ -2576,9 +2550,11 @@ code.prop-value {
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  /* Inset by the palette widths so tabs fill only the canvas column */
-  padding-left: 210px;
-  padding-right: 260px;
+  /* No left/right padding here -- alignment with the palette/properties columns
+     below is handled by real structural spacers (.sim-tab-left-spacer and
+     .sim-control-slot in App.tsx/index.css), not hardcoded padding. A padding-based
+     inset doesn't shrink to make room for new tabs (e.g. the SCADA action button),
+     so it drifted out of sync with the columns below it. */
 }
 
 /*
@@ -2661,6 +2637,23 @@ code.prop-value {
   font-weight: 400;
 }
 
+/* Trailing SCADA action button — narrower than the five flexible Purdue tabs, and a
+   subtle background hints it's an action (opens a window) rather than a zone filter. */
+.layer-tab-action {
+  flex: 0 0 auto;
+  min-width: 140px;
+  background: rgba(57, 208, 176, 0.06);
+}
+
+.layer-tab-action:hover:not(:disabled) {
+  background: rgba(57, 208, 176, 0.14);
+}
+
+.layer-tab-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 /* ── Mode badge row — below toolbar identity row ──────────────────────────────
  *
  * Thin bar that sits between the toolbar and the layer-tab bar row.
@@ -2687,15 +2680,22 @@ code.prop-value {
  *   past the vertical divider line that separates Run/Stop from the layer tabs.
  *
  * Row 2 — sim-tabs-row:
- *   [ OT Process | Control Center | Plant DMZ | Enterprise | Internet DMZ ] [ Run Simulation ]
+ *   [ left spacer ] [ OT Process | ... | SCADA ] [ Run Simulation ]
+ *   The left spacer matches whichever sidebar is currently showing in the
+ *   workspace below (DevicePalette/MissionPanel/none) so the tabs start exactly
+ *   at the canvas's left edge — see App.tsx's sidebarWidth computation.
  *
- * --sim-slot-w is shared between .sim-control-slot and .sim-slot-spacer so both
- * rows align on the same vertical boundary.
+ * --sim-slot-w is shared between .sim-control-slot and .sim-slot-spacer (and now
+ * matches .properties-panel's width, not an unrelated value) so all three —
+ * row 1's spacer, row 2's Run/Stop slot, and the properties panel below — align
+ * on the same vertical boundary.
  */
 
-/* Width shared by the Run/Stop slot and the spacer that aligns above it */
+/* Width shared by the Run/Stop slot and the spacer that aligns above it --
+   matches .properties-panel's width (index.css ~line 897) so Run/Stop's left
+   edge lines up with the properties panel's left edge below it. */
 :root {
-  --sim-slot-w: 192px;
+  --sim-slot-w: 260px;
 }
 
 /* Outer wrapper — stacks the two rows vertically */
@@ -2732,6 +2732,28 @@ code.prop-value {
 .sim-slot-spacer {
   flex-shrink: 0;
   min-width: var(--sim-slot-w);
+}
+
+/* Leading spacer in .sim-tabs-row, width set inline from App.tsx to match
+   whichever left sidebar is currently showing (DevicePalette/MissionPanel/none) --
+   see the sidebarWidth computation alongside the .sim-tabs-row render. Holds the
+   "DEVICES" label (moved out of the palette's own former .palette-header) when the
+   DevicePalette is the sidebar showing below it. */
+.sim-tab-left-spacer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 0.875rem;
+}
+
+.sim-tab-left-spacer-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-primary);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 /* Row 2: layer tabs + Run/Stop */
@@ -3664,14 +3686,6 @@ code.prop-value {
 .btn-delete-scenario:hover {
   background: var(--accent-red);
   color: #fff;
-}
-
-/*
- * Status-bar variant — rendered inside the right section of the footer ribbon.
- * A left margin pushes it away from the container health pills.
- */
-.btn-delete-status-bar {
-  margin-left: 0.75rem;
 }
 
 /*

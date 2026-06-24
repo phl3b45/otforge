@@ -64,8 +64,10 @@ import {
   toProjectName,
   writeGrafanaProvisioning,
   findFreeSubnets,
-  ZONE_DEFAULTS
+  ZONE_DEFAULTS,
+  getOtZoneTopology
 } from '@otforge/orchestrator'
+import type { OtZoneDevice, OtZoneTopology } from '@otforge/orchestrator'
 import type { NetworkZone, ACLRule } from '@otforge/schema'
 import { initDb, saveActiveScenario, loadActiveScenario, clearActiveScenario } from './db'
 import { parsePlcFile } from './plc-import'
@@ -2440,30 +2442,25 @@ function registerIPCHandlers(): void {
     }
   )
 
-  // ── HMI window ────────────────────────────────────────────────────────────────
+  // ── FUXA windows (HMI editor, device-specific HMI, SCADA Overview) ────────────
 
   /**
-   * Opens the FUXA web HMI in a standalone Electron BrowserWindow.
+   * Opens a FUXA path in a standalone, sandboxed Electron BrowserWindow. Shared by
+   * `hmi:open`, `hmi:openEditor`, and `scada:open` -- they're all structurally
+   * identical (same guard, same webPreferences), differing only in title/path/color.
    *
-   * FUXA is always started as part of the simulation infrastructure (it runs
-   * alongside InfluxDB, Grafana, etc.). This handler opens its web UI at
-   * localhost:1881 in a separate OS-level window so instructors and students
-   * can interact with the live process graphics alongside the main simulator.
-   *
-   * The window can be moved to a second monitor independently of the main app.
-   * If FUXA is not yet ready (port 1881 not open) the handler returns an error
-   * rather than opening a blank window — same guard used by attack:launchWindow.
-   *
-   * @returns { ok: true } on success, { ok: false, error } if simulation is not
-   *   running or FUXA's port is not yet accepting connections.
+   * If FUXA is not yet ready (port 1881 not open) returns an error rather than opening
+   * a blank window — same guard used by attack:launchWindow.
    */
-  ipcMain.handle('hmi:open', async (): Promise<{ ok: boolean; error?: string }> => {
+  async function openFuxaWindow(
+    title: string,
+    path: string,
+    backgroundColor: string
+  ): Promise<{ ok: boolean; error?: string }> {
     if (!activeProjectName) {
       return { ok: false, error: 'No simulation is running.' }
     }
 
-    // Verify FUXA's port is accepting connections before opening the window.
-    // The container may still be starting (Node.js init takes a few seconds).
     const ready = await isPortOpen(1881)
     if (!ready) {
       return {
@@ -2474,15 +2471,14 @@ function registerIPCHandlers(): void {
       }
     }
 
-    const hmiWindow = new BrowserWindow({
+    const fuxaWindow = new BrowserWindow({
       width: 1280,
       height: 900,
       minWidth: 800,
       minHeight: 600,
-      title: 'FUXA — Process HMI',
+      title,
       autoHideMenuBar: true,
-      // Dark background matches FUXA's default editor theme and prevents white flash
-      backgroundColor: '#1e1e2e',
+      backgroundColor,
       webPreferences: {
         // Full sandbox — the FUXA page is a third-party web app with no Electron APIs
         sandbox: true,
@@ -2492,13 +2488,71 @@ function registerIPCHandlers(): void {
       }
     })
 
-    hmiWindow.loadURL('http://localhost:1881')
-
+    fuxaWindow.loadURL(`http://localhost:1881${path}`)
     // Prevent FUXA from opening pop-out windows that bypass our sandbox settings
-    hmiWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    fuxaWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
     return { ok: true }
-  })
+  }
+
+  /**
+   * Opens the FUXA view linked to a specific HMI device at runtime (the view an
+   * author built via `hmi:openEditor`, named deterministically from the device's
+   * nodeId by `buildHmiViewName()` in configureFuxa()).
+   *
+   * `?viewName=` is a query param FUXA's HomeComponent reads on startup
+   * (`route.snapshot.queryParamMap.get('viewName')`) to pick the start view by exact
+   * name match — confirmed against FUXA's client source. FUXA uses Angular's default
+   * PathLocationStrategy (no hash routing).
+   *
+   * @param viewName - The FUXA view name to open (computed by the renderer the same
+   *   way configureFuxa() computed it when bootstrapping the placeholder).
+   * @returns { ok: true } on success, { ok: false, error } if simulation is not
+   *   running or FUXA's port is not yet accepting connections.
+   */
+  ipcMain.handle(
+    'hmi:open',
+    async (_event, viewName: string): Promise<{ ok: boolean; error?: string }> =>
+      openFuxaWindow(
+        'FUXA — Process HMI',
+        `/home?viewName=${encodeURIComponent(viewName)}`,
+        '#1e1e2e'
+      )
+  )
+
+  /**
+   * Opens FUXA's editor, unscoped — for an author to build/edit any view, including
+   * an HMI device's bootstrapped placeholder (already visible by name in FUXA's own
+   * Views sidebar; FUXA's editor route has no query-param-based view selector to deep
+   * link into, confirmed against its client source, so manual selection there is the
+   * expected flow).
+   *
+   * @returns { ok: true } on success, { ok: false, error } if simulation is not
+   *   running or FUXA's port is not yet accepting connections.
+   */
+  ipcMain.handle(
+    'hmi:openEditor',
+    async (): Promise<{ ok: boolean; error?: string }> =>
+      openFuxaWindow('FUXA — Editor', '/editor', '#1e1e2e')
+  )
+
+  /**
+   * Opens FUXA directly into the auto-generated "SCADA Overview" view (OT-zone
+   * devices only) — students land on the P&ID diagram immediately rather than FUXA's
+   * home/editor root.
+   *
+   * @returns { ok: true } on success, { ok: false, error } if simulation is not
+   *   running or FUXA's port is not yet accepting connections.
+   */
+  ipcMain.handle(
+    'scada:open',
+    async (): Promise<{ ok: boolean; error?: string }> =>
+      openFuxaWindow(
+        'SCADA Overview — OT Process',
+        `/home?viewName=${encodeURIComponent('SCADA Overview')}`,
+        '#0d1117'
+      )
+  )
 
   // ── PLC firmware import ────────────────────────────────────────────────────────
 
@@ -2923,7 +2977,15 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     ([, d]) => d.category === 'sensor'
   )
 
-  const totalDevices = modbusNodeIds.size + opcuaEntries.length + bacnetEntries.length
+  // ── Collect HMI devices (Control Center zone, not OT) ──────────────────────
+  // Each gets an author-built FUXA view bootstrapped below, linked by a name derived
+  // from its stable nodeId (not its editable label) -- see buildHmiViewName().
+  const hmiEntries = Object.entries(scenario.devices.devices).filter(
+    ([, d]) => d.category === 'hmi'
+  )
+
+  const totalDevices =
+    modbusNodeIds.size + opcuaEntries.length + bacnetEntries.length + hmiEntries.length
   if (totalDevices === 0) return
 
   // ── Wait for FUXA HTTP API (up to 60 s) ────────────────────────────────────
@@ -2943,17 +3005,21 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 2000))
 
   /**
-   * POST a single device entry to FUXA's /api/device endpoint.
-   * Silently ignores duplicate-id errors (HTTP 400) — these are expected when the
-   * named volume already contains devices from a previous run of the same scenario.
+   * POST a single value to FUXA's /api/projectData endpoint under the given command.
+   * This is the one real contract FUXA exposes for writing devices/views/alarms into
+   * its running project (verified against frangoteam/fuxa's actual server routes —
+   * `/api/device` and `/api/view` are NOT creation endpoints, see callers below).
+   * Best-effort: errors are swallowed so one failure doesn't block the rest of
+   * provisioning, and a format mismatch between FUXA versions degrades gracefully.
    */
-  async function postDevice(payload: string): Promise<void> {
+  async function postProjectData(cmd: string, data: unknown): Promise<void> {
+    const payload = JSON.stringify({ cmd, data })
     try {
       await httpPost(
         {
           host: 'localhost',
           port: FUXA_PORT,
-          path: '/api/device',
+          path: '/api/projectData',
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2969,28 +3035,60 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   }
 
   /**
-   * POST a view definition to FUXA's /api/view endpoint.
-   * Best-effort: errors are swallowed so a format mismatch between FUXA versions
-   * never prevents data sources and tags from being provisioned.
+   * Create/update a device in FUXA's project via cmd: 'set-device'.
+   * NOTE: `POST /api/device` (the endpoint this used to target) is not a device-
+   * creation endpoint in FUXA — it only sets a device's `security` sub-property and
+   * rejects everything else. Confirmed by curling a standalone instance of the
+   * exact vendored image (ghcr.io/iburres/fuxa) — the old path returned 400 and
+   * persisted nothing.
+   */
+  async function postDevice(device: unknown): Promise<void> {
+    await postProjectData('set-device', device)
+  }
+
+  /**
+   * Create/update a view in FUXA's project via cmd: 'set-view'.
+   * NOTE: `POST /api/view` (the endpoint this used to target) does not exist as a
+   * route in FUXA's server at all — every prior call has been silently swallowed.
    */
   async function postView(view: unknown): Promise<void> {
-    const payload = JSON.stringify(view)
+    await postProjectData('set-view', view)
+  }
+
+  /**
+   * Create/update an alarm definition in FUXA's project via cmd: 'set-alarm'.
+   * Alarms apply live (FUXA's runtime resets its alarm manager on this command) —
+   * no FUXA restart needed. Confirmed via a live container before relying on it.
+   */
+  async function postAlarm(alarm: unknown): Promise<void> {
+    await postProjectData('set-alarm', alarm)
+  }
+
+  /**
+   * Sets FUXA's HMI layout via cmd: 'layout'. NOTE: this is a full replace server-side
+   * (`data.hmi.layout = layout`), not a merge — only call this with a complete layout
+   * object, never a partial patch, or other layout settings get silently wiped.
+   */
+  async function postLayout(layout: unknown): Promise<void> {
+    await postProjectData('layout', layout)
+  }
+
+  /**
+   * Reads the names of views that already exist in FUXA's project. Used only to decide
+   * whether to bootstrap a placeholder HMI view — unlike the SCADA/RTU overview views
+   * (always overwritten by id every run), an HMI device's view holds an author's
+   * hand-built content once they start editing it, so it must never be silently
+   * regenerated. Best-effort: an empty set on failure just means we might re-attempt
+   * the bootstrap next run, which is harmless (postView no-ops on an existing id match
+   * via FUXA's own setView()).
+   */
+  async function getExistingViewNames(): Promise<Set<string>> {
     try {
-      await httpPost(
-        {
-          host: 'localhost',
-          port: FUXA_PORT,
-          path: '/api/view',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(payload)
-          }
-        },
-        payload
-      )
+      const body = await httpGet(`http://localhost:${FUXA_PORT}/api/project`)
+      const project = JSON.parse(body) as { hmi?: { views?: Array<{ name?: string }> } }
+      return new Set((project.hmi?.views ?? []).map(v => v.name).filter((n): n is string => !!n))
     } catch {
-      // View creation is best-effort; data sources + tags still work without it.
+      return new Set()
     }
   }
 
@@ -3003,35 +3101,37 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     const port = device.modbus?.port ?? 502
     const isRtu = device.category === 'rtu' || device.category === 'iec104-rtu'
     const isSmartSensor = device.category === 'smart-sensor'
-    // RTUs get a full register map so students see live telemetry values without
-    // any manual FUXA tag configuration. smart-sensor gets its one configured
-    // register. PLCs and smart-controller keep an empty tag set — PLC programs
-    // are the programmer's concern, and smart-controller has no fixed register
-    // map to introspect (device.modbus.registers isn't wired through to the
-    // container yet) — the instructor adds tags through the FUXA editor.
+    const isSmartController = device.category === 'smart-controller'
+    // RTUs get a full register map, smart-sensor gets its one configured register, and
+    // smart-controller gets its CO0/DI0/HR0/HR1 set — all so students see live telemetry
+    // without any manual FUXA tag configuration. PLCs keep an empty tag set; PLC
+    // programs are the programmer's concern, not something to auto-introspect.
     const tags = isSmartSensor
       ? buildSensorModbusTag(nodeId, device)
       : isRtu
         ? buildRtuModbusTags(nodeId)
-        : {}
+        : isSmartController
+          ? buildControllerModbusTags(nodeId, device)
+          : {}
     const displayName = device.label ?? nodeId
     // RTU/smart-sensor/smart-controller are Modbus end-to-end, so the clean
     // display name applies to all three; PLC/safety-plc only speak Modbus
     // incidentally, so they keep the "(Modbus)" suffix for clarity in FUXA's list.
-    const isModbusNative = isRtu || isSmartSensor || device.category === 'smart-controller'
+    const isModbusNative = isRtu || isSmartSensor || isSmartController
 
-    await postDevice(
-      JSON.stringify({
-        id: nodeId,
-        name: isModbusNative ? `${displayName}` : `${displayName} (Modbus)`,
-        enabled: true,
-        type: 'MODBUSTCP',
-        polling: 1000,
-        request: 30_000,
-        property: { address, port, uid },
-        tags
-      })
-    )
+    await postDevice({
+      id: nodeId,
+      name: isModbusNative ? `${displayName}` : `${displayName} (Modbus)`,
+      enabled: true,
+      // FUXA's DeviceEnum uses exact-case 'ModbusTCP' (server/runtime/devices/device.js)
+      // -- the all-caps 'MODBUSTCP' silently fails plugin lookup and the device never
+      // connects. Confirmed against a live container before fixing.
+      type: 'ModbusTCP',
+      polling: 1000,
+      request: 30_000,
+      property: { address, port, uid },
+      tags
+    })
   }
 
   // ── Provision OPC UA (SCADA servers) ──────────────────────────────────────
@@ -3043,25 +3143,23 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     const port = device.opcua?.port ?? 4840
     const endpointUrl = `opc.tcp://${address}:${port}`
 
-    await postDevice(
-      JSON.stringify({
-        id: nodeId,
-        name: `${nodeId} (OPC UA)`,
-        enabled: true,
-        type: 'OPCUA',
-        polling: 2000,
-        request: 30_000,
-        // FUXA OPC UA plugin reads 'address' as the full endpoint URL.
-        // Security/policy/mode left at None — matches the server container defaults.
-        property: {
-          address: endpointUrl,
-          security: 'None',
-          policy: 'None',
-          mode: 'Anonymous'
-        },
-        tags: {}
-      })
-    )
+    await postDevice({
+      id: nodeId,
+      name: `${nodeId} (OPC UA)`,
+      enabled: true,
+      type: 'OPCUA',
+      polling: 2000,
+      request: 30_000,
+      // FUXA OPC UA plugin reads 'address' as the full endpoint URL.
+      // Security/policy/mode left at None — matches the server container defaults.
+      property: {
+        address: endpointUrl,
+        security: 'None',
+        policy: 'None',
+        mode: 'Anonymous'
+      },
+      tags: {}
+    })
   }
 
   // ── Provision BACnet/IP (sensors) ─────────────────────────────────────────
@@ -3072,18 +3170,16 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     const address = device.ipAddress.split('/')[0]
     const port = device.bacnet?.port ?? 47808
 
-    await postDevice(
-      JSON.stringify({
-        id: nodeId,
-        name: `${nodeId} (BACnet)`,
-        enabled: true,
-        type: 'BACnet',
-        polling: 2000,
-        request: 30_000,
-        property: { address, port },
-        tags: {}
-      })
-    )
+    await postDevice({
+      id: nodeId,
+      name: `${nodeId} (BACnet)`,
+      enabled: true,
+      type: 'BACnet',
+      polling: 2000,
+      request: 30_000,
+      property: { address, port },
+      tags: {}
+    })
   }
 
   // ── Create RTU Overview HMI view ───────────────────────────────────────────
@@ -3099,7 +3195,136 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   if (rtuEntries.length > 0) {
     await postView(buildRtuOverviewView(rtuEntries))
   }
+
+  // ── Create SCADA Overview HMI view (OT-zone only) ──────────────────────────
+  // Auto-generated P&ID-style view scoped to OT-zone devices only, mirroring the
+  // canvas's own layout -- opened via the dedicated `scada:open` window, separate
+  // from the general-purpose FUXA editor/RTU overview above.
+  const otTopology = getOtZoneTopology(scenario)
+  if (otTopology.nodes.length > 0) {
+    await postView(buildScadaOverviewView(otTopology))
+    const scadaAlarms = buildScadaAlarms(otTopology.nodes)
+    for (const alarm of scadaAlarms) {
+      await postAlarm(alarm)
+    }
+    if (scadaAlarms.length > 0) {
+      // FUXA's alarm bell is hidden by default: home.component.ts initializes
+      // alarms.mode to '' (empty string), and checkHeaderButton() compares it against
+      // the bare key names 'fix'/'float' (derived from NotificationModeType via an
+      // indexOf round-trip, NOT the enum's own long 'item.notifymode-*' values) -- so
+      // without this, alarms fire correctly server-side but are invisible in the UI.
+      // 'float' shows the bell only while count > 0, matching real SCADA HMI
+      // conventions.
+      //
+      // IMPORTANT: setHmiLayout() replaces the whole layout server-side (not a merge).
+      // A first attempt posted only `{ header: { alarms: 'float' } }` -- this crashed
+      // the runtime view entirely ("Cannot read properties of undefined (reading
+      // 'mode')") because other code (the sidenav) unconditionally reads
+      // layout.navigation.mode, which only exists if `navigation` is a real object.
+      // Under normal use FUXA's own UI always saves a complete LayoutSettings object
+      // (client/src/app/_models/hmi.ts); this must match that shape, not a sparse
+      // patch, even though we only intend to change one field. Values below mirror
+      // `new LayoutSettings()`'s own field defaults exactly, including the bare-key
+      // (not long enum value) convention for navigation.mode/type -- confirmed against
+      // NavigationSettings' constructor, which derives them the same indexOf-roundtrip
+      // way as alarms/infos.
+      await postLayout({
+        autoresize: false,
+        start: '',
+        navigation: {
+          mode: 'over',
+          type: 'block',
+          bkcolor: '#F4F5F7',
+          fgcolor: '#1D1D1D',
+          logo: false
+        },
+        header: {
+          alarms: 'float',
+          bkcolor: '#ffffff',
+          fgcolor: '#000000',
+          height: 46,
+          buttonHeight: 36,
+          fontSize: 13,
+          itemsAnchor: 'left'
+        },
+        showdev: true,
+        inputdialog: 'false',
+        hidenavigation: false,
+        theme: '',
+        loginonstart: false,
+        loginoverlaycolor: 'none',
+        show_connection_error: true,
+        customStyles: ''
+      })
+    }
+  }
+
+  // ── Bootstrap a placeholder HMI view per HMI device (Control Center) ──────
+  // Author-built content, never overwritten once it exists -- see
+  // getExistingViewNames()'s doc comment for why this can't follow the SCADA/RTU
+  // overview views' always-overwrite-by-id pattern.
+  if (hmiEntries.length > 0) {
+    const existingViewNames = await getExistingViewNames()
+    for (const [nodeId, device] of hmiEntries) {
+      const viewName = buildHmiViewName(nodeId)
+      if (existingViewNames.has(viewName)) continue
+      await postView(buildHmiPlaceholderView(viewName, device.label ?? nodeId))
+    }
+  }
 }
+
+// ── FUXA HMI device view ────────────────────────────────────────────────────────
+
+/**
+ * Deterministic FUXA view id/name for an `hmi` device's author-built program.
+ * Derived from the stable nodeId, not the editable device label, so renaming the
+ * device on the canvas never orphans the link to its FUXA view. id and name are kept
+ * identical (FUXA's setView() matches by id for overwrite, by name for the duplicate
+ * check, and the runtime `?viewName=` lookup matches by name -- using the same value
+ * for both sidesteps any drift between the two).
+ */
+function buildHmiViewName(nodeId: string): string {
+  return `otf-hmi-${nodeId.replace(/[^a-z0-9]/gi, '-')}`
+}
+
+/**
+ * Minimal placeholder view for a newly-detected HMI device -- just enough that opening
+ * it for the first time (via the Properties Panel's "Open HMI Editor" button) shows a
+ * clear starting point instead of a blank void. The author builds the real content
+ * from here using FUXA's own editor; this function is never called again for a device
+ * once its view already exists (see the existingViewNames check at the call site).
+ */
+function buildHmiPlaceholderView(viewName: string, label: string): unknown {
+  return {
+    id: viewName,
+    name: viewName,
+    profile: { width: 1280, height: 800, bkcolor: '#0d1117ff' },
+    type: 'svg',
+    svgcontent:
+      `<svg width="1280" height="800" xmlns="http://www.w3.org/2000/svg"><g>` +
+      `<text x="640" y="380" font-size="20" fill="#8b949e" text-anchor="middle">Author your HMI for "${label}" here</text>` +
+      `<text x="640" y="410" font-size="14" fill="#6e7681" text-anchor="middle">Use the Controls/Shape/Widgets palette on the left, then Save</text>` +
+      `</g></svg>`,
+    items: {},
+    variables: {}
+  }
+}
+
+// ── FUXA Modbus tag addressing ─────────────────────────────────────────────────
+
+/**
+ * FUXA's Modbus driver (server/runtime/devices/modbus/index.js) selects the table
+ * purely from the numeric range of a tag's `memaddress` (Modicon convention) -- the
+ * `address` field (1-based) is the offset within that table. There is no `memtype`
+ * field; FUXA never reads one, confirmed by reading getMemoryAddress()'s dispatch.
+ * Verified end-to-end against a live container before relying on this.
+ */
+const MODBUS_TABLE = {
+  coil: 0,
+  discreteInput: 100_000,
+  inputRegister: 300_000,
+  holdingRegister: 400_000
+} as const
 
 // ── FUXA smart-sensor provisioning helper ─────────────────────────────────────
 
@@ -3122,7 +3347,13 @@ function buildSensorModbusTag(nodeId: string, device: DeviceConfig): Record<stri
   const id = `${ns}-value`
   const name = sensor.tagName ?? nodeId.replace(/[^a-zA-Z0-9]/g, '_')
   return {
-    [id]: { id, name, type: 'Int16', memaddress: sensor.modbusRegister, memtype: 'HoldingRegister' }
+    [id]: {
+      id,
+      name,
+      type: 'Int16',
+      address: sensor.modbusRegister + 1,
+      memaddress: MODBUS_TABLE.holdingRegister
+    }
   }
 }
 
@@ -3151,28 +3382,110 @@ function buildRtuModbusTags(nodeId: string): Record<string, unknown> {
   // Discrete Inputs — read-only digital status bits (FC 02)
   for (let i = 0; i < 4; i++) {
     const id = `${ns}-di-${i}`
-    tags[id] = { id, name: `DI_${i}`, type: 'Bool', memaddress: i, memtype: 'Input' }
+    tags[id] = {
+      id,
+      name: `DI_${i}`,
+      type: 'Bool',
+      address: i + 1,
+      memaddress: MODBUS_TABLE.discreteInput
+    }
   }
 
   // Coils — writable digital outputs (FC 01 read / FC 05 write single / FC 15 write multiple)
   for (let i = 0; i < 4; i++) {
     const id = `${ns}-do-${i}`
-    tags[id] = { id, name: `DO_${i}`, type: 'Bool', memaddress: i, memtype: 'Coil' }
+    tags[id] = { id, name: `DO_${i}`, type: 'Bool', address: i + 1, memaddress: MODBUS_TABLE.coil }
   }
 
   // Input Registers — read-only 16-bit measurements (FC 04)
   for (let i = 0; i < 4; i++) {
     const id = `${ns}-ir-${i}`
-    tags[id] = { id, name: `IR_${i}`, type: 'Int16', memaddress: i, memtype: 'InputRegister' }
+    tags[id] = {
+      id,
+      name: `IR_${i}`,
+      type: 'Int16',
+      address: i + 1,
+      memaddress: MODBUS_TABLE.inputRegister
+    }
   }
 
   // Holding Registers — read/write 16-bit setpoints (FC 03 read / FC 06/16 write)
   for (let i = 0; i < 4; i++) {
     const id = `${ns}-hr-${i}`
-    tags[id] = { id, name: `HR_${i}`, type: 'Int16', memaddress: i, memtype: 'HoldingRegister' }
+    tags[id] = {
+      id,
+      name: `HR_${i}`,
+      type: 'Int16',
+      address: i + 1,
+      memaddress: MODBUS_TABLE.holdingRegister
+    }
   }
 
   return tags
+}
+
+// ── FUXA smart-controller provisioning helper ─────────────────────────────────
+
+/**
+ * Builds FUXA tags for a smart-controller device's reactive registers.
+ *
+ * Mirrors exactly what simulate_controller_reactive() in containers/modbus/server.py
+ * drives: CO0 is the command coil (write 1 to start/open, 0 to stop/close), DI0 mirrors
+ * it as status feedback, HR0 is the kind's live value (rated flow/max frequency/position
+ * %). wellhead-controller is the one kind with no coupled physics — HR0/HR1 are direct
+ * read/write setpoints instead, so it gets those two registers and no coil/status pair.
+ *
+ * @param nodeId - Canvas node ID of the smart-controller device.
+ * @param device - The device's full config; must have .controller set (defensive no-op if not).
+ * @returns Record of tag objects keyed by tag ID, ready for the FUXA /api/device payload.
+ */
+function buildControllerModbusTags(nodeId: string, device: DeviceConfig): Record<string, unknown> {
+  const controller = device.controller
+  if (!controller) return {}
+  const ns = nodeId.replace(/[^a-z0-9]/gi, '-')
+
+  if (controller.kind === 'wellhead-controller') {
+    return {
+      [`${ns}-hr0`]: {
+        id: `${ns}-hr0`,
+        name: 'HR0',
+        type: 'Int16',
+        address: 1,
+        memaddress: MODBUS_TABLE.holdingRegister
+      },
+      [`${ns}-hr1`]: {
+        id: `${ns}-hr1`,
+        name: 'HR1',
+        type: 'Int16',
+        address: 2,
+        memaddress: MODBUS_TABLE.holdingRegister
+      }
+    }
+  }
+
+  return {
+    [`${ns}-co0`]: {
+      id: `${ns}-co0`,
+      name: 'CO0',
+      type: 'Bool',
+      address: 1,
+      memaddress: MODBUS_TABLE.coil
+    },
+    [`${ns}-di0`]: {
+      id: `${ns}-di0`,
+      name: 'DI0',
+      type: 'Bool',
+      address: 1,
+      memaddress: MODBUS_TABLE.discreteInput
+    },
+    [`${ns}-hr0`]: {
+      id: `${ns}-hr0`,
+      name: 'HR0',
+      type: 'Int16',
+      address: 1,
+      memaddress: MODBUS_TABLE.holdingRegister
+    }
+  }
 }
 
 /**
@@ -3199,41 +3512,15 @@ function buildRtuOverviewView(
   const MARGIN = 48
   const HEADER_H = 90 // vertical space reserved for the view title
 
-  const items: unknown[] = [
-    // ── Title ──────────────────────────────────────────────────────────────
-    {
-      id: 'otf-rtu-title',
-      type: 'svg-text',
-      name: 'RTU Overview',
-      label: 'RTU Overview',
-      x: MARGIN,
-      y: MARGIN + 12,
-      w: 640,
-      h: 44,
-      rotation: 0,
-      property: {
-        text: 'RTU Station Overview',
-        fontSize: '26',
-        fontWeight: 'bold',
-        fontColor: '#58a6ff'
-      }
-    },
-    {
-      id: 'otf-rtu-subtitle',
-      type: 'svg-text',
-      name: '',
-      label: '',
-      x: MARGIN,
-      y: MARGIN + 58,
-      w: 640,
-      h: 20,
-      rotation: 0,
-      property: {
-        text: 'Live Modbus telemetry — tags poll every 1 s',
-        fontSize: '13',
-        fontColor: '#8b949e'
-      }
-    }
+  // Every element here is purely decorative (no live binding) -- raw SVG markup
+  // directly in svgcontent, no `items` entries. Confirmed against FUXA's actual view
+  // renderer (fuxa-view.component.ts sets dataContainer.innerHTML = view.svgcontent
+  // directly; `items` is pure binding metadata matched to existing elements by id,
+  // never a separate render path) and visually via a headless-browser screenshot: an
+  // items-only entry with no svgcontent backing never appears, regardless of type.
+  const svgParts: string[] = [
+    `<text x="${MARGIN}" y="${MARGIN + 26}" font-size="26" font-weight="bold" fill="#58a6ff">RTU Station Overview</text>`,
+    `<text x="${MARGIN}" y="${MARGIN + 58}" font-size="13" fill="#8b949e">Live Modbus telemetry - tags poll every 1 s</text>`
   ]
 
   rtuEntries.forEach(([nodeId, device], i) => {
@@ -3247,148 +3534,24 @@ function buildRtuOverviewView(
     const power = device.rtuConfig?.powerSource ?? ''
     const displayName = device.label ?? nodeId
 
-    // ── Card background ───────────────────────────────────────────────────
-    items.push({
-      id: `otf-rtu-card-${nodeId}`,
-      type: 'svg-rect',
-      name: '',
-      label: '',
-      x,
-      y,
-      w: CARD_W,
-      h: CARD_H,
-      rotation: 0,
-      property: {
-        bkgcolor: '#161b22',
-        color: '#30363d',
-        borderWidth: 1
-      }
-    })
+    svgParts.push(
+      `<rect x="${x}" y="${y}" width="${CARD_W}" height="${CARD_H}" fill="#161b22" stroke="#30363d" stroke-width="1"/>`,
+      `<circle cx="${x + CARD_W - 21}" cy="${y + 25}" r="7" fill="#3fb950" stroke="#238636" stroke-width="1"/>`,
+      `<text x="${x + 18}" y="${y + 38}" font-size="17" font-weight="bold" fill="#e6edf3">${displayName}</text>`,
+      `<text x="${x + 18}" y="${y + 70}" font-size="12" fill="#8b949e">IP: ${ip}   Port: 502</text>`,
+      `<text x="${x + 18}" y="${y + 98}" font-size="12" fill="#8b949e">Comm: ${commType}   Protocol: ${protocol}</text>`
+    )
 
-    // ── Status indicator dot (green = polling, visualised as small circle) ─
-    items.push({
-      id: `otf-rtu-dot-${nodeId}`,
-      type: 'svg-ellipse',
-      name: '',
-      label: '',
-      x: x + CARD_W - 28,
-      y: y + 18,
-      w: 14,
-      h: 14,
-      rotation: 0,
-      property: {
-        bkgcolor: '#3fb950',
-        color: '#238636',
-        borderWidth: 1
-      }
-    })
-
-    // ── Device name ───────────────────────────────────────────────────────
-    items.push({
-      id: `otf-rtu-name-${nodeId}`,
-      type: 'svg-text',
-      name: '',
-      label: displayName,
-      x: x + 18,
-      y: y + 32,
-      w: CARD_W - 52,
-      h: 26,
-      rotation: 0,
-      property: {
-        text: displayName,
-        fontSize: '17',
-        fontWeight: 'bold',
-        fontColor: '#e6edf3'
-      }
-    })
-
-    // ── IP address ────────────────────────────────────────────────────────
-    items.push({
-      id: `otf-rtu-ip-${nodeId}`,
-      type: 'svg-text',
-      name: '',
-      label: ip,
-      x: x + 18,
-      y: y + 64,
-      w: CARD_W - 36,
-      h: 20,
-      rotation: 0,
-      property: {
-        text: `IP: ${ip}   Port: 502`,
-        fontSize: '12',
-        fontColor: '#8b949e'
-      }
-    })
-
-    // ── Comm type + protocol ──────────────────────────────────────────────
-    items.push({
-      id: `otf-rtu-comm-${nodeId}`,
-      type: 'svg-text',
-      name: '',
-      label: commType,
-      x: x + 18,
-      y: y + 92,
-      w: CARD_W - 36,
-      h: 20,
-      rotation: 0,
-      property: {
-        text: `Comm: ${commType}   Protocol: ${protocol}`,
-        fontSize: '12',
-        fontColor: '#8b949e'
-      }
-    })
-
-    // ── Power source ──────────────────────────────────────────────────────
     if (power) {
-      items.push({
-        id: `otf-rtu-power-${nodeId}`,
-        type: 'svg-text',
-        name: '',
-        label: power,
-        x: x + 18,
-        y: y + 116,
-        w: CARD_W - 36,
-        h: 20,
-        rotation: 0,
-        property: {
-          text: `Power: ${power}`,
-          fontSize: '12',
-          fontColor: '#8b949e'
-        }
-      })
+      svgParts.push(
+        `<text x="${x + 18}" y="${y + 122}" font-size="12" fill="#8b949e">Power: ${power}</text>`
+      )
     }
 
-    // ── Divider line above tag summary ────────────────────────────────────
-    items.push({
-      id: `otf-rtu-div-${nodeId}`,
-      type: 'svg-rect',
-      name: '',
-      label: '',
-      x: x + 18,
-      y: y + CARD_H - 50,
-      w: CARD_W - 36,
-      h: 1,
-      rotation: 0,
-      property: { bkgcolor: '#30363d', color: '#30363d' }
-    })
-
-    // ── Tag legend (shows the 4 types configured above) ───────────────────
-    items.push({
-      id: `otf-rtu-tags-${nodeId}`,
-      type: 'svg-text',
-      name: '',
-      label: 'DI DO IR HR',
-      x: x + 18,
-      y: y + CARD_H - 26,
-      w: CARD_W - 36,
-      h: 18,
-      rotation: 0,
-      property: {
-        text: 'Tags: DI×0–03  DO×0–03  IR×0–03  HR×0–03',
-        fontSize: '11',
-        fontColor: '#6e7681'
-      }
-    })
+    svgParts.push(
+      `<line x1="${x + 18}" y1="${y + CARD_H - 50}" x2="${x + CARD_W - 18}" y2="${y + CARD_H - 50}" stroke="#30363d" stroke-width="1"/>`,
+      `<text x="${x + 18}" y="${y + CARD_H - 18}" font-size="11" fill="#6e7681">Tags: DIx0-03  DOx0-03  IRx0-03  HRx0-03</text>`
+    )
   })
 
   const totalRows = Math.ceil(rtuEntries.length / COLS)
@@ -3398,12 +3561,296 @@ function buildRtuOverviewView(
   return {
     id: 'otf-rtu-overview',
     name: 'RTU Overview',
-    width: Math.max(1400, viewWidth),
-    height: Math.max(720, viewHeight),
-    background: '#0d1117',
-    items,
-    variables: []
+    profile: {
+      width: Math.max(1400, viewWidth),
+      height: Math.max(720, viewHeight),
+      bkcolor: '#0d1117ff'
+    },
+    type: 'svg',
+    svgcontent: `<svg width="${Math.max(1400, viewWidth)}" height="${Math.max(720, viewHeight)}" xmlns="http://www.w3.org/2000/svg"><g>${svgParts.join('')}</g></svg>`,
+    items: {},
+    variables: {}
   }
+}
+
+// ── FUXA SCADA Overview view generator (OT-zone only) ─────────────────────────
+
+const SCADA_VIEW_WIDTH = 1600
+const SCADA_VIEW_HEIGHT = 1000
+const SCADA_VIEW_MARGIN = 100
+// Vertical space reserved for the centered title before any device renders, so
+// devices never crowd up against it.
+const SCADA_HEADER_HEIGHT = 110
+
+/**
+ * Live-bound running/stopped colors shared by every pump/vfd/actuator/valve shape.
+ * Bound to DI0 (status feedback), not CO0 (last-commanded value) -- DI0 reflects what
+ * the device actually confirmed, matching simulate_controller_reactive()'s contract.
+ */
+const SCADA_RUNNING_RANGES = [
+  { min: 0, max: 0, color: '#f85149', stroke: '#f85149', text: 'STOPPED' },
+  { min: 1, max: 1, color: '#3fb950', stroke: '#3fb950', text: 'RUNNING' }
+]
+
+/** Pipe color per fluid type, mirroring FLUID_COLORS in PipeEdge.tsx. */
+const SCADA_FLUID_COLORS: Record<string, string> = {
+  electric: '#d29922',
+  water: '#388bfd',
+  gas: '#f78166',
+  oil: '#a371f7',
+  chemical: '#39d0b0',
+  none: '#586069'
+}
+
+/**
+ * Maps each OT-zone node's canvas position into the fixed SCADA view canvas,
+ * preserving relative layout so the generated view mirrors the author's arrangement.
+ * Uniform scale (not stretched per-axis) keeps device icons looking correct; capped at
+ * 2x so a sparse two-device layout doesn't blow up into giant icons.
+ */
+function normalizeScadaPositions(nodes: OtZoneDevice[]): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>()
+  if (nodes.length === 0) return positions
+
+  const xs = nodes.map(n => n.node.position.x)
+  const ys = nodes.map(n => n.node.position.y)
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+  const spanX = Math.max(maxX - minX, 1)
+  const spanY = Math.max(maxY - minY, 1)
+  const usableW = SCADA_VIEW_WIDTH - 2 * SCADA_VIEW_MARGIN
+  const usableH = SCADA_VIEW_HEIGHT - SCADA_HEADER_HEIGHT - SCADA_VIEW_MARGIN
+  const scale = Math.min(usableW / spanX, usableH / spanY, 2)
+
+  for (const { node } of nodes) {
+    positions.set(node.id, {
+      x: SCADA_VIEW_MARGIN + (node.position.x - minX) * scale,
+      y: SCADA_HEADER_HEIGHT + (node.position.y - minY) * scale
+    })
+  }
+  return positions
+}
+
+/**
+ * Builds a live-bound device shape: the <g> SVG markup (drawn with absolute
+ * coordinates, no transform needed) plus the matching `svg-ext-shapes` item FUXA
+ * needs to apply property.ranges-based fill/stroke color on tag value changes.
+ * Confirmed live against a real container: GaugeBaseComponent.walkTreeNodeToSetAttribute
+ * recolors every child element inside the <g>, so multi-element icons work fine.
+ */
+function buildLiveShape(
+  gid: string,
+  svgInner: string,
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+  tagId: string,
+  label: string
+): { svg: string; item: Record<string, unknown> } {
+  return {
+    svg: `<g id="${gid}" type="svg-ext-shapes">${svgInner}</g>`,
+    item: {
+      id: gid,
+      type: 'svg-ext-shapes',
+      name: label,
+      label,
+      x: cx - w / 2,
+      y: cy - h / 2,
+      w,
+      h,
+      rotation: 0,
+      property: {
+        variableId: tagId,
+        bitmask: 0,
+        permission: 0,
+        permissionRoles: { show: [], enabled: [] },
+        ranges: SCADA_RUNNING_RANGES,
+        actions: []
+      }
+    }
+  }
+}
+
+/** Pump/VFD/actuator icon -- a single fillable circle, mirroring PumpSvg's body. */
+function buildPumpShape(gid: string, cx: number, cy: number, tagId: string, label: string) {
+  const svg = `<circle cx="${cx}" cy="${cy}" r="32" fill="#6e7681" stroke="#30363d" stroke-width="3"/>`
+  return buildLiveShape(gid, svg, cx, cy, 64, 64, tagId, label)
+}
+
+/** Valve icon -- two opposing triangles (bowtie), mirroring ValveSvg. */
+function buildValveShape(gid: string, cx: number, cy: number, tagId: string, label: string) {
+  const svg =
+    `<polygon points="${cx - 28},${cy - 18} ${cx},${cy} ${cx - 28},${cy + 18}" fill="#6e7681" stroke="#30363d" stroke-width="2"/>` +
+    `<polygon points="${cx + 28},${cy - 18} ${cx},${cy} ${cx + 28},${cy + 18}" fill="#6e7681" stroke="#30363d" stroke-width="2"/>`
+  return buildLiveShape(gid, svg, cx, cy, 56, 36, tagId, label)
+}
+
+/**
+ * Static fallback for OT categories with no clean live boolean to color by yet
+ * (sensors, PLCs/RTUs, wellhead-controller's setpoint-only registers). Plain SVG rect,
+ * decorative only -- no `items` entry needed (see buildScadaOverviewView's note on why).
+ */
+function buildFallbackSvg(cx: number, cy: number): string {
+  return `<rect x="${cx - 30}" y="${cy - 24}" width="60" height="48" rx="4" fill="#388bfd" stroke="#1f6feb" stroke-width="2"/>`
+}
+
+/**
+ * Large static tank body for process-unit devices, mirroring ProcessUnitSvg's
+ * proportions (rounded vessel + level-gauge bar + inlet/outlet stubs). Decorative
+ * only -- process-unit devices run their own physics container, not provisioned as a
+ * Modbus tag here, so there's nothing live to bind a level indicator to yet.
+ */
+function buildTankSvg(cx: number, cy: number): string {
+  const w = 90
+  const h = 70
+  const left = cx - w / 2
+  const top = cy - h / 2
+  return (
+    `<rect x="${left}" y="${top}" width="${w}" height="${h}" rx="8" fill="#21262d" stroke="#8b949e" stroke-width="3"/>` +
+    `<rect x="${left + 8}" y="${top + h - 22}" width="${w - 16}" height="${h - 30}" fill="#388bfd" opacity="0.6"/>` +
+    `<line x1="${left - 16}" y1="${cy}" x2="${left}" y2="${cy}" stroke="#8b949e" stroke-width="3"/>` +
+    `<line x1="${left + w}" y1="${cy}" x2="${left + w + 16}" y2="${cy}" stroke="#8b949e" stroke-width="3"/>`
+  )
+}
+
+/**
+ * Generates the auto-generated SCADA Overview FUXA view: a P&ID-style diagram scoped
+ * to OT-zone devices only, with pump/valve icons colored live from their DI0 status
+ * tag and pipe runs connecting them per the canvas topology.
+ *
+ * @param topology - OT-zone nodes/edges from getOtZoneTopology().
+ * @returns Plain object matching FUXA's view schema, ready for postView().
+ */
+function buildScadaOverviewView(topology: OtZoneTopology): unknown {
+  const positions = normalizeScadaPositions(topology.nodes)
+  const svgParts: string[] = []
+  const items: Record<string, unknown> = {}
+
+  // Title: plain static SVG text. Verified against FUXA's actual view renderer
+  // (fuxa-view.component.ts sets dataContainer.innerHTML = view.svgcontent directly —
+  // `items` is pure binding metadata matched to existing elements by id, never a
+  // separate render path) — purely decorative text needs no `items` entry at all, only
+  // real markup in svgcontent. Confirmed visually via a headless-browser screenshot:
+  // an items-only entry with no svgcontent backing never appears, regardless of type.
+  svgParts.push(
+    `<text x="${SCADA_VIEW_WIDTH / 2}" y="50" font-size="28" font-weight="bold" fill="#58a6ff" text-anchor="middle">SCADA Dashboard</text>`
+  )
+
+  // Pipe runs first so device shapes render on top of them.
+  for (const edge of topology.edges) {
+    const a = positions.get(edge.source)
+    const b = positions.get(edge.target)
+    if (!a || !b) continue
+    const color = SCADA_FLUID_COLORS[edge.data.fluidType ?? 'none'] ?? SCADA_FLUID_COLORS.none
+    // Single right-angle bend on whichever axis dominates, mirroring bestHandles()'s
+    // dominant-axis routing in ScadaCanvas.tsx.
+    const horizontalDominant = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)
+    const bendX = horizontalDominant ? b.x : a.x
+    const bendY = horizontalDominant ? a.y : b.y
+    svgParts.push(
+      `<polyline points="${a.x},${a.y} ${bendX},${bendY} ${b.x},${b.y}" fill="none" stroke="${color}" stroke-width="3"/>`
+    )
+  }
+
+  for (const { node, device } of topology.nodes) {
+    const pos = positions.get(node.id)
+    if (!pos) continue
+    const ns = node.id.replace(/[^a-z0-9]/gi, '-')
+    const gid = `otf-scada-${ns}`
+    const label = device.label ?? node.id
+    const kind = device.controller?.kind
+    let labelY = pos.y + 42
+
+    if (device.category === 'smart-controller' && kind === 'valve') {
+      const { svg, item } = buildValveShape(gid, pos.x, pos.y, `${ns}-di0`, label)
+      svgParts.push(svg)
+      items[gid] = item
+    } else if (
+      device.category === 'smart-controller' &&
+      (kind === 'pump' || kind === 'vfd' || kind === 'actuator')
+    ) {
+      const { svg, item } = buildPumpShape(gid, pos.x, pos.y, `${ns}-di0`, label)
+      svgParts.push(svg)
+      items[gid] = item
+    } else if (device.category === 'process-unit') {
+      // Large static tank body — no live binding wired into FUXA for process-unit
+      // devices yet (they run their own physics container, not provisioned as a
+      // Modbus tag here), so this is decorative only, matching ProcessUnitSvg's
+      // proportions (a vessel should read as visually bigger than a field device).
+      svgParts.push(buildTankSvg(pos.x, pos.y))
+      labelY = pos.y + 62
+    } else {
+      svgParts.push(buildFallbackSvg(pos.x, pos.y))
+    }
+
+    svgParts.push(
+      `<text x="${pos.x}" y="${labelY}" font-size="12" fill="#e6edf3" text-anchor="middle">${label}</text>`
+    )
+  }
+
+  return {
+    id: 'otf-scada-overview',
+    name: 'SCADA Overview',
+    profile: { width: SCADA_VIEW_WIDTH, height: SCADA_VIEW_HEIGHT, bkcolor: '#0d1117ff' },
+    type: 'svg',
+    svgcontent: `<svg width="${SCADA_VIEW_WIDTH}" height="${SCADA_VIEW_HEIGHT}" xmlns="http://www.w3.org/2000/svg"><g>${svgParts.join('')}</g></svg>`,
+    items,
+    variables: {}
+  }
+}
+
+/**
+ * Builds one FUXA alarm per pump/vfd/actuator smart-controller device, bound to its
+ * DI0 status tag: DI0=0 ("stopped") is the alarm condition, matching the reference
+ * screenshot's "Pump 2 has stopped working" exactly. Valves are intentionally excluded
+ * -- a closed valve (DI0=0) is frequently the normal state, not a fault, so auto-firing
+ * an alarm on it would be misleading. wellhead-controller has no DI0 to bind to.
+ *
+ * @param nodes - OT-zone nodes from getOtZoneTopology().
+ * @returns Array of Alarm-shaped objects, ready for postAlarm().
+ */
+function buildScadaAlarms(nodes: OtZoneDevice[]): unknown[] {
+  const alarms: unknown[] = []
+
+  for (const { node, device } of nodes) {
+    if (device.category !== 'smart-controller') continue
+    const kind = device.controller?.kind
+    if (kind !== 'pump' && kind !== 'vfd' && kind !== 'actuator') continue
+
+    const ns = node.id.replace(/[^a-z0-9]/gi, '-')
+    const label = device.label ?? node.id
+
+    alarms.push({
+      name: `otf-scada-alarm-${ns}-stopped`,
+      property: {
+        variableId: `${ns}-di0`,
+        permission: 0,
+        permissionRoles: { show: [], enabled: [] }
+      },
+      low: {
+        enabled: true,
+        checkdelay: 1,
+        min: 0,
+        max: 0,
+        timedelay: 0,
+        text: `${label} has stopped working`,
+        group: 'process',
+        ackmode: 'alarm.ack-active',
+        bkcolor: '#d29922',
+        color: '#0d1117'
+      },
+      high: {},
+      highhigh: {},
+      info: {},
+      actions: { enabled: false, values: [] },
+      value: ''
+    })
+  }
+
+  return alarms
 }
 
 // ── OpenPLC HTTP API helpers ───────────────────────────────────────────────────

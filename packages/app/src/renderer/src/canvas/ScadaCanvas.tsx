@@ -53,7 +53,10 @@ import type {
   CableType,
   FluidType,
   RtuConfig,
-  SiteRegion
+  SiteRegion,
+  CanvasNode,
+  ControllerConfig,
+  SensorConfig
 } from '@otforge/schema'
 import {
   DeviceNode,
@@ -248,6 +251,26 @@ const CANVAS_H = GRID_ROWS * CELL_SIZE // 2000 px at zoom = 1
 const CANVAS_BOUNDS = { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H }
 
 /**
+ * How much closer than a plain "fit the whole grid" view should start.
+ * Applied as a zoom multiplier after fitBounds rather than shrinking
+ * CANVAS_BOUNDS itself -- shrinking the fit rect would risk clipping devices
+ * placed in the outer half of the grid, whereas zooming in from the already-
+ * correct full-grid fit (same center point) never cuts anything off.
+ */
+const FIT_ZOOM_BOOST = 1.5
+
+/**
+ * Fits the full canvas grid into view, then zooms in further by FIT_ZOOM_BOOST
+ * around the same center point. Used by every fitBounds call site (initial
+ * mount, layer switch, window resize, empty-scenario placeholder) so the
+ * "too zoomed out" feeling is fixed consistently everywhere, not just on startup.
+ */
+function fitCanvasView(instance: ReactFlowInstance): void {
+  instance.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 })
+  instance.zoomTo(instance.getZoom() * FIT_ZOOM_BOOST, { duration: 0 })
+}
+
+/**
  * Default IP address for newly dropped devices, by zone.
  *
  * Must match ZONE_DEFAULTS in packages/orchestrator/src/network-config.ts — both
@@ -427,6 +450,74 @@ function categoryToZone(category: DeviceCategory): NetworkZone {
 }
 
 /**
+ * Maps a legacy (pre-smart-controller/smart-sensor-consolidation) DeviceCategory
+ * string to its modern { category, kind } equivalent. Scenarios authored before that
+ * consolidation (e.g. ICS_Lab_01.otflab) can have visual-only nodes (see
+ * resolveVisualOnlyDevice() below) whose saved `cn.type` is one of these 9 removed
+ * categories -- without this migration, ICON_MAP[cn.type] is undefined and DeviceIcon's
+ * render throws, crashing the whole app (confirmed: this is exactly what broke
+ * ICS_Lab_01 after that consolidation -- inlet-pump-1/outlet-valve-1 are intentionally
+ * container-less decorative nodes with `type: 'pump'`/`'valve'`).
+ */
+const LEGACY_CATEGORY_MIGRATION: Partial<
+  Record<
+    string,
+    {
+      category: DeviceCategory
+      controllerKind?: ControllerConfig['kind']
+      sensorKind?: SensorConfig['kind']
+    }
+  >
+> = {
+  pump: { category: 'smart-controller', controllerKind: 'pump' },
+  valve: { category: 'smart-controller', controllerKind: 'valve' },
+  vfd: { category: 'smart-controller', controllerKind: 'vfd' },
+  actuator: { category: 'smart-controller', controllerKind: 'actuator' },
+  'flow-meter': { category: 'smart-sensor', sensorKind: 'flow' },
+  'pressure-transmitter': { category: 'smart-sensor', sensorKind: 'pressure' },
+  'level-transmitter': { category: 'smart-sensor', sensorKind: 'level' },
+  analyzer: { category: 'smart-sensor', sensorKind: 'analyzer' },
+  pmu: { category: 'smart-sensor', sensorKind: 'pmu' }
+}
+
+/**
+ * Builds the fallback DeviceConfig for a visual-only node (one with a CanvasNode entry
+ * but no devices.devices entry -- by design, for decorative nodes with no container,
+ * e.g. ICS_Lab_01's inlet-pump-1/outlet-valve-1/level-sensor-1). Migrates legacy
+ * pre-consolidation type strings via LEGACY_CATEGORY_MIGRATION so the correct icon
+ * renders instead of crashing on an unrecognized category.
+ */
+function resolveVisualOnlyDevice(cn: CanvasNode): DeviceConfig {
+  const legacy = LEGACY_CATEGORY_MIGRATION[cn.type]
+  const base = {
+    nodeId: cn.id,
+    ipAddress: '',
+    protocols: ['none' as Protocol]
+  }
+  if (legacy?.controllerKind) {
+    return {
+      ...base,
+      category: legacy.category,
+      // Only `kind` is required on ControllerConfig -- no need to borrow
+      // DEFAULT_CONTROLLER_CONFIG's pump-specific defaults onto e.g. a valve.
+      controller: { kind: legacy.controllerKind }
+    }
+  }
+  if (legacy?.sensorKind) {
+    return {
+      ...base,
+      category: legacy.category,
+      sensor: { ...DEFAULT_SENSOR_CONFIG, kind: legacy.sensorKind }
+    }
+  }
+  // Visual-only nodes (pump, valve, sensor) live in visual.nodes but not in
+  // devices.devices because they have no container. Use cn.type (the category
+  // written at drop time) so the correct icon appears instead of defaulting
+  // to 'sensor' for everything. ipAddress '' suppresses the IP label display.
+  return { ...base, category: (cn.type as DeviceCategory) ?? ('sensor' as DeviceCategory) }
+}
+
+/**
  * Converts a scenario's visual layer into React Flow DeviceNode objects,
  * filtered to the given activeLayer only.
  *
@@ -450,16 +541,7 @@ function scenarioToNodes(scenario: OTForgeScenario, activeLayer: NetworkZone): D
         width: CELL_SIZE,
         height: CELL_SIZE,
         data: {
-          device: scenario.devices.devices[cn.id] ?? {
-            nodeId: cn.id,
-            // Visual-only nodes (pump, valve, sensor) live in visual.nodes but not in
-            // devices.devices because they have no container. Use cn.type (the category
-            // written at drop time) so the correct icon appears instead of defaulting
-            // to 'sensor' for everything. ipAddress '' suppresses the IP label display.
-            category: (cn.type as DeviceCategory) ?? ('sensor' as DeviceCategory),
-            ipAddress: '',
-            protocols: ['none' as Protocol]
-          },
+          device: scenario.devices.devices[cn.id] ?? resolveVisualOnlyDevice(cn),
           label: cn.data.label,
           zone: cn.data.zone as NetworkZone
         }
@@ -958,10 +1040,9 @@ export function ScadaCanvas({
       setNodes([])
       setEdges([])
       // No nodes — show the full 25 × 25 canvas area so the user sees the grid
-      setTimeout(
-        () => rfInstance.current?.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 }),
-        100
-      )
+      setTimeout(() => {
+        if (rfInstance.current) fitCanvasView(rfInstance.current)
+      }, 100)
       prevLayerRef.current = null
       return
     }
@@ -1015,10 +1096,9 @@ export function ScadaCanvas({
     // Scenario edits (drops, drags, connections) must not re-center the viewport.
     if (prevLayerRef.current !== activeLayer) {
       prevLayerRef.current = activeLayer
-      setTimeout(
-        () => rfInstance.current?.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 }),
-        50
-      )
+      setTimeout(() => {
+        if (rfInstance.current) fitCanvasView(rfInstance.current)
+      }, 50)
     }
     // Only re-sync when visual layout or device graph changes — security updates
     // (firewallRules, IDS config) share the same scenario object but don't affect
@@ -1037,7 +1117,7 @@ export function ScadaCanvas({
     const handleResize = () => {
       clearTimeout(timer)
       timer = setTimeout(() => {
-        rfInstance.current?.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 })
+        if (rfInstance.current) fitCanvasView(rfInstance.current)
       }, 150)
     }
     window.addEventListener('resize', handleResize)
@@ -1853,7 +1933,7 @@ export function ScadaCanvas({
           // because onInit fires exactly when the React Flow instance is ready and
           // the canvas has its final dimensions. This prevents the flash at zoom=1
           // that would otherwise appear before the useEffect fitBounds fires.
-          instance.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 })
+          fitCanvasView(instance)
         }}
         onDragOver={onDragOver}
         onDrop={onDrop}

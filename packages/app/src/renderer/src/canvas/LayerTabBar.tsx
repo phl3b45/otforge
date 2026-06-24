@@ -25,6 +25,11 @@
  * @param scenario      - Active scenario (null = no scenario open). Used to
  *                        count devices per layer for the count badge.
  * @param onLayerChange - Callback when the user clicks a different tab.
+ * @param simIsRunning  - Whether a simulation is currently running. Gates the trailing
+ *                        SCADA button the same way the toolbar's "Open HMI" button is gated.
+ * @param onScadaOpen   - Callback when the trailing SCADA button is clicked. Unlike the
+ *                        five Purdue tabs, this is an action (opens a popup window), not a
+ *                        zone filter — it does not call onLayerChange.
  */
 
 import type { NetworkZone, OTForgeScenario } from '@otforge/schema'
@@ -151,15 +156,24 @@ interface LayerTabBarProps {
   activeLayer: NetworkZone
   scenario: OTForgeScenario | null
   onLayerChange: (layer: NetworkZone) => void
+  simIsRunning: boolean
+  onScadaOpen: () => void
 }
 
 /**
- * Horizontal tab bar for switching between Purdue Reference Model layers.
+ * Horizontal tab bar for switching between Purdue Reference Model layers, plus a
+ * trailing SCADA action button.
  *
  * Only the five ISA-95 Purdue zones appear as tabs. The 'attacker' zone is
  * intentionally absent — the attack machine has its own OS window workflow.
  */
-export function LayerTabBar({ activeLayer, scenario, onLayerChange }: LayerTabBarProps) {
+export function LayerTabBar({
+  activeLayer,
+  scenario,
+  onLayerChange,
+  simIsRunning,
+  onScadaOpen
+}: LayerTabBarProps) {
   const counts = countDevicesByLayer(scenario)
 
   return (
@@ -203,6 +217,31 @@ export function LayerTabBar({ activeLayer, scenario, onLayerChange }: LayerTabBa
           </button>
         )
       })}
+
+      {/* Trailing SCADA action button — opens a popup window (like the toolbar's "Open
+          HMI"/Grafana buttons), not a zone filter, so it doesn't call onLayerChange. */}
+      <button
+        className="layer-tab layer-tab-action"
+        disabled={!simIsRunning}
+        onClick={onScadaOpen}
+        title={
+          simIsRunning
+            ? 'Open auto-generated SCADA Overview (OT-zone devices only) in a new window'
+            : 'Start the simulation to open the SCADA Overview'
+        }
+        style={
+          {
+            '--layer-color': LAYER_COLORS.ot,
+            borderLeftColor: LAYER_COLORS.ot
+          } as React.CSSProperties
+        }
+      >
+        <span className="layer-tab-level" style={{ color: LAYER_COLORS.ot }}>
+          ↗
+        </span>
+        <span className="layer-tab-name">SCADA</span>
+        <span className="layer-tab-sublabel">Auto-generated P&amp;ID + alarms</span>
+      </button>
     </nav>
   )
 }

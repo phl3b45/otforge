@@ -20,7 +20,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { OTForgeMeta, Sector } from '@otforge/schema'
 
 /** Human-readable labels for the sector select. */
-const SECTOR_OPTIONS: { value: Sector; label: string }[] = [
+export const SECTOR_OPTIONS: { value: Sector; label: string }[] = [
   { value: 'generic', label: 'Generic (no specific sector)' },
   { value: 'oil-gas', label: 'Oil & Gas' },
   { value: 'power-generation', label: 'Power Generation' },

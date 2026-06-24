@@ -58,7 +58,7 @@ import { PlcIdePanel } from './properties/PlcIdePanel'
 import { AttackTerminalModal } from './terminal/AttackTerminalModal'
 import { MonitorPanel } from './monitor/MonitorPanel'
 import { SettingsModal } from './settings/SettingsModal'
-import { MetadataModal } from './metadata/MetadataModal'
+import { MetadataModal, SECTOR_OPTIONS } from './metadata/MetadataModal'
 import { ExportModal } from './export/ExportModal'
 import { MissionPanel } from './mission/MissionPanel'
 import { PackManagerModal } from './packs/PackManagerModal'
@@ -304,39 +304,44 @@ function StatusBar({
         )}
       </div>
       <div className="status-bar-right">
-        {/* Show up to 6 container health pills with color-coded borders */}
-        {containerStatuses.slice(0, 6).map(c => (
-          <span
-            key={c.nodeId}
-            className="container-pill"
-            title={`${c.nodeId}: ${c.status}`}
-            style={{
-              borderColor:
-                c.status === 'running' ? '#3fb950' : c.status === 'error' ? '#f85149' : '#484f58'
-            }}
-          >
+        <div className="status-bar-pills">
+          {/* Show up to 6 container health pills with color-coded borders */}
+          {containerStatuses.slice(0, 6).map(c => (
             <span
-              className={`status-dot xs ${c.status === 'running' ? 'ok' : c.status === 'error' ? 'error' : 'checking'}`}
-            />
-            {c.nodeId}
-          </span>
-        ))}
-        {/* Overflow count when more than 6 containers are present */}
-        {containerStatuses.length > 6 && (
-          <span className="container-pill-more">+{containerStatuses.length - 6}</span>
-        )}
+              key={c.nodeId}
+              className="container-pill"
+              title={`${c.nodeId}: ${c.status}`}
+              style={{
+                borderColor:
+                  c.status === 'running' ? '#3fb950' : c.status === 'error' ? '#f85149' : '#484f58'
+              }}
+            >
+              <span
+                className={`status-dot xs ${c.status === 'running' ? 'ok' : c.status === 'error' ? 'error' : 'checking'}`}
+              />
+              {c.nodeId}
+            </span>
+          ))}
+          {/* Overflow count when more than 6 containers are present */}
+          {containerStatuses.length > 6 && (
+            <span className="container-pill-more">+{containerStatuses.length - 6}</span>
+          )}
+        </div>
         {/*
-         * Delete Scenario — shown in the bottom-right corner in Author mode while idle.
-         * Separated from the container pills by the existing right-flex layout.
+         * Delete Scenario — shown in Author mode while idle, in its own fixed-width
+         * slot (matching --sim-slot-w / the properties panel width) so it's centered
+         * under the properties panel rather than just trailing the container pills.
          */}
         {showDelete && onDelete && (
-          <button
-            className="btn btn-sm btn-delete-scenario btn-delete-status-bar"
-            onClick={onDelete}
-            title="Clear all devices from this scenario and optionally delete the file from disk"
-          >
-            Delete Scenario
-          </button>
+          <div className="status-bar-delete-slot">
+            <button
+              className="btn btn-sm btn-delete-scenario"
+              onClick={onDelete}
+              title="Clear all devices from this scenario and optionally delete the file from disk"
+            >
+              Delete Scenario
+            </button>
+          </div>
         )}
       </div>
     </footer>
@@ -757,12 +762,6 @@ export default function App() {
     setSelectedZone(null)
     setSimError(null)
   }, [scenario, currentFilePath])
-
-  /** Returns to the launch screen. Blocked while a simulation is running. */
-  const handleHome = useCallback(() => {
-    if (simStatus === 'running') return
-    setView('launch')
-  }, [simStatus])
 
   /**
    * Updates the selected device state when the user clicks a canvas node.
@@ -1228,9 +1227,28 @@ export default function App() {
    * provisioned automatically by configureFuxa() in the main process after start.
    */
   const handleHmiOpen = useCallback(async () => {
-    const result = await window.electronAPI.hmi.open()
+    const firstHmiNodeId = scenario
+      ? Object.entries(scenario.devices.devices).find(([, d]) => d.category === 'hmi')?.[0]
+      : undefined
+    if (!firstHmiNodeId) return
+    // Must match buildHmiViewName() in packages/app/src/main/index.ts exactly --
+    // that's what configureFuxa() used when bootstrapping this device's placeholder.
+    const viewName = `otf-hmi-${firstHmiNodeId.replace(/[^a-z0-9]/gi, '-')}`
+    const result = await window.electronAPI.hmi.open(viewName)
     if (!result.ok) {
       setSimError(result.error ?? 'Failed to open FUXA HMI window.')
+    }
+  }, [scenario])
+
+  /**
+   * Opens FUXA directly into the auto-generated "SCADA Overview" view (OT-zone
+   * devices only) in a separate Electron BrowserWindow — same mechanism as
+   * handleHmiOpen, scoped to the generated P&ID diagram via the `scada:open` handler.
+   */
+  const handleScadaOpen = useCallback(async () => {
+    const result = await window.electronAPI.scada.open()
+    if (!result.ok) {
+      setSimError(result.error ?? 'Failed to open SCADA Overview window.')
     }
   }, [])
 
@@ -1399,6 +1417,23 @@ export default function App() {
     : []
   const firstWorkstationDevice = (workstationDevices[0]?.[1] as DeviceConfig) ?? null
 
+  // HMI device helper — "Open HMI" only makes sense once an author has placed an HMI
+  // device in Control Center; otherwise there's no authored program to open. The
+  // toolbar button opens the first one found (mirrors firstWorkstationDevice/
+  // firstAttackDevice's "pick first" pattern above) -- handleHmiOpen recomputes the
+  // same lookup itself from `scenario` to avoid a closure-ordering dependency on this
+  // const declared after it.
+  const hmiDevices = scenario
+    ? Object.entries(scenario.devices.devices).filter(([, d]) => d.category === 'hmi')
+    : []
+  const hasHmiDevice = hmiDevices.length > 0
+
+  // Width of whichever left sidebar is currently rendered below the layer tabs
+  // (see the locked/builderModeActive branches further down) -- used by
+  // .sim-tab-left-spacer so the tabs start exactly at the canvas's left edge
+  // instead of a hardcoded padding value that drifts when sidebars change.
+  const sidebarWidth = scenario?.meta.locked ? 220 : builderModeActive ? 210 : 0
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (view === 'launch') {
@@ -1542,12 +1577,21 @@ export default function App() {
             </button>
           </div>
 
-          {/* Center: scenario name + device count (Home button moved to status row) */}
+          {/* Center: scenario name [sector] + device count */}
           <div className="toolbar-actions-center">
             {scenario && (
               <div className="toolbar-scenario">
                 <span className="toolbar-scenario-name">
                   {scenario.meta.name ?? 'Untitled Scenario'}
+                  {scenario.meta.sector && scenario.meta.sector !== 'generic' && (
+                    <span className="toolbar-scenario-sector">
+                      {' '}
+                      [
+                      {SECTOR_OPTIONS.find(s => s.value === scenario.meta.sector)?.label ??
+                        scenario.meta.sector}
+                      ]
+                    </span>
+                  )}
                 </span>
                 {simDeviceCount > 0 && (
                   <span className="toolbar-scenario-meta">
@@ -1637,8 +1681,9 @@ export default function App() {
                 🖥 Workstation
               </button>
             )}
-            {/* Open HMI — only while simulation is running */}
-            {simIsRunning && (
+            {/* Open HMI — only while simulation is running AND an HMI device exists in
+                Control Center; otherwise there's no authored HMI to open. */}
+            {simIsRunning && hasHmiDevice && (
               <button
                 className="btn btn-sm btn-hmi"
                 onClick={handleHmiOpen}
@@ -1660,12 +1705,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Row 2 — OTForge Home (left) + simulation status badge (centred) */}
+        {/* Row 2 — simulation status badge (centred) */}
         <div className="toolbar-status-row">
-          <button className="toolbar-logo toolbar-status-home" onClick={handleHome} title="Home">
-            <span className="logo-ot-sm">OT</span>
-            <span className="logo-forge-sm">Forge</span>
-          </button>
           <SimStatusBadge status={simStatus} />
         </div>
       </header>
@@ -1723,7 +1764,18 @@ export default function App() {
 
       {/* Layer tab bar + Run/Stop control */}
       <div className="sim-tabs-row">
-        <LayerTabBar activeLayer={activeLayer} scenario={scenario} onLayerChange={setActiveLayer} />
+        <div className="sim-tab-left-spacer" style={{ width: sidebarWidth }}>
+          {!scenario?.meta.locked && builderModeActive && (
+            <span className="sim-tab-left-spacer-label">Devices</span>
+          )}
+        </div>
+        <LayerTabBar
+          activeLayer={activeLayer}
+          scenario={scenario}
+          onLayerChange={setActiveLayer}
+          simIsRunning={simIsRunning}
+          onScadaOpen={handleScadaOpen}
+        />
         <div className="sim-control-slot">
           {simShowStop ? (
             <button
