@@ -3002,28 +3002,32 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     const port = device.modbus?.port ?? 502
     const isRtu = device.category === 'rtu' || device.category === 'iec104-rtu'
     const isSmartSensor = device.category === 'smart-sensor'
-    // RTUs get a full register map so students see live telemetry values without
-    // any manual FUXA tag configuration. smart-sensor gets its one configured
-    // register. PLCs and smart-controller keep an empty tag set — PLC programs
-    // are the programmer's concern, and smart-controller has no fixed register
-    // map to introspect (device.modbus.registers isn't wired through to the
-    // container yet) — the instructor adds tags through the FUXA editor.
+    const isSmartController = device.category === 'smart-controller'
+    // RTUs get a full register map, smart-sensor gets its one configured register, and
+    // smart-controller gets its CO0/DI0/HR0/HR1 set — all so students see live telemetry
+    // without any manual FUXA tag configuration. PLCs keep an empty tag set; PLC
+    // programs are the programmer's concern, not something to auto-introspect.
     const tags = isSmartSensor
       ? buildSensorModbusTag(nodeId, device)
       : isRtu
         ? buildRtuModbusTags(nodeId)
-        : {}
+        : isSmartController
+          ? buildControllerModbusTags(nodeId, device)
+          : {}
     const displayName = device.label ?? nodeId
     // RTU/smart-sensor/smart-controller are Modbus end-to-end, so the clean
     // display name applies to all three; PLC/safety-plc only speak Modbus
     // incidentally, so they keep the "(Modbus)" suffix for clarity in FUXA's list.
-    const isModbusNative = isRtu || isSmartSensor || device.category === 'smart-controller'
+    const isModbusNative = isRtu || isSmartSensor || isSmartController
 
     await postDevice({
       id: nodeId,
       name: isModbusNative ? `${displayName}` : `${displayName} (Modbus)`,
       enabled: true,
-      type: 'MODBUSTCP',
+      // FUXA's DeviceEnum uses exact-case 'ModbusTCP' (server/runtime/devices/device.js)
+      // -- the all-caps 'MODBUSTCP' silently fails plugin lookup and the device never
+      // connects. Confirmed against a live container before fixing.
+      type: 'ModbusTCP',
       polling: 1000,
       request: 30_000,
       property: { address, port, uid },
@@ -3094,6 +3098,22 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   }
 }
 
+// ── FUXA Modbus tag addressing ─────────────────────────────────────────────────
+
+/**
+ * FUXA's Modbus driver (server/runtime/devices/modbus/index.js) selects the table
+ * purely from the numeric range of a tag's `memaddress` (Modicon convention) -- the
+ * `address` field (1-based) is the offset within that table. There is no `memtype`
+ * field; FUXA never reads one, confirmed by reading getMemoryAddress()'s dispatch.
+ * Verified end-to-end against a live container before relying on this.
+ */
+const MODBUS_TABLE = {
+  coil: 0,
+  discreteInput: 100_000,
+  inputRegister: 300_000,
+  holdingRegister: 400_000
+} as const
+
 // ── FUXA smart-sensor provisioning helper ─────────────────────────────────────
 
 /**
@@ -3115,7 +3135,13 @@ function buildSensorModbusTag(nodeId: string, device: DeviceConfig): Record<stri
   const id = `${ns}-value`
   const name = sensor.tagName ?? nodeId.replace(/[^a-zA-Z0-9]/g, '_')
   return {
-    [id]: { id, name, type: 'Int16', memaddress: sensor.modbusRegister, memtype: 'HoldingRegister' }
+    [id]: {
+      id,
+      name,
+      type: 'Int16',
+      address: sensor.modbusRegister + 1,
+      memaddress: MODBUS_TABLE.holdingRegister
+    }
   }
 }
 
@@ -3144,28 +3170,110 @@ function buildRtuModbusTags(nodeId: string): Record<string, unknown> {
   // Discrete Inputs — read-only digital status bits (FC 02)
   for (let i = 0; i < 4; i++) {
     const id = `${ns}-di-${i}`
-    tags[id] = { id, name: `DI_${i}`, type: 'Bool', memaddress: i, memtype: 'Input' }
+    tags[id] = {
+      id,
+      name: `DI_${i}`,
+      type: 'Bool',
+      address: i + 1,
+      memaddress: MODBUS_TABLE.discreteInput
+    }
   }
 
   // Coils — writable digital outputs (FC 01 read / FC 05 write single / FC 15 write multiple)
   for (let i = 0; i < 4; i++) {
     const id = `${ns}-do-${i}`
-    tags[id] = { id, name: `DO_${i}`, type: 'Bool', memaddress: i, memtype: 'Coil' }
+    tags[id] = { id, name: `DO_${i}`, type: 'Bool', address: i + 1, memaddress: MODBUS_TABLE.coil }
   }
 
   // Input Registers — read-only 16-bit measurements (FC 04)
   for (let i = 0; i < 4; i++) {
     const id = `${ns}-ir-${i}`
-    tags[id] = { id, name: `IR_${i}`, type: 'Int16', memaddress: i, memtype: 'InputRegister' }
+    tags[id] = {
+      id,
+      name: `IR_${i}`,
+      type: 'Int16',
+      address: i + 1,
+      memaddress: MODBUS_TABLE.inputRegister
+    }
   }
 
   // Holding Registers — read/write 16-bit setpoints (FC 03 read / FC 06/16 write)
   for (let i = 0; i < 4; i++) {
     const id = `${ns}-hr-${i}`
-    tags[id] = { id, name: `HR_${i}`, type: 'Int16', memaddress: i, memtype: 'HoldingRegister' }
+    tags[id] = {
+      id,
+      name: `HR_${i}`,
+      type: 'Int16',
+      address: i + 1,
+      memaddress: MODBUS_TABLE.holdingRegister
+    }
   }
 
   return tags
+}
+
+// ── FUXA smart-controller provisioning helper ─────────────────────────────────
+
+/**
+ * Builds FUXA tags for a smart-controller device's reactive registers.
+ *
+ * Mirrors exactly what simulate_controller_reactive() in containers/modbus/server.py
+ * drives: CO0 is the command coil (write 1 to start/open, 0 to stop/close), DI0 mirrors
+ * it as status feedback, HR0 is the kind's live value (rated flow/max frequency/position
+ * %). wellhead-controller is the one kind with no coupled physics — HR0/HR1 are direct
+ * read/write setpoints instead, so it gets those two registers and no coil/status pair.
+ *
+ * @param nodeId - Canvas node ID of the smart-controller device.
+ * @param device - The device's full config; must have .controller set (defensive no-op if not).
+ * @returns Record of tag objects keyed by tag ID, ready for the FUXA /api/device payload.
+ */
+function buildControllerModbusTags(nodeId: string, device: DeviceConfig): Record<string, unknown> {
+  const controller = device.controller
+  if (!controller) return {}
+  const ns = nodeId.replace(/[^a-z0-9]/gi, '-')
+
+  if (controller.kind === 'wellhead-controller') {
+    return {
+      [`${ns}-hr0`]: {
+        id: `${ns}-hr0`,
+        name: 'HR0',
+        type: 'Int16',
+        address: 1,
+        memaddress: MODBUS_TABLE.holdingRegister
+      },
+      [`${ns}-hr1`]: {
+        id: `${ns}-hr1`,
+        name: 'HR1',
+        type: 'Int16',
+        address: 2,
+        memaddress: MODBUS_TABLE.holdingRegister
+      }
+    }
+  }
+
+  return {
+    [`${ns}-co0`]: {
+      id: `${ns}-co0`,
+      name: 'CO0',
+      type: 'Bool',
+      address: 1,
+      memaddress: MODBUS_TABLE.coil
+    },
+    [`${ns}-di0`]: {
+      id: `${ns}-di0`,
+      name: 'DI0',
+      type: 'Bool',
+      address: 1,
+      memaddress: MODBUS_TABLE.discreteInput
+    },
+    [`${ns}-hr0`]: {
+      id: `${ns}-hr0`,
+      name: 'HR0',
+      type: 'Int16',
+      address: 1,
+      memaddress: MODBUS_TABLE.holdingRegister
+    }
+  }
 }
 
 /**
