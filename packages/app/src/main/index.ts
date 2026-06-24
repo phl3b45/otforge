@@ -3194,10 +3194,48 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
       // indexOf round-trip, NOT the enum's own long 'item.notifymode-*' values) -- so
       // without this, alarms fire correctly server-side but are invisible in the UI.
       // 'float' shows the bell only while count > 0, matching real SCADA HMI
-      // conventions. setHmiLayout() replaces the whole layout server-side (not a
-      // merge), but the default project ships with an empty layout, so there's
-      // nothing else to preserve here.
-      await postLayout({ header: { alarms: 'float' } })
+      // conventions.
+      //
+      // IMPORTANT: setHmiLayout() replaces the whole layout server-side (not a merge).
+      // A first attempt posted only `{ header: { alarms: 'float' } }` -- this crashed
+      // the runtime view entirely ("Cannot read properties of undefined (reading
+      // 'mode')") because other code (the sidenav) unconditionally reads
+      // layout.navigation.mode, which only exists if `navigation` is a real object.
+      // Under normal use FUXA's own UI always saves a complete LayoutSettings object
+      // (client/src/app/_models/hmi.ts); this must match that shape, not a sparse
+      // patch, even though we only intend to change one field. Values below mirror
+      // `new LayoutSettings()`'s own field defaults exactly, including the bare-key
+      // (not long enum value) convention for navigation.mode/type -- confirmed against
+      // NavigationSettings' constructor, which derives them the same indexOf-roundtrip
+      // way as alarms/infos.
+      await postLayout({
+        autoresize: false,
+        start: '',
+        navigation: {
+          mode: 'over',
+          type: 'block',
+          bkcolor: '#F4F5F7',
+          fgcolor: '#1D1D1D',
+          logo: false
+        },
+        header: {
+          alarms: 'float',
+          bkcolor: '#ffffff',
+          fgcolor: '#000000',
+          height: 46,
+          buttonHeight: 36,
+          fontSize: 13,
+          itemsAnchor: 'left'
+        },
+        showdev: true,
+        inputdialog: 'false',
+        hidenavigation: false,
+        theme: '',
+        loginonstart: false,
+        loginoverlaycolor: 'none',
+        show_connection_error: true,
+        customStyles: ''
+      })
     }
   }
 }
