@@ -4,5 +4,7 @@ export { estimateResources, checkSystemMemory, getAvailableMemMb } from './resou
 export { validateScenario, toProjectName } from './schema-validator'
 export { ZONE_DEFAULTS, dockerNetworkName, zoneIpPrefix, findFreeSubnets } from './network-config'
 export { writeGrafanaProvisioning } from './grafana-provisioning'
+export { getOtZoneTopology } from './scada-topology'
 export type { SystemMemory } from './resource-estimator'
 export type { ValidationResult } from './schema-validator'
+export type { OtZoneDevice, OtZoneTopology } from './scada-topology'
