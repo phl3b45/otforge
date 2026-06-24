@@ -327,12 +327,14 @@ const api = {
   // ── HMI window ───────────────────────────────────────────────────────────────
   hmi: {
     /**
-     * Opens the FUXA web HMI in a separate Electron BrowserWindow (localhost:1881).
+     * Opens FUXA's editor (localhost:1881/editor) in a separate Electron BrowserWindow
+     * — for building a new HMI view or editing/browsing any existing one. Distinct from
+     * `scada.open()`, which jumps straight into the read-only auto-generated SCADA
+     * Overview view.
      *
-     * FUXA is auto-started as part of every simulation. This call opens its process
-     * graphics editor in a standalone OS window that can be moved to a second monitor.
-     * Modbus-TCP PLC connections are provisioned automatically by configureFuxa() in
-     * the main process after simulation start — no manual FUXA configuration needed.
+     * FUXA is auto-started as part of every simulation. Modbus-TCP PLC connections are
+     * provisioned automatically by configureFuxa() in the main process after simulation
+     * start — no manual FUXA configuration needed.
      *
      * @returns { ok: true } on success, { ok: false, error } if the simulation is not
      *   running or FUXA is not yet accepting connections on port 1881.

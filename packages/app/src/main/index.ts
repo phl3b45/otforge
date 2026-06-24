@@ -2445,12 +2445,16 @@ function registerIPCHandlers(): void {
   // ── HMI window ────────────────────────────────────────────────────────────────
 
   /**
-   * Opens the FUXA web HMI in a standalone Electron BrowserWindow.
+   * Opens FUXA's editor in a standalone Electron BrowserWindow — for building a new
+   * HMI view from scratch or editing/browsing any existing one (RTU Overview, SCADA
+   * Overview, or anything the instructor has authored), distinct from `scada:open`
+   * which jumps straight into the read-only auto-generated SCADA Overview view.
    *
    * FUXA is always started as part of the simulation infrastructure (it runs
-   * alongside InfluxDB, Grafana, etc.). This handler opens its web UI at
-   * localhost:1881 in a separate OS-level window so instructors and students
-   * can interact with the live process graphics alongside the main simulator.
+   * alongside InfluxDB, Grafana, etc.). Loads `/editor` directly rather than the bare
+   * root — the root lands on whatever view is configured as the project's start view
+   * (currently whichever view was posted last), which made this button and
+   * `scada:open` look like they did the same thing.
    *
    * The window can be moved to a second monitor independently of the main app.
    * If FUXA is not yet ready (port 1881 not open) the handler returns an error
@@ -2494,7 +2498,7 @@ function registerIPCHandlers(): void {
       }
     })
 
-    hmiWindow.loadURL('http://localhost:1881')
+    hmiWindow.loadURL('http://localhost:1881/editor')
 
     // Prevent FUXA from opening pop-out windows that bypass our sandbox settings
     hmiWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -3400,41 +3404,15 @@ function buildRtuOverviewView(
   const MARGIN = 48
   const HEADER_H = 90 // vertical space reserved for the view title
 
-  const items: unknown[] = [
-    // ── Title ──────────────────────────────────────────────────────────────
-    {
-      id: 'otf-rtu-title',
-      type: 'svg-text',
-      name: 'RTU Overview',
-      label: 'RTU Overview',
-      x: MARGIN,
-      y: MARGIN + 12,
-      w: 640,
-      h: 44,
-      rotation: 0,
-      property: {
-        text: 'RTU Station Overview',
-        fontSize: '26',
-        fontWeight: 'bold',
-        fontColor: '#58a6ff'
-      }
-    },
-    {
-      id: 'otf-rtu-subtitle',
-      type: 'svg-text',
-      name: '',
-      label: '',
-      x: MARGIN,
-      y: MARGIN + 58,
-      w: 640,
-      h: 20,
-      rotation: 0,
-      property: {
-        text: 'Live Modbus telemetry — tags poll every 1 s',
-        fontSize: '13',
-        fontColor: '#8b949e'
-      }
-    }
+  // Every element here is purely decorative (no live binding) -- raw SVG markup
+  // directly in svgcontent, no `items` entries. Confirmed against FUXA's actual view
+  // renderer (fuxa-view.component.ts sets dataContainer.innerHTML = view.svgcontent
+  // directly; `items` is pure binding metadata matched to existing elements by id,
+  // never a separate render path) and visually via a headless-browser screenshot: an
+  // items-only entry with no svgcontent backing never appears, regardless of type.
+  const svgParts: string[] = [
+    `<text x="${MARGIN}" y="${MARGIN + 26}" font-size="26" font-weight="bold" fill="#58a6ff">RTU Station Overview</text>`,
+    `<text x="${MARGIN}" y="${MARGIN + 58}" font-size="13" fill="#8b949e">Live Modbus telemetry - tags poll every 1 s</text>`
   ]
 
   rtuEntries.forEach(([nodeId, device], i) => {
@@ -3448,160 +3426,29 @@ function buildRtuOverviewView(
     const power = device.rtuConfig?.powerSource ?? ''
     const displayName = device.label ?? nodeId
 
-    // ── Card background ───────────────────────────────────────────────────
-    items.push({
-      id: `otf-rtu-card-${nodeId}`,
-      type: 'svg-rect',
-      name: '',
-      label: '',
-      x,
-      y,
-      w: CARD_W,
-      h: CARD_H,
-      rotation: 0,
-      property: {
-        bkgcolor: '#161b22',
-        color: '#30363d',
-        borderWidth: 1
-      }
-    })
+    svgParts.push(
+      `<rect x="${x}" y="${y}" width="${CARD_W}" height="${CARD_H}" fill="#161b22" stroke="#30363d" stroke-width="1"/>`,
+      `<circle cx="${x + CARD_W - 21}" cy="${y + 25}" r="7" fill="#3fb950" stroke="#238636" stroke-width="1"/>`,
+      `<text x="${x + 18}" y="${y + 38}" font-size="17" font-weight="bold" fill="#e6edf3">${displayName}</text>`,
+      `<text x="${x + 18}" y="${y + 70}" font-size="12" fill="#8b949e">IP: ${ip}   Port: 502</text>`,
+      `<text x="${x + 18}" y="${y + 98}" font-size="12" fill="#8b949e">Comm: ${commType}   Protocol: ${protocol}</text>`
+    )
 
-    // ── Status indicator dot (green = polling, visualised as small circle) ─
-    items.push({
-      id: `otf-rtu-dot-${nodeId}`,
-      type: 'svg-ellipse',
-      name: '',
-      label: '',
-      x: x + CARD_W - 28,
-      y: y + 18,
-      w: 14,
-      h: 14,
-      rotation: 0,
-      property: {
-        bkgcolor: '#3fb950',
-        color: '#238636',
-        borderWidth: 1
-      }
-    })
-
-    // ── Device name ───────────────────────────────────────────────────────
-    items.push({
-      id: `otf-rtu-name-${nodeId}`,
-      type: 'svg-text',
-      name: '',
-      label: displayName,
-      x: x + 18,
-      y: y + 32,
-      w: CARD_W - 52,
-      h: 26,
-      rotation: 0,
-      property: {
-        text: displayName,
-        fontSize: '17',
-        fontWeight: 'bold',
-        fontColor: '#e6edf3'
-      }
-    })
-
-    // ── IP address ────────────────────────────────────────────────────────
-    items.push({
-      id: `otf-rtu-ip-${nodeId}`,
-      type: 'svg-text',
-      name: '',
-      label: ip,
-      x: x + 18,
-      y: y + 64,
-      w: CARD_W - 36,
-      h: 20,
-      rotation: 0,
-      property: {
-        text: `IP: ${ip}   Port: 502`,
-        fontSize: '12',
-        fontColor: '#8b949e'
-      }
-    })
-
-    // ── Comm type + protocol ──────────────────────────────────────────────
-    items.push({
-      id: `otf-rtu-comm-${nodeId}`,
-      type: 'svg-text',
-      name: '',
-      label: commType,
-      x: x + 18,
-      y: y + 92,
-      w: CARD_W - 36,
-      h: 20,
-      rotation: 0,
-      property: {
-        text: `Comm: ${commType}   Protocol: ${protocol}`,
-        fontSize: '12',
-        fontColor: '#8b949e'
-      }
-    })
-
-    // ── Power source ──────────────────────────────────────────────────────
     if (power) {
-      items.push({
-        id: `otf-rtu-power-${nodeId}`,
-        type: 'svg-text',
-        name: '',
-        label: power,
-        x: x + 18,
-        y: y + 116,
-        w: CARD_W - 36,
-        h: 20,
-        rotation: 0,
-        property: {
-          text: `Power: ${power}`,
-          fontSize: '12',
-          fontColor: '#8b949e'
-        }
-      })
+      svgParts.push(
+        `<text x="${x + 18}" y="${y + 122}" font-size="12" fill="#8b949e">Power: ${power}</text>`
+      )
     }
 
-    // ── Divider line above tag summary ────────────────────────────────────
-    items.push({
-      id: `otf-rtu-div-${nodeId}`,
-      type: 'svg-rect',
-      name: '',
-      label: '',
-      x: x + 18,
-      y: y + CARD_H - 50,
-      w: CARD_W - 36,
-      h: 1,
-      rotation: 0,
-      property: { bkgcolor: '#30363d', color: '#30363d' }
-    })
-
-    // ── Tag legend (shows the 4 types configured above) ───────────────────
-    items.push({
-      id: `otf-rtu-tags-${nodeId}`,
-      type: 'svg-text',
-      name: '',
-      label: 'DI DO IR HR',
-      x: x + 18,
-      y: y + CARD_H - 26,
-      w: CARD_W - 36,
-      h: 18,
-      rotation: 0,
-      property: {
-        text: 'Tags: DI×0–03  DO×0–03  IR×0–03  HR×0–03',
-        fontSize: '11',
-        fontColor: '#6e7681'
-      }
-    })
+    svgParts.push(
+      `<line x1="${x + 18}" y1="${y + CARD_H - 50}" x2="${x + CARD_W - 18}" y2="${y + CARD_H - 50}" stroke="#30363d" stroke-width="1"/>`,
+      `<text x="${x + 18}" y="${y + CARD_H - 18}" font-size="11" fill="#6e7681">Tags: DIx0-03  DOx0-03  IRx0-03  HRx0-03</text>`
+    )
   })
 
   const totalRows = Math.ceil(rtuEntries.length / COLS)
   const viewHeight = MARGIN + HEADER_H + totalRows * (CARD_H + GAP) + MARGIN
   const viewWidth = MARGIN + COLS * (CARD_W + GAP) + MARGIN
-
-  // FUXA's View model (client/src/app/_models/hmi.ts) keys `items` by item id
-  // (a dict, not an array) and nests width/height/background under `profile`.
-  const itemsById: Record<string, unknown> = {}
-  for (const item of items as Array<{ id: string }>) {
-    itemsById[item.id] = item
-  }
 
   return {
     id: 'otf-rtu-overview',
@@ -3612,8 +3459,8 @@ function buildRtuOverviewView(
       bkcolor: '#0d1117ff'
     },
     type: 'svg',
-    svgcontent: '',
-    items: itemsById,
+    svgcontent: `<svg width="${Math.max(1400, viewWidth)}" height="${Math.max(720, viewHeight)}" xmlns="http://www.w3.org/2000/svg"><g>${svgParts.join('')}</g></svg>`,
+    items: {},
     variables: {}
   }
 }
@@ -3732,23 +3579,30 @@ function buildValveShape(gid: string, cx: number, cy: number, tagId: string, lab
 
 /**
  * Static fallback for OT categories with no clean live boolean to color by yet
- * (sensors, PLCs/RTUs, wellhead-controller's setpoint-only registers, process-unit).
- * Plain native svg-rect -- no svgcontent <g> needed, same pattern buildRtuOverviewView
- * already uses successfully for static items.
+ * (sensors, PLCs/RTUs, wellhead-controller's setpoint-only registers). Plain SVG rect,
+ * decorative only -- no `items` entry needed (see buildScadaOverviewView's note on why).
  */
-function buildFallbackShape(gid: string, cx: number, cy: number): Record<string, unknown> {
-  return {
-    id: gid,
-    type: 'svg-rect',
-    name: '',
-    label: '',
-    x: cx - 30,
-    y: cy - 24,
-    w: 60,
-    h: 48,
-    rotation: 0,
-    property: { bkgcolor: '#388bfd', color: '#1f6feb', borderWidth: 2 }
-  }
+function buildFallbackSvg(cx: number, cy: number): string {
+  return `<rect x="${cx - 30}" y="${cy - 24}" width="60" height="48" rx="4" fill="#388bfd" stroke="#1f6feb" stroke-width="2"/>`
+}
+
+/**
+ * Large static tank body for process-unit devices, mirroring ProcessUnitSvg's
+ * proportions (rounded vessel + level-gauge bar + inlet/outlet stubs). Decorative
+ * only -- process-unit devices run their own physics container, not provisioned as a
+ * Modbus tag here, so there's nothing live to bind a level indicator to yet.
+ */
+function buildTankSvg(cx: number, cy: number): string {
+  const w = 90
+  const h = 70
+  const left = cx - w / 2
+  const top = cy - h / 2
+  return (
+    `<rect x="${left}" y="${top}" width="${w}" height="${h}" rx="8" fill="#21262d" stroke="#8b949e" stroke-width="3"/>` +
+    `<rect x="${left + 8}" y="${top + h - 22}" width="${w - 16}" height="${h - 30}" fill="#388bfd" opacity="0.6"/>` +
+    `<line x1="${left - 16}" y1="${cy}" x2="${left}" y2="${cy}" stroke="#8b949e" stroke-width="3"/>` +
+    `<line x1="${left + w}" y1="${cy}" x2="${left + w + 16}" y2="${cy}" stroke="#8b949e" stroke-width="3"/>`
+  )
 }
 
 /**
@@ -3762,25 +3616,17 @@ function buildFallbackShape(gid: string, cx: number, cy: number): Record<string,
 function buildScadaOverviewView(topology: OtZoneTopology): unknown {
   const positions = normalizeScadaPositions(topology.nodes)
   const svgParts: string[] = []
-  const items: Record<string, unknown> = {
-    'otf-scada-title': {
-      id: 'otf-scada-title',
-      type: 'svg-text',
-      name: '',
-      label: '',
-      x: SCADA_VIEW_MARGIN,
-      y: 36,
-      w: 640,
-      h: 40,
-      rotation: 0,
-      property: {
-        text: 'SCADA Overview — OT Process',
-        fontSize: '24',
-        fontWeight: 'bold',
-        fontColor: '#58a6ff'
-      }
-    }
-  }
+  const items: Record<string, unknown> = {}
+
+  // Title: plain static SVG text. Verified against FUXA's actual view renderer
+  // (fuxa-view.component.ts sets dataContainer.innerHTML = view.svgcontent directly —
+  // `items` is pure binding metadata matched to existing elements by id, never a
+  // separate render path) — purely decorative text needs no `items` entry at all, only
+  // real markup in svgcontent. Confirmed visually via a headless-browser screenshot:
+  // an items-only entry with no svgcontent backing never appears, regardless of type.
+  svgParts.push(
+    `<text x="${SCADA_VIEW_MARGIN}" y="50" font-size="24" font-weight="bold" fill="#58a6ff">SCADA Overview - OT Process</text>`
+  )
 
   // Pipe runs first so device shapes render on top of them.
   for (const edge of topology.edges) {
@@ -3805,6 +3651,7 @@ function buildScadaOverviewView(topology: OtZoneTopology): unknown {
     const gid = `otf-scada-${ns}`
     const label = device.label ?? node.id
     const kind = device.controller?.kind
+    let labelY = pos.y + 42
 
     if (device.category === 'smart-controller' && kind === 'valve') {
       const { svg, item } = buildValveShape(gid, pos.x, pos.y, `${ns}-di0`, label)
@@ -3817,22 +3664,20 @@ function buildScadaOverviewView(topology: OtZoneTopology): unknown {
       const { svg, item } = buildPumpShape(gid, pos.x, pos.y, `${ns}-di0`, label)
       svgParts.push(svg)
       items[gid] = item
+    } else if (device.category === 'process-unit') {
+      // Large static tank body — no live binding wired into FUXA for process-unit
+      // devices yet (they run their own physics container, not provisioned as a
+      // Modbus tag here), so this is decorative only, matching ProcessUnitSvg's
+      // proportions (a vessel should read as visually bigger than a field device).
+      svgParts.push(buildTankSvg(pos.x, pos.y))
+      labelY = pos.y + 62
     } else {
-      items[gid] = buildFallbackShape(gid, pos.x, pos.y)
+      svgParts.push(buildFallbackSvg(pos.x, pos.y))
     }
 
-    items[`${gid}-label`] = {
-      id: `${gid}-label`,
-      type: 'svg-text',
-      name: '',
-      label,
-      x: pos.x - 50,
-      y: pos.y + 42,
-      w: 100,
-      h: 20,
-      rotation: 0,
-      property: { text: label, fontSize: '12', fontColor: '#e6edf3' }
-    }
+    svgParts.push(
+      `<text x="${pos.x}" y="${labelY}" font-size="12" fill="#e6edf3" text-anchor="middle">${label}</text>`
+    )
   }
 
   return {
