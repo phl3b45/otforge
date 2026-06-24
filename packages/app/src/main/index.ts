@@ -3059,6 +3059,15 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     await postProjectData('set-alarm', alarm)
   }
 
+  /**
+   * Sets FUXA's HMI layout via cmd: 'layout'. NOTE: this is a full replace server-side
+   * (`data.hmi.layout = layout`), not a merge — only call this with a complete layout
+   * object, never a partial patch, or other layout settings get silently wiped.
+   */
+  async function postLayout(layout: unknown): Promise<void> {
+    await postProjectData('layout', layout)
+  }
+
   // ── Provision Modbus TCP (PLCs / RTUs / smart-sensor / smart-controller) ───
   for (const nodeId of modbusNodeIds) {
     const device = scenario.devices.devices[nodeId]
@@ -3170,8 +3179,21 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   const otTopology = getOtZoneTopology(scenario)
   if (otTopology.nodes.length > 0) {
     await postView(buildScadaOverviewView(otTopology))
-    for (const alarm of buildScadaAlarms(otTopology.nodes)) {
+    const scadaAlarms = buildScadaAlarms(otTopology.nodes)
+    for (const alarm of scadaAlarms) {
       await postAlarm(alarm)
+    }
+    if (scadaAlarms.length > 0) {
+      // FUXA's alarm bell is hidden by default: home.component.ts initializes
+      // alarms.mode to '' (empty string), and checkHeaderButton() compares it against
+      // the bare key names 'fix'/'float' (derived from NotificationModeType via an
+      // indexOf round-trip, NOT the enum's own long 'item.notifymode-*' values) -- so
+      // without this, alarms fire correctly server-side but are invisible in the UI.
+      // 'float' shows the bell only while count > 0, matching real SCADA HMI
+      // conventions. setHmiLayout() replaces the whole layout server-side (not a
+      // merge), but the default project ships with an empty layout, so there's
+      // nothing else to preserve here.
+      await postLayout({ header: { alarms: 'float' } })
     }
   }
 }
