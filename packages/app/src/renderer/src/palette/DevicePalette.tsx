@@ -48,7 +48,8 @@ interface PaletteSection {
  *   Primary Control   — PLCs, Safety PLC, DCS Controller, RTU, IED
  *   Field Instruments — sensor, smart sensor (kind chosen in Properties Panel;
  *                       covers temperature/gas/vibration/flow/pressure/level/
- *                       analyzer/pmu; FUXA-simulated, no container)
+ *                       analyzer/pmu; real Modbus-backed container generates
+ *                       the waveform, same image as RTU)
  *   Actuators & Drives — smart controller (kind chosen in Properties Panel;
  *                       covers pump/valve/vfd/actuator/wellhead-controller;
  *                       real Modbus-backed container, same image as RTU)

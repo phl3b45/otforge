@@ -33,6 +33,7 @@ import type {
   SimulationStopResult,
   ContainerStatus,
   OTForgeScenario,
+  DeviceConfig,
   PLCDeployResult,
   PLCRuntimeStatus,
   PackInstallResult,
@@ -2838,9 +2839,17 @@ async function configureAttackMachine(): Promise<void> {
  * live data without any manual FUXA configuration.
  *
  * Protocols provisioned:
- *   MODBUSTCP  — PLC and RTU devices connected via modbus-tcp canvas edges.
+ *   MODBUSTCP  — RTU/iec104-rtu/smart-sensor/smart-controller devices unconditionally
+ *                (being a Modbus point is their whole purpose); PLC/safety-plc only
+ *                when connected via a modbus-tcp canvas edge.
  *   OPCUA      — All scada-server devices (asyncua Python server, port 4840).
  *   BACnet     — All sensor devices (bacpypes3 Python server, port 47808).
+ *
+ * smart-sensor note: FUXA cannot act as a Modbus server (verified against FUXA's real
+ * source — all its device drivers are clients), so smart-sensor's waveform is generated
+ * by a real container (containers/modbus/server.py) and FUXA just polls it like any
+ * other Modbus device. This function only wires up the connection + one tag for the
+ * configured register; it does not generate any HMI screen/widget (out of scope).
  *
  * FUXA REST API — POST /api/device (confirmed from server/apimanager.js):
  *   {
@@ -2870,18 +2879,25 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   const FUXA_PORT = 1881
 
   // ── Collect Modbus/PLC nodes ──────────────────────────────────────────────
-  // RTUs are unconditionally included: every otforge-modbus container runs a
-  // Modbus TCP server on port 502 regardless of what canvas edges are drawn,
-  // and the RTU panel lets authors configure real-world comm types (cellular,
-  // radio, etc.) that don't map to canvas wire connections.
+  // RTUs/smart-sensor/smart-controller are unconditionally included: every
+  // otforge-modbus container runs a Modbus TCP server on port 502 regardless of
+  // what canvas edges are drawn, and the RTU panel lets authors configure
+  // real-world comm types (cellular, radio, etc.) that don't map to canvas wire
+  // connections. smart-sensor/smart-controller are the same shape — being a
+  // Modbus point is their whole purpose, not something conditional on an edge.
   // PLCs/safety-PLCs are only included when they appear on a modbus-tcp edge
   // (matching the original behaviour — PLC Modbus is the programmer's concern,
   // not a passive telemetry device like an RTU).
   const modbusNodeIds = new Set<string>()
 
-  // All RTU devices — no edge requirement
+  // All RTU/smart-sensor/smart-controller devices — no edge requirement
   for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
-    if (device.category === 'rtu' || device.category === 'iec104-rtu') {
+    if (
+      device.category === 'rtu' ||
+      device.category === 'iec104-rtu' ||
+      device.category === 'smart-sensor' ||
+      device.category === 'smart-controller'
+    ) {
       modbusNodeIds.add(nodeId)
     }
   }
@@ -2978,7 +2994,7 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     }
   }
 
-  // ── Provision Modbus TCP (PLCs / RTUs) ─────────────────────────────────────
+  // ── Provision Modbus TCP (PLCs / RTUs / smart-sensor / smart-controller) ───
   for (const nodeId of modbusNodeIds) {
     const device = scenario.devices.devices[nodeId]
     if (!device) continue
@@ -2986,16 +3002,28 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
     const uid = device.modbus?.unitId ?? 1
     const port = device.modbus?.port ?? 502
     const isRtu = device.category === 'rtu' || device.category === 'iec104-rtu'
+    const isSmartSensor = device.category === 'smart-sensor'
     // RTUs get a full register map so students see live telemetry values without
-    // any manual FUXA tag configuration. PLCs keep an empty tag set so the
-    // instructor can add PLC-specific variables through the FUXA editor.
-    const tags = isRtu ? buildRtuModbusTags(nodeId) : {}
+    // any manual FUXA tag configuration. smart-sensor gets its one configured
+    // register. PLCs and smart-controller keep an empty tag set — PLC programs
+    // are the programmer's concern, and smart-controller has no fixed register
+    // map to introspect (device.modbus.registers isn't wired through to the
+    // container yet) — the instructor adds tags through the FUXA editor.
+    const tags = isSmartSensor
+      ? buildSensorModbusTag(nodeId, device)
+      : isRtu
+        ? buildRtuModbusTags(nodeId)
+        : {}
     const displayName = device.label ?? nodeId
+    // RTU/smart-sensor/smart-controller are Modbus end-to-end, so the clean
+    // display name applies to all three; PLC/safety-plc only speak Modbus
+    // incidentally, so they keep the "(Modbus)" suffix for clarity in FUXA's list.
+    const isModbusNative = isRtu || isSmartSensor || device.category === 'smart-controller'
 
     await postDevice(
       JSON.stringify({
         id: nodeId,
-        name: isRtu ? `${displayName}` : `${displayName} (Modbus)`,
+        name: isModbusNative ? `${displayName}` : `${displayName} (Modbus)`,
         enabled: true,
         type: 'MODBUSTCP',
         polling: 1000,
@@ -3070,6 +3098,31 @@ async function configureFuxa(scenario: OTForgeScenario): Promise<void> {
   )
   if (rtuEntries.length > 0) {
     await postView(buildRtuOverviewView(rtuEntries))
+  }
+}
+
+// ── FUXA smart-sensor provisioning helper ─────────────────────────────────────
+
+/**
+ * Builds a single FUXA tag for a smart-sensor device's configured holding register.
+ *
+ * Unlike RTUs (buildRtuModbusTags below), smart-sensor has exactly one register —
+ * the one containers/modbus/server.py's waveform task writes to (SensorConfig.modbusRegister)
+ * — so there is exactly one tag to declare. The tag name follows the same convention the
+ * schema doc promises: SensorConfig.tagName if set, otherwise derived from the node ID.
+ *
+ * @param nodeId - Canvas node ID of the smart-sensor device.
+ * @param device - The device's full config; must have .sensor set (defensive no-op if not).
+ * @returns Record with a single tag, ready for the FUXA /api/device payload.
+ */
+function buildSensorModbusTag(nodeId: string, device: DeviceConfig): Record<string, unknown> {
+  const sensor = device.sensor
+  if (!sensor) return {}
+  const ns = nodeId.replace(/[^a-z0-9]/gi, '-')
+  const id = `${ns}-value`
+  const name = sensor.tagName ?? nodeId.replace(/[^a-zA-Z0-9]/g, '_')
+  return {
+    [id]: { id, name, type: 'Int16', memaddress: sensor.modbusRegister, memtype: 'HoldingRegister' }
   }
 }
 

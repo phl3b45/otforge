@@ -318,7 +318,7 @@ const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
   sensor: ['modbus-tcp'],
   'iiot-sensor': ['mqtt'], // wireless IIoT sensor publishes MQTT
   'iot-gateway': ['mqtt'], // gateway bridges MQTT ↔ OPC-UA/historian
-  'smart-sensor': ['modbus-tcp'], // FUXA Simulator → PLC via Modbus TCP
+  'smart-sensor': ['modbus-tcp'], // real otforge-modbus container → PLC via Modbus TCP
   'smart-controller': ['modbus-tcp'], // real pymodbus container → PLC via Modbus TCP
   // ── Control Center (L3) ─────────────────────────────────────────────────────
   hmi: ['none'],

@@ -211,6 +211,14 @@ describe('image assignment', () => {
     )
     expect(compose.services['plc-custom'].image).toBe('my.registry.com/custom-plc:v2')
   })
+
+  it('gives smart-sensor the otforge-modbus image — a real container, not skipped', () => {
+    const compose = gen(
+      makeScenario([['sensor-1', { category: 'smart-sensor', ipAddress: '10.200.10.10' }]])
+    )
+    expect(compose.services['sensor-1']).toBeDefined()
+    expect(compose.services['sensor-1'].image).toBe('ghcr.io/iburres/otforge-modbus:latest')
+  })
 })
 
 describe('service name and container name', () => {
@@ -467,6 +475,35 @@ describe('environment variable injection', () => {
     expect(env).toContain('MODBUS_MODE=tcp')
     expect(env).toContain('MODBUS_PORT=502')
     expect(env).toContain('MODBUS_UNIT_ID=5')
+  })
+
+  it('injects SENSOR_* vars when a smart-sensor config is present', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          'sensor-1',
+          {
+            category: 'smart-sensor',
+            ipAddress: '10.200.10.10',
+            sensor: {
+              kind: 'flow',
+              waveform: 'sawtooth',
+              minValue: 0,
+              maxValue: 300,
+              noisePercent: 5,
+              modbusRegister: 12
+            }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['sensor-1'].environment ?? []
+    expect(env).toContain('SENSOR_KIND=flow')
+    expect(env).toContain('SENSOR_WAVEFORM=sawtooth')
+    expect(env).toContain('SENSOR_MIN_VALUE=0')
+    expect(env).toContain('SENSOR_MAX_VALUE=300')
+    expect(env).toContain('SENSOR_NOISE_PERCENT=5')
+    expect(env).toContain('SENSOR_MODBUS_REGISTER=12')
   })
 
   it('injects DNP3_* vars when a DNP3 config is present', () => {

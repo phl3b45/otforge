@@ -66,8 +66,10 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   'iiot-sensor': 'ghcr.io/iburres/alpine:latest',
   // STUB: IoT gateway — MQTT broker/bridge stub until otforge-iot-gateway is built.
   'iot-gateway': 'ghcr.io/iburres/alpine:latest',
-  // No container — values live in FUXA Simulator; image field satisfies Record type only.
-  'smart-sensor': '',
+  // Real Modbus TCP outstation — same pymodbus server image as rtu (containers/modbus).
+  // server.py generates the configured waveform; FUXA cannot act as a Modbus server,
+  // so this needs to be a real container, not a "no container, FUXA generates it" device.
+  'smart-sensor': 'ghcr.io/iburres/otforge-modbus:latest',
   // Real Modbus TCP/RTU outstation — same pymodbus server image as rtu (containers/modbus).
   // Consolidated from the former vfd/actuator/pump/valve STUB categories (Phase 14).
   'smart-controller': 'ghcr.io/iburres/otforge-modbus:latest',
@@ -141,8 +143,7 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   sensor: { memory: 96, cpus: '0.25' }, // BACnet/IP bacpypes3 Python server
   'iiot-sensor': { memory: 64, cpus: '0.1' }, // IIoT sensor — lightweight MQTT publish loop
   'iot-gateway': { memory: 96, cpus: '0.2' }, // IoT gateway — MQTT broker + protocol bridge
-  // No container — zero resource budget; FUXA Simulator provides the synthetic values.
-  'smart-sensor': { memory: 0, cpus: '0' },
+  'smart-sensor': { memory: 80, cpus: '0.25' }, // pymodbus on Alpine, same budget as rtu
   'smart-controller': { memory: 80, cpus: '0.25' }, // pymodbus on Alpine, same budget as rtu
   // ── Control Center (Level 3) ────────────────────────────────────────────────
   hmi: { memory: 256, cpus: '0.5' }, // FUXA Node.js HMI
@@ -489,11 +490,6 @@ export function generateCompose(
   }
 
   for (const [nodeId, device] of Object.entries(scenario.devices.devices)) {
-    // smart-sensor lives entirely inside FUXA's Simulator device — no Docker container
-    // is spawned. fuxa-provisioning.ts reads its SensorConfig and generates the
-    // corresponding FUXA device/tag JSON before compose up.
-    if (device.category === 'smart-sensor') continue
-
     // Use a custom image if specified (for advanced scenarios), otherwise use the category default
     const image = device.dockerImage ?? DEVICE_IMAGES[device.category]
     const limits = DEVICE_LIMITS[device.category]
@@ -595,8 +591,13 @@ export function generateCompose(
     }
 
     // Controller-specific env vars — injected for smart-controller devices only.
-    // These are informational (visible in container logs / Properties Panel) — real
-    // protocol behavior comes from the device's generic modbus/dnp3 config blocks.
+    // Visible in container logs / Properties Panel either way, but CONTROLLER_KIND and
+    // the headline numeric fields (CONTROLLER_RATED_FLOW_LPM, CONTROLLER_MAX_FREQUENCY_HZ,
+    // CONTROLLER_CHOKE_POSITION_PCT, CONTROLLER_DOWNHOLE_PRESSURE_SETPOINT_BAR) also drive
+    // real CO0/DI0/HR0/HR1 behavior in containers/modbus/server.py's
+    // simulate_controller_reactive() — writing CO0 actually starts/stops the device. The
+    // remaining descriptive fields (actuatorType, failPosition, travelType, signalType,
+    // liftMethod) are still informational-only.
     if (device.category === 'smart-controller' && device.controller) {
       const ctrlEnv: string[] = services[serviceName].environment ?? []
       ctrlEnv.push(`CONTROLLER_KIND=${device.controller.kind}`)
@@ -1528,6 +1529,20 @@ function buildDeviceEnv(
     if (pu.pipelineVolumeL !== undefined) env.push(`PIPELINE_VOLUME_L=${pu.pipelineVolumeL}`)
     if (pu.pipelinePumpMaxLpm !== undefined)
       env.push(`PIPELINE_PUMP_MAX_LPM=${pu.pipelinePumpMaxLpm}`)
+  }
+
+  // smart-sensor waveform configuration — consumed by containers/modbus/server.py
+  // (DEVICE_CATEGORY=smart-sensor). Mirrors SensorConfig field-for-field; the container
+  // generates this waveform itself since FUXA cannot act as a Modbus server.
+  if (device.sensor) {
+    const sc = device.sensor
+    env.push(`SENSOR_KIND=${sc.kind}`)
+    env.push(`SENSOR_WAVEFORM=${sc.waveform}`)
+    env.push(`SENSOR_MIN_VALUE=${sc.minValue}`)
+    env.push(`SENSOR_MAX_VALUE=${sc.maxValue}`)
+    env.push(`SENSOR_NOISE_PERCENT=${sc.noisePercent}`)
+    env.push(`SENSOR_MODBUS_REGISTER=${sc.modbusRegister}`)
+    if (sc.sampleRateMs !== undefined) env.push(`SENSOR_SAMPLE_RATE_MS=${sc.sampleRateMs}`)
   }
 
   // Phase 12: DNS server — inject domain and web/mail server IPs from the optional DnsConfig.
