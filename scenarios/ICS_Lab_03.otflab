@@ -175,7 +175,7 @@
       {
         "id": "switch-ot",
         "type": "device",
-        "position": { "x": 270, "y": 380 },
+        "position": { "x": 360, "y": 380 },
         "data": {
           "nodeId": "switch-ot",
           "label": "OT Field Switch",
@@ -186,7 +186,7 @@
       {
         "id": "rtu-1",
         "type": "device",
-        "position": { "x": 60, "y": 480 },
+        "position": { "x": 80, "y": 580 },
         "data": {
           "nodeId": "rtu-1",
           "label": "RTU-1\nPipeline Sect. A",
@@ -196,7 +196,7 @@
       {
         "id": "rtu-2",
         "type": "device",
-        "position": { "x": 270, "y": 480 },
+        "position": { "x": 360, "y": 580 },
         "data": {
           "nodeId": "rtu-2",
           "label": "RTU-2\nCompressor Stn B",
@@ -206,7 +206,7 @@
       {
         "id": "ied-1",
         "type": "device",
-        "position": { "x": 480, "y": 480 },
+        "position": { "x": 640, "y": 580 },
         "data": {
           "nodeId": "ied-1",
           "label": "IED-1\nEmergency Shutdown",
@@ -216,7 +216,7 @@
       {
         "id": "compressor-a",
         "type": "pump",
-        "position": { "x": 60, "y": 580 },
+        "position": { "x": 80, "y": 780 },
         "data": {
           "nodeId": "compressor-a",
           "label": "Compressor A",
@@ -226,7 +226,7 @@
       {
         "id": "compressor-b",
         "type": "pump",
-        "position": { "x": 270, "y": 580 },
+        "position": { "x": 360, "y": 780 },
         "data": {
           "nodeId": "compressor-b",
           "label": "Compressor B\n(Attack Target)",
@@ -236,7 +236,7 @@
       {
         "id": "esd-valve",
         "type": "valve",
-        "position": { "x": 480, "y": 580 },
+        "position": { "x": 640, "y": 780 },
         "data": {
           "nodeId": "esd-valve",
           "label": "ESD Valve",
