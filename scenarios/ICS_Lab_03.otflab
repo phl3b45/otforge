@@ -11,9 +11,9 @@
     "locked": false,
     "brief": "## Mission: Protect the Compressor Station\n\nIronhorse Midstream operates a natural gas pipeline and compression network spanning three stations across West Texas. An attacker has penetrated the OT network and is issuing unauthorized **DNP3 Direct Operate** commands to RTU-2 at Compressor Station B — attempting to trip the compressor offline and cause a pipeline pressure imbalance.\n\nAs the newly assigned network security engineer, your mission is to:\n\n1. Observe the existing Suricata IDS alert that fires when the attack runs and examine the underlying Zeek DNP3 log data.\n2. Learn the **Suricata rule syntax** for DNP3 application-layer detection (`dnp3_func`, `classtype`, `sid`).\n3. Write a **custom ALERT rule** and load it through the OTForge IDS/IPS Panel.\n4. Escalate the rule to a **REJECT rule** that drops the malicious DNP3 command before it reaches the RTU — converting the IDS into a live IPS.\n\n**Rules of Engagement:** This is an isolated Docker lab environment. All traffic stays on your local machine.",
     "requirements": {
-      "estimatedRamMb": 2560,
+      "estimatedRamMb": 2048,
       "estimatedCpuCores": 3,
-      "containerCount": 11
+      "containerCount": 8
     },
     "tutorialSteps": [
       {
@@ -141,7 +141,7 @@
       },
       {
         "id": "historian-1",
-        "type": "device",
+        "type": "historian",
         "position": { "x": 200, "y": 280 },
         "data": {
           "nodeId": "historian-1",
@@ -152,7 +152,7 @@
       },
       {
         "id": "hmi-1",
-        "type": "device",
+        "type": "hmi",
         "position": { "x": 340, "y": 280 },
         "data": {
           "nodeId": "hmi-1",
@@ -446,18 +446,6 @@
         "nodeId": "scada-1",
         "category": "scada-server",
         "ipAddress": "10.200.20.10",
-        "protocols": ["none"]
-      },
-      "historian-1": {
-        "nodeId": "historian-1",
-        "category": "historian",
-        "ipAddress": "10.200.20.11",
-        "protocols": ["none"]
-      },
-      "hmi-1": {
-        "nodeId": "hmi-1",
-        "category": "hmi",
-        "ipAddress": "10.200.20.12",
         "protocols": ["none"]
       },
       "workstation-1": {
