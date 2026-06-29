@@ -1,0 +1,528 @@
+{
+  "meta": {
+    "formatVersion": "1.0",
+    "name": "ICS Lab 03 — IDS/IPS: Suricata and Zeek on an Oil & Gas SCADA Network",
+    "description": "Students take the role of a network security engineer at Ironhorse Midstream, a fictional natural gas pipeline and compression company. An attacker has reached the OT network and is sending unauthorized DNP3 Direct Operate commands to the compressor RTUs. Students investigate the attack using Zeek network logs, learn how the pre-loaded Suricata IDS rule detected it, write a more precise custom detection rule using DNP3 application-layer keywords, then escalate to an IPS reject rule that blocks the attack before it reaches the RTU. Developed for ICS/SCADA cybersecurity courses at UTSA.",
+    "sector": "oil-gas",
+    "author": "Ian Burres — UTSA",
+    "createdAt": "2026-06-29T00:00:00.000Z",
+    "updatedAt": "2026-06-29T00:00:00.000Z",
+    "appVersion": "0.13.0",
+    "locked": false,
+    "brief": "## Mission: Protect the Compressor Station\n\nIronhorse Midstream operates a natural gas pipeline and compression network spanning three stations across West Texas. An attacker has penetrated the OT network and is issuing unauthorized **DNP3 Direct Operate** commands to RTU-2 at Compressor Station B — attempting to trip the compressor offline and cause a pipeline pressure imbalance.\n\nAs the newly assigned network security engineer, your mission is to:\n\n1. Observe the existing Suricata IDS alert that fires when the attack runs and examine the underlying Zeek DNP3 log data.\n2. Learn the **Suricata rule syntax** for DNP3 application-layer detection (`dnp3_func`, `classtype`, `sid`).\n3. Write a **custom ALERT rule** and load it through the OTForge IDS/IPS Panel.\n4. Escalate the rule to a **REJECT rule** that drops the malicious DNP3 command before it reaches the RTU — converting the IDS into a live IPS.\n\n**Rules of Engagement:** This is an isolated Docker lab environment. All traffic stays on your local machine.",
+    "requirements": {
+      "estimatedRamMb": 2048,
+      "estimatedCpuCores": 3,
+      "containerCount": 8
+    },
+    "tutorialSteps": [
+      {
+        "id": "step-00-welcome",
+        "title": "Welcome to Lab 03 — IDS/IPS with Suricata and Zeek",
+        "body": "## Learning Objectives\n\nBy the end of this lab you will be able to:\n\n- Explain the difference between an **IDS** (Intrusion Detection System) and an **IPS** (Intrusion Prevention System)\n- Describe the complementary roles of **Suricata** and **Zeek** in OT network monitoring\n- Identify a **DNP3 Direct Operate** attack in Zeek log data and Suricata alerts\n- Dissect the anatomy of a Suricata rule and explain every field\n- Write a custom **alert** rule using the `dnp3_func` application-layer keyword\n- Modify the rule to **reject** packets — turning detection into prevention\n\n---\n\n## IDS vs IPS — The Key Distinction\n\n**IDS (Intrusion Detection System):** Monitors a copy of network traffic and generates alerts when a signature matches. A **passive** device — it never touches the real traffic stream. Even if a rule fires, the malicious packet still reaches its destination.\n\n**IPS (Intrusion Prevention System):** Sits **inline** in the network traffic path and can drop or reject packets before they reach the target. The same Suricata rule engine handles both modes — only the **action keyword** at the front of the rule changes (`alert` → `reject` or `drop`).\n\n---\n\n## Suricata vs Zeek — Different Roles\n\n| | **Suricata** | **Zeek** |\n|---|---|---|\n| **Approach** | Signature-based | Protocol analyzer |\n| **Output** | Alerts when rules match | Logs ALL connections regardless |\n| **ICS keywords** | `dnp3_func`, `modbus_func`, `enip_*` | `dnp3.log`, `modbus.log`, `conn.log` |\n| **Strength** | Fast, known-attack detection | Baseline, anomaly hunting, forensics |\n| **Weakness** | Blind to unknown attacks | Does not block; requires manual analysis |\n\nIn this lab, **Zeek gives you the forensic record** of what happened, and **Suricata gives you the automated detection and (in IPS mode) the automated block**.\n\n---\n\n## DNP3 — Why Oil & Gas Uses It\n\nDNP3 (Distributed Network Protocol 3, IEEE 1815-2012) is the dominant SCADA protocol in North American oil and gas pipeline operations, gas compression networks, and electric utility substations. It was designed in the early 1990s for unreliable serial links (radio, leased lines) and evolved to run over TCP port 20000.\n\n**Like Modbus, DNP3 has no built-in authentication.** Any device that can reach TCP port 20000 on an outstation can send it commands without credentials. The attack you will see in this lab exploits exactly this property.\n\n**Key DNP3 function codes used in this lab:**\n- **FC 01 — Read:** The SCADA master polls an outstation for current data (normal operation).\n- **FC 03 — Direct Operate:** Commands the outstation to immediately activate a binary output — in this lab, the compressor start/stop relay. This is the attack function code.\n- **FC 04 — Direct Operate No Ack:** Same as FC 03 but the outstation sends no acknowledgment — faster but unconfirmed.\n\n**Click Run Simulation (blue play button) to start all containers before clicking Next.**",
+        "successCheck": "Review the objectives and the IDS/IPS table above. If anything is unclear, re-read the relevant section before continuing. Click Run Simulation in the toolbar and wait for the status indicator to show all containers running."
+      },
+      {
+        "id": "step-01-explore",
+        "title": "Step 1 — Explore the Ironhorse Midstream Environment",
+        "body": "## The Ironhorse Midstream OT Network\n\nIronhorse Midstream operates a natural gas gathering and compression network:\n\n- **Pipeline Section A** — monitored by RTU-1 (outstation address 10). Measures suction pressure and line flow rate. Controls the intake valve for the gathering line.\n- **Compressor Station B** — monitored by RTU-2 (outstation address 11). This RTU controls the main gas compressor (Compressor B). **This is the attack target.**\n- **Emergency Shutdown System** — IED-1 (outstation address 12) monitors trip signals and controls the ESD valve. Safety-critical — a spurious ESD trip causes a full pipeline shutdown.\n\nThe **SCADA Master** at 10.200.20.10 is the only authorized DNP3 master. It polls all three RTUs every 5 seconds over TCP port 20000.\n\n---\n\n## Network Zones\n\nSwitch to the **OT Process** layer tab in OTForge to see the field devices, then switch to the **Network** layer to see the zone layout:\n\n| Zone | Subnet | Purpose |\n|---|---|---|\n| OT Field | 10.200.10.0/24 | RTUs, IED, compressors, ESD valve |\n| Control | 10.200.20.0/24 | SCADA master, historian, HMI, workstation |\n| Plant DMZ | 10.200.30.0/24 | Firewall, IDS/IPS sensor |\n| Attacker | 10.200.60.0/24 | Kali Linux (the threat actor) |\n\nNote the **IDS/IPS Sensor** node in the Plant DMZ zone. This represents the OTForge Suricata sensor that monitors traffic across ALL zones. You will configure it in a later step.\n\n---\n\n## Generate Baseline DNP3 Traffic\n\nBefore looking at attack traffic, generate legitimate SCADA polling traffic so you have a baseline to compare against.\n\n**From the Workstation Desktop terminal** (click Engineering Workstation in the toolbar → open a terminal):\n```\npython3 /root/Desktop/Protocols/dnp3_poll.py {{rtu-1.ip}}\n```\n\nThis simulates the SCADA master polling RTU-1 for Class 0 data (all analog inputs). You should see the RTU respond with pipeline pressure and flow rate values.\n\nRun the same command for RTU-2:\n```\npython3 /root/Desktop/Protocols/dnp3_poll.py {{rtu-2.ip}}\n```",
+        "command": "python3 /root/Desktop/Protocols/dnp3_poll.py {{rtu-1.ip}}",
+        "successCheck": "Both RTU polls returned analog input data — pipeline pressure and flow rate values that drift slowly over time. The workstation terminal shows the DNP3 response without errors. Proceed to examine these connections in Zeek logs."
+      },
+      {
+        "id": "step-02-zeek-baseline",
+        "title": "Step 2 — Read the Zeek DNP3 Log",
+        "body": "## Opening the Monitor Panel\n\n1. Click the **Monitor** button in the OTForge toolbar (visible only while the simulation is running).\n2. The Monitor panel slides open on the right.\n3. Click the **Zeek** filter tab to show only Zeek entries.\n\n## Understanding the DNP3 Log\n\nZeek's `dnp3.zeek` script logs every DNP3 application-layer message it sees. For each DNP3 message, Zeek records:\n\n| Field | Meaning | Example |\n|---|---|---|\n| `ts` | Timestamp | 2026-06-29T14:22:01Z |\n| `orig_h` | Source IP (the master) | 10.200.20.10 |\n| `resp_h` | Destination IP (the outstation) | 10.200.10.10 |\n| `fc_request` | Function code sent by master | 1 (= READ) |\n| `fc_reply` | Function code in outstation response | 129 (= RESPONSE) |\n\n**What normal traffic looks like:**\n- Source is always the **SCADA master** at `10.200.20.10`\n- `fc_request` is **1** (READ) — the master is polling for data\n- Both RTU IPs appear as destinations (`10.200.10.10` and `10.200.10.11`)\n\n**What attack traffic will look like (coming in the next step):**\n- Source will be `10.200.60.10` — the Kali attacker machine\n- `fc_request` will be **3** (DIRECT OPERATE) — not a read, but a command\n- Destination will be `10.200.10.11` (RTU-2, Compressor Station B)\n\nZeek does NOT alert — it only logs. But this log is forensic gold: it shows you the exact moment the attacker shifted from reconnaissance to operational attack.",
+        "successCheck": "In the Monitor panel (Zeek tab), you can see connection entries for RTU-1 (10.200.10.10) and RTU-2 (10.200.10.11) with fc_request: 1 (READ) from the SCADA master IP 10.200.20.10. These are the legitimate polling connections. Note the source IP — you will use this to contrast with the attack source IP in the next step."
+      },
+      {
+        "id": "step-03-suricata-baseline",
+        "title": "Step 3 — Check Suricata Baseline",
+        "body": "## The Pre-Loaded OTForge IDS Rules\n\nOTForge ships with a set of custom ICS/OT Suricata rules in the `ics-rules.rules` file. These are always loaded at simulation startup.\n\n**Click the Suricata filter tab** in the Monitor panel. You should see **no alerts** for the legitimate DNP3 polling you just ran. This is correct — the OTForge rules are tuned to detect attack patterns, not normal SCADA polling.\n\nThe most relevant pre-loaded rule for this lab is:\n\n```\nalert tcp $HOME_NET any -> $HOME_NET 20000\n    (msg:\"ICS-SIM DNP3 Direct Operate received\";\n     flow:to_server,established;\n     content:\"|05 64|\"; offset:0; depth:2;\n     byte_test:1,&,0x04,3;\n     sid:9000010; rev:2;\n     classtype:protocol-command-decode;)\n```\n\n**Dissecting this rule:**\n- `content:\"|05 64|\"; offset:0; depth:2` — matches the DNP3 start bytes (0x05 0x64) at the very beginning of the TCP payload. These two bytes are the DNP3 **link-layer start sequence** — every valid DNP3 frame begins with them.\n- `byte_test:1,&,0x04,3` — checks whether bit 2 (0x04) is set in the byte at position 3 of the frame. This byte is the **link-layer control field**; bit 2 = 1 signals that the frame carries user data from the master. This filters out ACKs and link-status frames.\n\n**The weakness of this rule:** It detects ANY DNP3 data frame from ANY source to ANY destination on port 20000. It fires on legitimate SCADA polling too — it's only quiet now because no writes are happening. It uses raw byte matching rather than DNP3 application-layer keyword awareness.\n\n**Your goal** in this lab is to write a BETTER rule using the `dnp3_func` keyword — application-layer matching that fires only on Direct Operate (FC 03), regardless of which DNP3 sources are involved.\n\n**Important:** The existing rule (SID 9000010) fires on ANY DNP3 data frame. You will write a new rule that fires ONLY on FC 03 Direct Operate — much more precise.",
+        "successCheck": "The Suricata Monitor tab shows no alerts for the legitimate polling you ran in Step 1. You understand that the pre-loaded rule (SID 9000010) uses raw byte matching, and that your custom rule will use the higher-level dnp3_func:3 keyword. Proceed to execute the attack."
+      },
+      {
+        "id": "step-04-attack",
+        "title": "Step 4 — Execute the DNP3 Attack",
+        "body": "## Attack Scenario\n\nThe attacker has already achieved lateral movement onto the OT network through a misconfigured firewall rule. They have identified RTU-2 (Compressor Station B) as the high-value target — tripping the compressor offline disrupts gas compression, causing pipeline pressure to rise dangerously in the gathering system upstream.\n\nThe attack uses **DNP3 Direct Operate (Function Code 3)** to set Binary Output 0 on RTU-2. In the real Ironhorse system, Binary Output 0 is wired to the compressor contactor relay: writing TRUE starts the compressor, writing FALSE trips it offline.\n\n**This is not a protocol exploit.** DNP3 does not require authentication. The attack script simply establishes a valid DNP3 TCP session and sends a well-formed Direct Operate command — exactly as a legitimate master would, but from an unauthorized source.\n\n---\n\n## Running the Attack\n\n1. Click the **⚔ Kali Terminal** button in the OTForge toolbar.\n2. The attack machine terminal opens.\n3. Run the DNP3 attack script:\n```\npython3 /root/Desktop/Attack_Scripts/dnp3_attack.py\n```\n\nThe script reads `RTU_IP` from the environment (pre-configured to `{{rtu-2.ip}}`). It:\n1. Opens a TCP connection to RTU-2 on port 20000\n2. Sends a DNP3 Link Status request to verify connectivity\n3. Sends a **Direct Operate** request for Binary Output 0\n4. Reports the result\n\n---\n\n## Watch the Canvas\n\nWhile the attack runs, switch to the **OT Process** layer in OTForge. The edge between the IDS/IPS Sensor and the network should change color when Suricata detects the attack traffic.",
+        "command": "python3 /root/Desktop/Attack_Scripts/dnp3_attack.py {{rtu-2.ip}}",
+        "successCheck": "The attack script completed — it either reported success (the Direct Operate was acknowledged) or a timeout (the outstation received the command but the pure-Python implementation doesn't send a full DNP3 response). Either outcome is correct: the important thing is that the DNP3 packet was sent across the wire and Suricata could see it. Proceed to examine the Monitor."
+      },
+      {
+        "id": "step-05-detect",
+        "title": "Step 5 — Spot the Attack in Monitor",
+        "body": "## Suricata Alert: SID 9000010\n\n1. Click the **Monitor** button in the OTForge toolbar.\n2. Switch to the **Suricata** filter tab.\n3. You should see an alert: **`ICS-SIM DNP3 Direct Operate received`** with SID 9000010.\n\nThis alert fired because the raw-byte rule matched the DNP3 start bytes (`|05 64|`) and the link-layer control byte confirmed it was a data frame from a master.\n\n---\n\n## Zeek Forensics: Catch the Anomaly\n\n4. Switch to the **Zeek** filter tab.\n5. Look for a new entry:\n   - **Source IP:** `10.200.60.10` ← this is Kali, NOT the SCADA master\n   - **Destination IP:** `10.200.10.11` ← RTU-2\n   - **Port:** 20000\n   - **fc_request:** 3 ← Direct Operate, NOT a normal read (fc_request 1)\n\nThis single Zeek log entry tells the complete attack story without any rule writing: an unauthorized source sent a Direct Operate command to the compressor RTU. Zeek recorded it because it logs ALL DNP3 traffic — no signature required.\n\n---\n\n## The Detection Gap\n\nBoth tools fired — so why do you still need to write a custom rule?\n\n**Problem 1:** The existing SID 9000010 also fires on legitimate SCADA polling. In a real deployment with dozens of RTUs polling every few seconds, this rule generates thousands of alerts per hour — **alert fatigue** renders it useless.\n\n**Problem 2:** Neither the alert nor the Zeek log STOPPED the attack. The Direct Operate command reached RTU-2. In IDS mode, detection is after the fact.\n\n**Your solution:** Write a **precise alert rule** that fires ONLY on FC 03 from the attacker subnet, then upgrade it to a **reject rule** that blocks the packet before it reaches the RTU.",
+        "successCheck": "In the Monitor Suricata tab you can see an ICS-SIM DNP3 Direct Operate received alert with SID 9000010. In the Zeek tab you can see a DNP3 connection entry from 10.200.60.10 (Kali) to {{rtu-2.ip}} with fc_request: 3 (Direct Operate). The attack succeeded — the command was delivered to the RTU — which is why the next steps add a prevention rule."
+      },
+      {
+        "id": "step-06-rule-anatomy",
+        "title": "Step 6 — Suricata Rule Anatomy",
+        "body": "## A Complete Suricata Rule\n\nEvery Suricata rule follows this structure:\n\n```\n<action> <protocol> <src-ip> <src-port> -> <dst-ip> <dst-port> (<options>)\n```\n\nHere is the exact rule you will write in the next step:\n\n```\nalert dnp3 10.200.60.0/24 any -> 10.200.10.0/24 20000\n    (msg:\"LAB03-ALERT Unauthorized DNP3 Direct Operate from attacker subnet\";\n     dnp3_func:3;\n     classtype:attempted-admin;\n     sid:9100001;\n     rev:1;)\n```\n\n---\n\n## Field-by-Field Explanation\n\n**`alert`** — The **action** keyword. Possible values:\n- `alert` — log the event and pass the packet (IDS mode)\n- `drop` — silently discard the packet without notifying the sender (IPS mode)\n- `reject` — discard the packet AND send a TCP RST to the sender (IPS mode — the connection is actively refused)\n- `pass` — whitelist: skip all other rules and allow this packet\n\n**`dnp3`** — The **protocol** keyword. Suricata parses DNP3 at the application layer on port 20000. Using `dnp3` instead of `tcp` enables the DNP3-specific keywords (`dnp3_func`, `dnp3_obj`, `dnp3_ind`) and prevents this rule from firing on non-DNP3 TCP traffic on port 20000.\n\n**`10.200.60.0/24 any`** — Source IP/port. The attacker subnet / any source port.\n\n**`->`** — Direction. Suricata also supports `<>` (bidirectional), but directional rules are more precise.\n\n**`10.200.10.0/24 20000`** — Destination IP/port. The OT field network / DNP3 port.\n\n**`msg:`** — Human-readable alert message shown in logs and the Monitor panel.\n\n**`dnp3_func:3`** — **This is the key keyword.** Matches on the DNP3 application-layer **function code**. FC 3 is Direct Operate. Unlike the raw-byte rule (SID 9000010), this keyword understands the DNP3 application layer and fires ONLY on Direct Operate, not on reads or responses. Common function codes:\n- `1` = Read (normal poll)\n- `2` = Write\n- `3` = Direct Operate ← the attack\n- `4` = Direct Operate No Ack\n- `13` = Cold Restart (disruptive)\n- `14` = Warm Restart\n\n**`classtype:attempted-admin`** — Category used by Suricata for prioritization and reporting. Other ICS-relevant classtypes: `protocol-command-decode`, `policy-violation`, `attempted-recon`.\n\n**`sid:9100001`** — **Signature ID** — a globally unique rule identifier. OTForge bundled rules use SIDs 9000001–9099999. Use 9100001+ for your custom lab rules to avoid conflicts.\n\n**`rev:1`** — Rule revision number. Increment when you modify a rule (required for some rule management tools).",
+        "successCheck": "You can explain what each field in the rule does. You understand the difference between alert and reject, and why dnp3_func:3 is more precise than raw-byte matching. Proceed to write this rule in the IDS/IPS Panel."
+      },
+      {
+        "id": "step-07-write-alert",
+        "title": "Step 7 — Write the Alert Rule in the IDS/IPS Panel",
+        "body": "## Opening the IDS/IPS Panel\n\nOTForge provides a built-in rule editor that pushes custom Suricata rules into the IDS container when the simulation starts.\n\n1. In the OTForge canvas, click the **IDS/IPS Sensor** node (in the Plant DMZ zone — labeled \"Suricata IDS/IPS Sensor\").\n2. The **Properties Panel** on the right side updates to show the IDS/IPS configuration.\n3. Scroll down to the **Custom Suricata Rules** section — a multi-line text area.\n\n---\n\n## Typing the Alert Rule\n\n4. Click inside the **Custom Rules** textarea.\n5. Type (or copy) the following rule exactly — every semicolon and parenthesis matters:\n\n```\nalert dnp3 10.200.60.0/24 any -> 10.200.10.0/24 20000 (msg:\"LAB03-ALERT Unauthorized DNP3 Direct Operate from attacker subnet\"; dnp3_func:3; classtype:attempted-admin; sid:9100001; rev:1;)\n```\n\n6. Click **Save** (or the save icon) to write the rule into the scenario.\n\n---\n\n## Reloading the Simulation\n\nCustom rules take effect when the simulation (re)starts — Suricata reads them at container startup.\n\n7. In the OTForge toolbar, click **Stop Simulation** (the square stop button).\n8. Wait for all containers to stop (status indicator goes grey).\n9. Click **Run Simulation** (the blue play button) to restart with the new rule loaded.\n\n---\n\n## How It Works\n\nBehind the scenes, OTForge base64-encodes your rule text and passes it as the `IDS_CUSTOM_RULES_B64` environment variable to the Suricata container. At startup, the Suricata entrypoint decodes it to `/etc/suricata/rules/custom.rules`, which is listed in the Suricata config's `rule-files` section. Your rule is now active alongside the built-in OTForge rules.",
+        "successCheck": "The Custom Rules textarea in the IDS/IPS Panel shows your alert rule. You clicked Save, then stopped and restarted the simulation. The simulation is running again (all containers green). Proceed to run the attack again and verify your rule fires."
+      },
+      {
+        "id": "step-08-test-alert",
+        "title": "Step 8 — Test the Alert Rule",
+        "body": "## Re-Run the Attack\n\n1. Click the **⚔ Kali Terminal** button in the toolbar.\n2. Run the attack script again:\n```\npython3 /root/Desktop/Attack_Scripts/dnp3_attack.py\n```\n\n---\n\n## Verify Your Rule Fired\n\n3. Click **Monitor** in the OTForge toolbar.\n4. Switch to the **Suricata** filter tab.\n5. Look for TWO alerts this time:\n   - **SID 9000010:** `ICS-SIM DNP3 Direct Operate received` — the pre-loaded byte-match rule\n   - **SID 9100001:** `LAB03-ALERT Unauthorized DNP3 Direct Operate from attacker subnet` — **your rule!**\n\nYour rule fires for a different reason than SID 9000010: it used the DNP3 application-layer keyword `dnp3_func:3`, which means Suricata's DNP3 protocol parser confirmed the function code before firing. This is more reliable and generates far fewer false positives — it would NOT fire on legitimate polling (FC 01) from the SCADA master.\n\n---\n\n## The Detection Gap Is Still There\n\nNotice: **the attack still succeeded.** Both rules fire alerts, but alerts are after-the-fact. The Direct Operate command reached RTU-2 before any alert was generated.\n\nThis is the fundamental limitation of IDS mode: detection without prevention. The next step converts your alert rule into a prevention rule that **drops the packet before it reaches the RTU**.",
+        "command": "python3 /root/Desktop/Attack_Scripts/dnp3_attack.py {{rtu-2.ip}}",
+        "successCheck": "In the Monitor Suricata tab, you can see SID 9100001 alert with your message LAB03-ALERT Unauthorized DNP3 Direct Operate from attacker subnet. The attack script still completed (the command was delivered), confirming IDS mode detects but does not block. Proceed to add the IPS reject rule."
+      },
+      {
+        "id": "step-09-write-reject",
+        "title": "Step 9 — Upgrade to IPS: Write the Reject Rule",
+        "body": "## IDS vs IPS — The Same Rule, One Keyword Changed\n\nTo convert from IDS to IPS, you change the action from `alert` to `reject`. Everything else — the protocol, addresses, ports, and keyword options — stays the same.\n\n**`reject` sends a TCP RST** (connection reset) to the sender, actively terminating the connection. The attacker's script receives `[Connection refused]` or `[RST]` almost immediately. The malicious DNP3 packet **never reaches RTU-2**.\n\n**`drop` (alternative)** silently discards the packet without RST. The attacker's script eventually times out — slower detection but the attacker learns less about whether a block is in place.\n\nFor this lab, use `reject` so you can clearly see the block taking effect.\n\n---\n\n## Adding the Reject Rule\n\n1. Click the **IDS/IPS Sensor** node on the canvas.\n2. In the Properties Panel, locate the **Custom Rules** textarea (which still contains your alert rule from Step 7).\n3. Add the reject rule on a NEW LINE after the existing alert rule:\n\n```\nreject dnp3 10.200.60.0/24 any -> 10.200.10.0/24 20000 (msg:\"LAB03-BLOCK Unauthorized DNP3 Direct Operate from attacker subnet\"; dnp3_func:3; classtype:attempted-admin; sid:9100002; rev:1;)\n```\n\nYour textarea should now contain TWO rules — the alert rule (sid:9100001) and the reject rule (sid:9100002).\n\n4. Click **Save**.\n\n---\n\n## Suricata Action Priority\n\nWhen multiple rules match the same packet, Suricata uses a default action-priority order:\n\n```\npass > drop > reject > alert\n```\n\nThis means your reject rule (higher priority than alert) will fire first on the Direct Operate packet. The packet is dropped and rejected. The alert rule also matches the same packet, but its action is overridden by the higher-priority reject action. Both SIDs will appear in the alert log — SID 9100002 will show `Action: reject`.\n\n---\n\n## Restart the Simulation\n\n5. Click **Stop Simulation**, wait for all containers to stop.\n6. Click **Run Simulation** to reload with both rules active.\n7. Wait for the status indicator to show all containers running.",
+        "successCheck": "Your Custom Rules textarea now contains both the alert rule (sid:9100001) and the reject rule (sid:9100002). You clicked Save, then restarted the simulation. The simulation is running again. Proceed to run the attack one final time — it should now be blocked."
+      },
+      {
+        "id": "step-10-confirm-block",
+        "title": "Step 10 — Confirm the Block",
+        "body": "## Run the Attack a Final Time\n\n1. Click the **⚔ Kali Terminal** button.\n2. Run the attack script:\n```\npython3 /root/Desktop/Attack_Scripts/dnp3_attack.py\n```\n\n**This time the output should be different.** Instead of a completed Direct Operate, you should see an error such as:\n- `Connection refused`\n- `Connection reset by peer`\n- `[RST]`\n- Or a short timeout\n\nThe TCP RST sent by Suricata's `reject` action terminates the connection before the DNP3 application layer even establishes. The Direct Operate command **never reaches RTU-2**.\n\n---\n\n## Verify in Monitor\n\n3. Open **Monitor → Suricata** tab.\n4. You should see the reject rule fire:\n   - **SID 9100002:** `LAB03-BLOCK Unauthorized DNP3 Direct Operate from attacker subnet`\n\nNote that SID 9100001 (your alert rule) also fired — both matched the same packet. But the `reject` action took precedence and the packet was dropped before delivery.\n\n5. Switch to the **Zeek** tab. You may see a partial connection record for the attacker's TCP session, but the DNP3 application-layer data was never delivered — Zeek's `fc_request` field will be empty or absent for this connection.\n\n---\n\n## Security Reflection\n\nYou have now experienced the complete IDS → IPS progression:\n\n| Step | What happened | Attack result |\n|---|---|---|\n| Pre-loaded rule only | SID 9000010 alerted on raw bytes | Attack SUCCEEDED |\n| Your alert rule (Step 8) | SID 9100001 alerted on FC 03 | Attack SUCCEEDED |\n| Your reject rule (Step 10) | SID 9100002 rejected packet | Attack BLOCKED |\n\n**The protocol weakness remains.** DNP3 has no authentication — any host that reaches port 20000 can attempt a Direct Operate. The IPS rule compensates for this at the network layer by enforcing a strict allowlist: only the SCADA master's subnet is permitted to send Direct Operate commands to the OT field network.\n\n**Trade-off: Availability vs. Security.** In a production OT environment, deploying an IPS inline introduces a potential single point of failure. If the IPS goes offline or malfunctions, it may block legitimate SCADA commands. This is why OT operators traditionally prefer IDS (non-blocking) over IPS — but that preference is changing as ICS-aware IPS platforms improve their reliability.",
+        "command": "python3 /root/Desktop/Attack_Scripts/dnp3_attack.py {{rtu-2.ip}}",
+        "successCheck": "The attack script output shows a connection error, refused connection, or RST — the Direct Operate was NOT delivered. In the Monitor Suricata tab, SID 9100002 (your reject rule) fired. The Zeek tab shows an incomplete or missing DNP3 application-layer record for the attacker's session. The compressor RTU was protected by your rule. Congratulations — you have successfully built an ICS-aware IPS rule."
+      },
+      {
+        "id": "step-11-report",
+        "title": "Step 11 — Lab Report",
+        "body": "## Lab Report Requirements\n\nSubmit a written report (minimum 600 words) addressing the following:\n\n---\n\n### Part 1 — Technical Analysis (30%)\n\n**Evidence gathering:** In your own words, describe what you observed in the Zeek DNP3 log during the attack. Provide:\n- The source and destination IP addresses of the malicious connection\n- The DNP3 function code seen in `fc_request` and what it means\n- How this Zeek log entry differs from legitimate SCADA polling traffic\n\n**Rule comparison:** Compare SID 9000010 (the pre-loaded byte-match rule) with SID 9100001 (your `dnp3_func:3` rule). Which would generate more false positives in a real deployment? Why?\n\n---\n\n### Part 2 — IDS vs IPS Trade-offs (40%)\n\nExplain, with specific examples from this lab, the difference between:\n1. IDS mode (alert): What happened to the attack when only the alert rule was active?\n2. IPS mode (reject): What changed when the reject rule was added?\n\nDiscuss the **availability trade-off** of deploying an IPS inline on an OT network. What risks does a misconfigured or failed IPS introduce? How do OT operators typically mitigate this risk?\n\n---\n\n### Part 3 — Defense Recommendations (30%)\n\nAs the new network security engineer at Ironhorse Midstream, you have been asked to present a defense-in-depth strategy. Your answer must include at least THREE layers of defense (beyond just the IPS rule you wrote) and explain why each layer is necessary.\n\nConsider: network segmentation, protocol whitelisting, application-layer inspection, DNP3 Secure Authentication v5 (SAv5), asset inventory and vulnerability scanning, incident response procedures, and personnel training.\n\n---\n\n### Deliverables\n\n- Written report (minimum 600 words, not counting screenshots)\n- Screenshot of the Monitor panel showing SID 9100001 alert (IDS mode)\n- Screenshot of the Monitor panel showing SID 9100002 reject alert (IPS mode)\n- Screenshot of the Zeek log showing the attack's source IP and fc_request: 3\n- Your complete Custom Rules text (both the alert and reject rules)",
+        "successCheck": "Review the lab report requirements above. Ensure you have screenshots from Steps 8 and 10 before stopping the simulation. When you are finished, stop the simulation using the Stop button in the OTForge toolbar to free system resources."
+      }
+    ]
+  },
+  "visual": {
+    "nodes": [
+      {
+        "id": "attack-1",
+        "type": "device",
+        "position": { "x": 500, "y": 60 },
+        "data": {
+          "nodeId": "attack-1",
+          "label": "Kali Linux\n(Attacker)",
+          "category": "attack-machine",
+          "zone": "attacker"
+        }
+      },
+      {
+        "id": "firewall-1",
+        "type": "device",
+        "position": { "x": 280, "y": 160 },
+        "data": {
+          "nodeId": "firewall-1",
+          "label": "Plant Firewall",
+          "category": "firewall",
+          "zone": "plant-dmz"
+        }
+      },
+      {
+        "id": "ids-1",
+        "type": "ids-ips",
+        "position": { "x": 500, "y": 160 },
+        "data": {
+          "nodeId": "ids-1",
+          "label": "Suricata IDS/IPS\nSensor",
+          "category": "ids-ips",
+          "zone": "plant-dmz"
+        }
+      },
+      {
+        "id": "scada-1",
+        "type": "device",
+        "position": { "x": 60, "y": 280 },
+        "data": {
+          "nodeId": "scada-1",
+          "label": "SCADA Master",
+          "zone": "control"
+        }
+      },
+      {
+        "id": "historian-1",
+        "type": "historian",
+        "position": { "x": 200, "y": 280 },
+        "data": {
+          "nodeId": "historian-1",
+          "label": "Process\nHistorian",
+          "category": "historian",
+          "zone": "control"
+        }
+      },
+      {
+        "id": "hmi-1",
+        "type": "hmi",
+        "position": { "x": 340, "y": 280 },
+        "data": {
+          "nodeId": "hmi-1",
+          "label": "HMI",
+          "category": "hmi",
+          "zone": "control"
+        }
+      },
+      {
+        "id": "workstation-1",
+        "type": "device",
+        "position": { "x": 480, "y": 280 },
+        "data": {
+          "nodeId": "workstation-1",
+          "label": "Engineering\nWorkstation",
+          "category": "engineering-workstation",
+          "zone": "control"
+        }
+      },
+      {
+        "id": "switch-ot",
+        "type": "device",
+        "position": { "x": 360, "y": 380 },
+        "data": {
+          "nodeId": "switch-ot",
+          "label": "OT Field Switch",
+          "category": "switch",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "rtu-1",
+        "type": "device",
+        "position": { "x": 80, "y": 580 },
+        "data": {
+          "nodeId": "rtu-1",
+          "label": "RTU-1\nPipeline Sect. A",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "rtu-2",
+        "type": "device",
+        "position": { "x": 360, "y": 580 },
+        "data": {
+          "nodeId": "rtu-2",
+          "label": "RTU-2\nCompressor Stn B",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "ied-1",
+        "type": "device",
+        "position": { "x": 640, "y": 580 },
+        "data": {
+          "nodeId": "ied-1",
+          "label": "IED-1\nEmergency Shutdown",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "compressor-a",
+        "type": "pump",
+        "position": { "x": 80, "y": 780 },
+        "data": {
+          "nodeId": "compressor-a",
+          "label": "Compressor A",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "compressor-b",
+        "type": "pump",
+        "position": { "x": 360, "y": 780 },
+        "data": {
+          "nodeId": "compressor-b",
+          "label": "Compressor B\n(Attack Target)",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "esd-valve",
+        "type": "valve",
+        "position": { "x": 640, "y": 780 },
+        "data": {
+          "nodeId": "esd-valve",
+          "label": "ESD Valve",
+          "zone": "ot"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-attack-ids",
+        "source": "attack-1",
+        "target": "ids-1",
+        "data": {
+          "protocol": "none",
+          "label": "Monitored traffic"
+        }
+      },
+      {
+        "id": "e-attack-firewall",
+        "source": "attack-1",
+        "target": "firewall-1",
+        "data": {
+          "protocol": "none",
+          "label": ""
+        }
+      },
+      {
+        "id": "e-firewall-scada",
+        "source": "firewall-1",
+        "target": "scada-1",
+        "data": {
+          "protocol": "none",
+          "label": ""
+        }
+      },
+      {
+        "id": "e-scada-switch",
+        "source": "scada-1",
+        "target": "switch-ot",
+        "data": {
+          "protocol": "dnp3",
+          "label": "DNP3 :20000"
+        }
+      },
+      {
+        "id": "e-historian-switch",
+        "source": "historian-1",
+        "target": "switch-ot",
+        "data": {
+          "protocol": "none",
+          "label": ""
+        }
+      },
+      {
+        "id": "e-hmi-switch",
+        "source": "hmi-1",
+        "target": "switch-ot",
+        "data": {
+          "protocol": "none",
+          "label": ""
+        }
+      },
+      {
+        "id": "e-workstation-switch",
+        "source": "workstation-1",
+        "target": "switch-ot",
+        "data": {
+          "protocol": "none",
+          "label": ""
+        }
+      },
+      {
+        "id": "e-switch-rtu1",
+        "source": "switch-ot",
+        "target": "rtu-1",
+        "data": {
+          "protocol": "dnp3",
+          "label": "DNP3 :20000\nOutstation 10"
+        }
+      },
+      {
+        "id": "e-switch-rtu2",
+        "source": "switch-ot",
+        "target": "rtu-2",
+        "data": {
+          "protocol": "dnp3",
+          "label": "DNP3 :20000\nOutstation 11"
+        }
+      },
+      {
+        "id": "e-switch-ied1",
+        "source": "switch-ot",
+        "target": "ied-1",
+        "data": {
+          "protocol": "dnp3",
+          "label": "DNP3 :20000\nOutstation 12"
+        }
+      },
+      {
+        "id": "e-rtu1-compressor-a",
+        "source": "rtu-1",
+        "target": "compressor-a",
+        "data": {
+          "protocol": "none",
+          "label": "Binary Output 0",
+          "fluidType": "electric"
+        }
+      },
+      {
+        "id": "e-rtu2-compressor-b",
+        "source": "rtu-2",
+        "target": "compressor-b",
+        "data": {
+          "protocol": "none",
+          "label": "Binary Output 0",
+          "fluidType": "electric"
+        }
+      },
+      {
+        "id": "e-ied1-esd-valve",
+        "source": "ied-1",
+        "target": "esd-valve",
+        "data": {
+          "protocol": "none",
+          "label": "Trip Signal",
+          "fluidType": "electric"
+        }
+      }
+    ],
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.9
+    }
+  },
+  "network": {
+    "segments": [
+      {
+        "zone": "ot",
+        "subnet": "10.200.10.0/24",
+        "gateway": "10.200.10.1",
+        "dockerNetwork": "ics-sim-ot-net"
+      },
+      {
+        "zone": "control",
+        "subnet": "10.200.20.0/24",
+        "gateway": "10.200.20.1",
+        "dockerNetwork": "ics-sim-control-net"
+      },
+      {
+        "zone": "plant-dmz",
+        "subnet": "10.200.30.0/24",
+        "gateway": "10.200.30.1",
+        "dockerNetwork": "ics-sim-plant-dmz-net"
+      },
+      {
+        "zone": "attacker",
+        "subnet": "10.200.60.0/24",
+        "gateway": "10.200.60.1",
+        "dockerNetwork": "ics-sim-attacker-net"
+      }
+    ],
+    "routes": []
+  },
+  "devices": {
+    "devices": {
+      "rtu-1": {
+        "nodeId": "rtu-1",
+        "category": "ied",
+        "ipAddress": "10.200.10.10",
+        "protocols": ["dnp3"],
+        "dnp3": {
+          "port": 20000,
+          "outstationAddress": 10,
+          "masterAddress": 1
+        }
+      },
+      "rtu-2": {
+        "nodeId": "rtu-2",
+        "category": "ied",
+        "ipAddress": "10.200.10.11",
+        "protocols": ["dnp3"],
+        "dnp3": {
+          "port": 20000,
+          "outstationAddress": 11,
+          "masterAddress": 1
+        }
+      },
+      "ied-1": {
+        "nodeId": "ied-1",
+        "category": "ied",
+        "ipAddress": "10.200.10.12",
+        "protocols": ["dnp3"],
+        "dnp3": {
+          "port": 20000,
+          "outstationAddress": 12,
+          "masterAddress": 1
+        }
+      },
+      "switch-ot": {
+        "nodeId": "switch-ot",
+        "category": "switch",
+        "ipAddress": "10.200.10.20",
+        "protocols": ["none"]
+      },
+      "scada-1": {
+        "nodeId": "scada-1",
+        "category": "scada-server",
+        "ipAddress": "10.200.20.10",
+        "protocols": ["none"]
+      },
+      "workstation-1": {
+        "nodeId": "workstation-1",
+        "category": "engineering-workstation",
+        "ipAddress": "10.200.20.13",
+        "protocols": ["none"]
+      },
+      "firewall-1": {
+        "nodeId": "firewall-1",
+        "category": "firewall",
+        "ipAddress": "10.200.30.11",
+        "protocols": ["none"]
+      },
+      "attack-1": {
+        "nodeId": "attack-1",
+        "category": "attack-machine",
+        "ipAddress": "10.200.60.10",
+        "protocols": ["none"],
+        "extraNetworks": ["ot"]
+      }
+    }
+  },
+  "security": {
+    "defaultFirewallPolicy": "deny",
+    "firewallRules": [
+      {
+        "id": "rule-allow-control-ot-dnp3",
+        "sourceZone": "control",
+        "destinationZone": "ot",
+        "protocol": "tcp",
+        "destinationPort": 20000,
+        "action": "allow",
+        "comment": "Allow SCADA master and engineering workstation to poll RTUs via DNP3"
+      },
+      {
+        "id": "rule-allow-attacker-ot-dnp3",
+        "sourceZone": "attacker",
+        "destinationZone": "ot",
+        "protocol": "tcp",
+        "destinationPort": 20000,
+        "action": "allow",
+        "comment": "INTENTIONALLY INSECURE: DNP3 reachable from attacker network — demonstrates missing segmentation. Students add a reject rule in Suricata to remediate at the IPS layer."
+      },
+      {
+        "id": "rule-allow-ot-control-any",
+        "sourceZone": "ot",
+        "destinationZone": "control",
+        "protocol": "any",
+        "destinationPort": "any",
+        "action": "allow",
+        "comment": "Allow RTU and IED responses back to SCADA master"
+      },
+      {
+        "id": "rule-allow-control-plant-dmz",
+        "sourceZone": "control",
+        "destinationZone": "plant-dmz",
+        "protocol": "any",
+        "destinationPort": "any",
+        "action": "allow",
+        "comment": "Allow control zone to reach plant DMZ (for workstation to access OTForge monitoring)"
+      }
+    ],
+    "ids": {
+      "enabledRulesets": [
+        "emerging-scada",
+        "emerging-dnp3"
+      ],
+      "disabledRuleIds": [],
+      "zeekScripts": [
+        "dnp3.zeek"
+      ]
+    },
+    "logging": {
+      "retentionDays": 7,
+      "influxdbEnabled": true,
+      "lokiEnabled": true
+    }
+  }
+}
