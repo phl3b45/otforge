@@ -1,0 +1,308 @@
+{
+  "meta": {
+    "formatVersion": "1.0",
+    "name": "OpenPLC Lab 01 — Ladder Diagram Basics",
+    "description": "A guided beginner lab that teaches IEC 61131-3 Ladder Diagram (LD) programming using the OpenPLC Editor. Students write a one-rung LD program that maps a command coil to a pump output, compile it to Structured Text, upload it to a live OpenPLC Runtime, and verify control through a FUXA SCADA toggle switch. Designed as a prerequisite engineering lab for ICS/SCADA cybersecurity courses at UTSA — students who understand how PLC programs are written are better equipped to reason about what an attacker disrupts when they modify coil values.",
+    "sector": "general-industrial",
+    "author": "Ian Burres — UTSA",
+    "createdAt": "2026-06-29T00:00:00.000Z",
+    "updatedAt": "2026-06-29T00:00:00.000Z",
+    "appVersion": "0.13.0",
+    "locked": false,
+    "brief": "## Mission: Program a PLC to Control a Pump\n\nBefore analyzing ICS attacks, you need to understand what PLC engineers actually write. In this lab you will:\n\n1. Open the **OpenPLC Editor** on the Engineering Workstation and create a new Ladder Diagram project.\n2. Declare two Boolean output variables — `PUMP_CMD` (the operator command) and `PUMP_RUN` (the pump output) — and assign them to Modbus coil addresses.\n3. Draw a single LD rung: a normally-open **contact** for `PUMP_CMD` wired to an **output coil** for `PUMP_RUN`.\n4. Compile the LD program and upload it to the **OpenPLC Runtime** running in the lab.\n5. Open **FUXA** and toggle the on/off switch — watch the pump indicator respond in real time.\n\n**Why this matters for security:** When attackers write a Modbus coil, they are overriding exactly the variables you will define here. After this lab you will understand precisely what is being changed — and why an unauthorized write is dangerous.",
+    "requirements": {
+      "estimatedRamMb": 1536,
+      "estimatedCpuCores": 2,
+      "containerCount": 5
+    },
+    "tutorialSteps": [
+      {
+        "id": "step-00-welcome",
+        "title": "Welcome — What Is Ladder Diagram?",
+        "body": "## What Is Ladder Diagram (LD)?\n\nLadder Diagram is the most widely used IEC 61131-3 programming language for PLCs. It was designed in the 1960s to look like electrical relay schematics — the engineers who wired motor control panels could read the same logic in software form.\n\nAn LD program is drawn as a series of horizontal **rungs** stretched between two vertical **power rails** (like the rails of a ladder). Each rung carries logic from left to right:\n\n```\n Left rail                         Right rail\n    |                                  |\n    +--[ CONTACT ]--------( COIL )-----+\n    |                                  |\n```\n\n- **Contact — Normally Open (NO)** `[ ]` — passes current (logic 1) only when the associated variable is **TRUE**. When the variable is FALSE the contact is open and blocks current — exactly like a physical relay contact that is open at rest and closes when energised. This is the most common contact type and the one used in this lab.\n- **Contact — Normally Closed (NC)** `[/]` — the logical inverse of NO: passes current when the variable is **FALSE** and blocks current when TRUE. Think of it as a relay contact that is *closed at rest* and opens when the coil is pulled in. NC contacts are essential for **safety interlocks** — an Emergency Stop button, for instance, is always wired NC so that a broken wire or stuck button opens the circuit and halts the machine. In LD, an NC contact is drawn with a diagonal slash through it: `—[/]—`.\n\n| Contact | Symbol | Passes current when variable is | Typical use |\n|---|---|---|---|\n| Normally Open | `[ ]` | TRUE | Start buttons, enable conditions, run commands |\n| Normally Closed | `[/]` | FALSE | Stop buttons, E-stop interlocks, fault gates |\n\n**Example:** To add a hard stop to the pump rung, you would insert an NC contact for `EMRG_STOP` in series with `PUMP_CMD`. As long as `EMRG_STOP` is FALSE (no emergency), the NC contact passes current normally. The moment `EMRG_STOP` goes TRUE, the NC contact opens and `PUMP_RUN` drops to FALSE regardless of what `PUMP_CMD` says.\n\n```\n |--[ PUMP_CMD ]--[/ EMRG_STOP ]--( PUMP_RUN )--|\n```\n\n- **Coil** `( )` — represents an output being driven. The coil energises (sets TRUE) when current reaches it through all contacts on the rung.\n\n## What We Are Building\n\nThis lab uses the simplest meaningful LD program possible — one rung, two variables:\n\n- `PUMP_CMD` — a Boolean command coil. The FUXA operator toggle switch writes to this via Modbus.\n- `PUMP_RUN` — a Boolean pump output coil. The PLC logic copies `PUMP_CMD` into `PUMP_RUN` each scan cycle.\n\nThe rung reads: **if the operator issues a pump command, energise the pump output**.\n\nIn the OTForge canvas you will see the edge between the PLC and the pump node turn green when `PUMP_RUN` is TRUE and red when FALSE.\n\n## Variable-to-Modbus Mapping\n\nOpenPLC maps IEC variable addresses to Modbus coil numbers automatically:\n\n| Variable | IEC Address | Modbus Coil |\n|---|---|---|\n| PUMP_CMD | %QX0.0 | Coil 0 |\n| PUMP_RUN | %QX0.1 | Coil 1 |\n\nFUXA will toggle **Coil 0** and display the state of **Coil 1**.\n\n---\n\nClick **Run Simulation** in the OTForge toolbar (blue play button) and wait for all containers to show as running, then click **Next →**.",
+        "successCheck": "The simulation is running. You can see the PLC Controller and Pump nodes in the OT canvas. The edge between them is red — the pump is off because no program is controlling it yet. Click Next → to begin writing the program."
+      },
+      {
+        "id": "step-01-open-workstation",
+        "title": "Step 1 — Open the Engineering Workstation",
+        "body": "## Opening the Workstation\n\nThe Engineering Workstation is a Linux machine (Ubuntu 22.04 + Xfce4) with the **OpenPLC Editor** and Firefox pre-installed. You will write the LD program here and use Firefox to upload it to the PLC.\n\n**Steps:**\n1. Click the **🖥 Workstation** button in the OTForge toolbar (visible while the simulation is running).\n2. A browser-like window opens showing the Xfce4 desktop via noVNC.\n3. If the desktop is blank, wait 15 seconds for TigerVNC to finish initialising, then click inside the window.\n4. Right-click on the desktop and select **Open Terminal Here** to open a terminal.\n\n## Verify OpenPLC Editor is Ready\n\nIn the terminal, confirm the editor is installed by running the command below. It should print the path to the launcher script.\n\n**Note:** The Workstation VNC window does not support clipboard paste into the terminal. You must type commands manually.",
+        "command": "which openplc-editor",
+        "successCheck": "The terminal prints `/usr/local/bin/openplc-editor`. If you see 'command not found', the workstation container may still be initialising — wait 30 seconds and try again. Click Next → to launch the editor."
+      },
+      {
+        "id": "step-02-launch-editor",
+        "title": "Step 2 — Launch OpenPLC Editor",
+        "body": "## Launching the Graphical IDE\n\nOpenPLC Editor (Beremiz) is a wxPython desktop application that provides graphical editors for all five IEC 61131-3 languages: LD, FBD, SFC, IL, and ST. We will use the **LD editor** for this lab.\n\nIn the workstation terminal, run:\n\n```\nopenplc-editor &\n```\n\nThe `&` runs it in the background so the terminal remains usable. A graphical IDE window will open after a few seconds.\n\n## OpenPLC Editor Layout\n\nOnce the editor opens, you will see:\n\n- **Menu bar** — File, Edit, View, Run, Transfer, Help\n- **Left panel** — Project tree showing your POU (Program Organisation Unit) hierarchy\n- **Centre panel** — The LD / ST / FBD editor canvas (empty until you open a POU)\n- **Bottom panel** — Variable editor and compiler output tabs\n- **Toolbar** — LD drawing tools (contact, coil, power rail, wire, etc.) become active when an LD POU is open\n\n**Do not close the terminal window** — it keeps the editor's background process running.",
+        "successCheck": "The OpenPLC Editor window is open and you can see the menu bar and an empty left panel. No project is loaded yet. Click Next → to create a new project."
+      },
+      {
+        "id": "step-03-create-project",
+        "title": "Step 3 — Create a New LD Project",
+        "body": "## Creating the Project\n\n1. In the editor, go to **File → New**.\n2. A folder browser opens first — navigate to `/root/Desktop/` and create a new folder called `pump_tutorial`. Click **OK** (or **Select Folder**).\n3. A project creation dialog appears **immediately** after the folder is chosen. It has three fields all in one dialog:\n   - **Project Name:** type `pump_tutorial`\n   - **Program Name:** type `pump_control`\n   - **Initial Language:** select `LD`\n4. Click **OK**.\n\nThe editor creates the project with your `pump_control` LD program already in place — there is no separate \"Add POU\" step.\n\n## Understanding the Project Tree\n\nIn the left panel you will see the project tree. Click **Res0** once to expand it. You will see the entry **`config0.Res0.instance0`** — this is the pre-wired task instance that links your `pump_control` program to the runtime scan cycle. It is auto-generated and **read-only** (you cannot right-click it to modify). No additional wiring is needed.\n\nDouble-click **`pump_control`** (listed under the POUs section) to open the LD editor canvas in the centre panel.\n\n## What the Canvas Looks Like Now\n\nThe canvas will be **completely empty** — no power rails, no rungs. Both the left and right power rails must be added manually before you can draw any logic. You will do this in the next step.",
+        "successCheck": "The LD editor canvas is open and empty — no power rails or rungs yet. The left panel shows `pump_control` under POUs. Clicking `Res0` in the tree shows `config0.Res0.instance0`. Click Next → to declare variables."
+      },
+      {
+        "id": "step-04-declare-variables",
+        "title": "Step 4 — Declare Variables",
+        "body": "## Why Variable Addresses Matter\n\nIn OpenPLC, each variable can be *located* — assigned to a specific memory address in the IEC 61131-3 address space using the `AT %Qx.y` notation. These addresses map directly to Modbus coil numbers:\n\n| Address | Modbus Coil | Meaning |\n|---|---|---|\n| `%QX0.0` | Coil 0 | Digital output, byte 0, bit 0 |\n| `%QX0.1` | Coil 1 | Digital output, byte 0, bit 1 |\n\nBy locating `PUMP_CMD` at `%QX0.0` and `PUMP_RUN` at `%QX0.1`, FUXA can:\n- **Write** coil 0 to send a command to the PLC\n- **Read** coil 1 to display the pump output state\n\n## Opening the Variable Editor\n\n1. With `pump_control` open in the canvas, look at the bottom panel for a **Variables** tab.\n2. Click the **Variables** tab to open the variable editor.\n\n## Adding PUMP_CMD\n\nClick the **+** (Add variable) button and fill in the row:\n\n- **Name:** `PUMP_CMD`\n- **Class:** `Local` — **important:** the Location field is only editable when class is set to Local. If you choose Output, the Location column is greyed out and cannot be typed into.\n- **Type:** `BOOL`\n- **Location:** `%QX0.0`\n- **Initial Value:** (leave blank — defaults to FALSE)\n\n## Adding PUMP_RUN\n\nClick **+** again and fill in the second row:\n\n- **Name:** `PUMP_RUN`\n- **Class:** `Local`\n- **Type:** `BOOL`\n- **Location:** `%QX0.1`\n- **Initial Value:** (leave blank)\n\nPress **Enter** or click elsewhere to confirm. Both variables now appear in the variable editor.\n\n**Why Local and not Output?** In IEC 61131-3, the `AT %QX...` location syntax declares a *located variable* — one that is bound to a specific memory address in the PLC I/O image. OpenPLC requires this class to be Local in its Beremiz editor for the Location field to be active. The `%Q` prefix (Q = output) is what tells OpenPLC to map the variable to a Modbus-writable output coil, regardless of the IEC class label shown in the editor.",
+        "successCheck": "The variable editor shows two rows: PUMP_CMD (Local, BOOL, %QX0.0) and PUMP_RUN (Local, BOOL, %QX0.1). Both have values in the Location column. If the Location column is blank or greyed out, confirm the Class column reads Local — not Output or Input. Click Next → to draw the rung."
+      },
+      {
+        "id": "step-05-draw-rung",
+        "title": "Step 5 — Draw the Ladder Rung",
+        "body": "## The Rung You Are Drawing\n\n```\n |--[ PUMP_CMD ]--( PUMP_RUN )--|\n```\n\nThis single rung says: **every PLC scan, if PUMP_CMD is TRUE, set PUMP_RUN to TRUE; if PUMP_CMD is FALSE, clear PUMP_RUN to FALSE.**\n\nThis is the LD equivalent of the Structured Text statement: `PUMP_RUN := PUMP_CMD;`\n\n## Drawing Steps\n\nThe LD toolbar appears at the top of the centre panel when an LD POU is open. The icons from left to right are typically: power rail, contact, negative contact, rising edge, output coil, set coil, reset coil, jump, block.\n\n**1. Add the Left Power Rail**\n- Click the **Left Power Rail** button in the toolbar (a thick vertical bar symbol on the left side of a rung).\n- Click on the **left side** of the canvas to place it. The rail appears as a vertical line — this is the \"live\" side of the ladder that supplies current to the rungs.\n\n**2. Add the Right Power Rail**\n- Click the **Right Power Rail** button (thick vertical bar on the right side).\n- Click on the **right side** of the canvas, leaving enough horizontal space between the two rails for your contacts and coil.\n- Both rails must be placed before you can complete a rung.\n\n**3. Add a Contact (input element)**\n- Click the **Contact** button in the toolbar (a normally-open contact symbol: `—[ ]—`), or press `C`.\n- Click on the canvas between the two power rails to place it.\n- A box appears labelled with a default variable name (e.g., `???`). Double-click it.\n- A dialog asks for the variable — type or select `PUMP_CMD`. Click **OK**.\n\n**4. Add an Output Coil (output element)**\n- Click the **Output Coil** button in the toolbar (coil symbol: `—( )—`), or press `O`.\n- Click to the right of the PUMP_CMD contact on the same rung.\n- Double-click the coil and assign variable `PUMP_RUN`. Click **OK**.\n\n**5. Wire Contact to Coil**\n- If the contact and coil are not already connected, hover over the right side of the contact until you see a wire cursor, then drag to the left side of the coil.\n- The rung should now show a continuous horizontal line from the left power rail through `PUMP_CMD` to `PUMP_RUN` and on to the right power rail.\n\n**6. Verify the Rung**\nThe completed rung should look like:\n```\n |--[ PUMP_CMD ]--( PUMP_RUN )--|\n```\n\nIf you see a red cross or broken wire, the elements are not connected — delete and re-draw, making sure the contact and coil snap to the same horizontal rail.",
+        "successCheck": "The LD canvas shows one complete rung: a normally-open contact labelled PUMP_CMD connected to an output coil labelled PUMP_RUN, with continuous wiring from the left power rail to the right. No red error markers are visible on the rung. Click Next → to understand what this compiles to."
+      },
+      {
+        "id": "step-06-ld-to-st",
+        "title": "Step 6 — What LD Compiles To (LD → ST Explained)",
+        "body": "## How OpenPLC Compiles LD to Structured Text\n\nOpenPLC Editor uses **MatIEC** — an open-source IEC 61131-3 compiler — to convert Ladder Diagram to Structured Text and then to ANSI C for the runtime binary. You do not need to write the ST yourself, but understanding the translation helps you reason about what the PLC is actually executing.\n\nYour one-rung LD program compiles to this ST:\n\n```\nPROGRAM pump_control\n  VAR\n    PUMP_CMD AT %QX0.0 : BOOL;\n    PUMP_RUN AT %QX0.1 : BOOL;\n  END_VAR\n\n  PUMP_RUN := PUMP_CMD;\n\nEND_PROGRAM\n\nCONFIGURATION config0\n  TASK task0(INTERVAL := T#100ms, PRIORITY := 0);\n  PROGRAM prog0 WITH task0 : pump_control;\nEND_CONFIGURATION\n```\n\n**Reading this line by line:**\n\n- `PUMP_CMD AT %QX0.0 : BOOL` — declares a BOOL variable located at digital output 0.0, which is Modbus coil 0. Any Modbus master (including FUXA) can write this coil.\n- `PUMP_RUN AT %QX0.1 : BOOL` — same at output 0.1, which is Modbus coil 1. FUXA reads this to display the pump state.\n- `PUMP_RUN := PUMP_CMD` — the single assignment that your LD rung represents. The PLC executes this every 100 ms.\n- `TASK task0(INTERVAL := T#100ms ...)` — the scan cycle: this program runs 10 times per second.\n\n## Why This Matters for Security\n\nWhen an attacker sends a **Modbus FC05 Write Single Coil** packet targeting coil 0, they are forcing `PUMP_CMD` to TRUE or FALSE — exactly this variable. When they target coil 1 directly, they override `PUMP_RUN` for one scan cycle, but the PLC will restore it the next cycle because the ST assignment `PUMP_RUN := PUMP_CMD` always overwrites it. This is why attackers typically write the *input/command* variable (coil 0), not the output — the logic amplifies their write.\n\nClick **Next →** to compile and upload your program.",
+        "successCheck": "You understand that your LD rung compiles to the single statement `PUMP_RUN := PUMP_CMD` and that both variables map to specific Modbus coil addresses. No action required — click Next → to upload."
+      },
+      {
+        "id": "step-07-compile-upload",
+        "title": "Step 7 — Compile and Upload to the PLC",
+        "body": "## Understanding the Editor Toolbar Icons\n\nThe four action buttons in the OpenPLC Editor toolbar are:\n\n- **Running man** — Runs the program locally inside the editor (simulated, not on the Docker PLC).\n- **Down arrow** — Generate program for OpenPLC Runtime. Compiles your LD project using MatIEC + GCC and saves a **`.so`** (Linux shared library) in the `build/` folder inside your project directory.\n- **Circle with a square inside** — Transfer program to PLC. **Do not use this button.** It attempts an Arduino-style board upload and will immediately throw a `FileNotFoundError` tracing through `_generateArduino` and `loadHais`. This is a Beremiz bug triggered because the Arduino toolchain is not installed.\n- **Bug / debug icon** — Attaches the interactive debugger (not needed for this lab).\n\n## Why the .so File Cannot Be Uploaded to the Runtime\n\nThe **`pump_tutorial.so`** in your build folder is a compiled Linux shared library — it is the output format for running OpenPLC programs in *local/embedded* mode directly on the machine running the editor. The **OpenPLC Runtime web interface** running inside the Docker container uses a completely different path: it accepts **Structured Text (`.st`) source files**, compiles them itself on the server using MatIEC + GCC, and produces its own native binary. The `.so` from the editor and the binary from the Runtime are not interchangeable.\n\n**Do not upload the `.so` file to the Runtime web UI.**\n\n## Step A — Generate the .st File\n\n1. In OpenPLC Editor, press **Ctrl+S** to save the project first.\n2. Click the **down arrow** button in the toolbar (Generate program for OpenPLC Runtime). A dialog appears asking for a save location and name, and presents a list of protocol options (Modbus, OPC-UA, etc.) — leave the defaults and click **Generate** (or **OK**).\n3. The editor runs MatIEC and GCC. When finished, look in your project directory:\n\n```\n/root/Desktop/pump_tutorial/build/generated_plc.st\n```\n\nThis is the Structured Text source file the OpenPLC Runtime needs. (The `pump_tutorial.so` in the same folder is the compiled binary for local use — ignore it for this upload.)\n\n## Step B — Open the OpenPLC Runtime Web UI\n\n1. Open **Firefox** from the workstation taskbar or Applications menu.\n2. Navigate to:\n\n```\nhttp://{{plc-1.ip}}:18080\n```\n\n3. Log in: **Username:** `openplc` / **Password:** `openplc`.\n\n## Step C — Upload and Compile\n\n1. In the left nav, click **Programs**.\n2. Click **Upload a new program**.\n3. Browse to `/root/Desktop/pump_tutorial/build/generated_plc.st` and select it.\n4. Set the name to `pump_control`. Click **Upload**.\n5. The Runtime runs MatIEC + GCC on the server. This takes **30–90 seconds**. The compilation log at the bottom of the page will end with `Compilation done!` when finished.\n\nThe Runtime then auto-starts the compiled program. **Note:** This scenario pre-loads the identical program at startup, so you are replacing it with your own version — the behaviour will be unchanged, but you have completed the full engineer workflow.",
+        "successCheck": "The OpenPLC Runtime Programs page shows `pump_control` with status Running. If compilation fails, open the log — the most common cause is a punctuation or whitespace typo in the ST. Check that `INTERVAL := T#100ms` uses a capital T and a hash, and that both END_VAR and END_PROGRAM are on their own lines. Click Next → to verify in the Monitoring tab."
+      },
+      {
+        "id": "step-08-monitoring",
+        "title": "Step 8 — Verify in OpenPLC Monitoring",
+        "body": "## Opening the Monitoring Tab\n\nThe OpenPLC Runtime Monitoring page shows the live value of every declared variable, updated every 500 ms.\n\n1. In the OpenPLC Runtime left nav, click **Monitoring**.\n2. The page loads a table with one row per variable in the active program.\n\n## Reading the Variable Table\n\nYou should see two rows:\n\n| Variable | Type | Value |\n|---|---|---|\n| PUMP_CMD | BOOL | FALSE (red circle) |\n| PUMP_RUN | BOOL | FALSE (red circle) |\n\n**BOOL variables display as coloured circles:**\n- Green circle = **TRUE** (coil energised)\n- Red/orange circle = **FALSE** (coil de-energised)\n\nBoth start FALSE because no command has been sent yet.\n\n## Manually Forcing a Value (Write Test)\n\nThe Monitoring page has a **Write** column with TRUE/FALSE buttons next to each BOOL. Use this to test your LD logic without opening FUXA:\n\n1. In the row for `PUMP_CMD`, click the **TRUE** button.\n2. **Within the next 100 ms scan cycle**, `PUMP_RUN` should also turn TRUE (green circle) — because your rung copies PUMP_CMD → PUMP_RUN.\n3. Now click **FALSE** on `PUMP_CMD` — `PUMP_RUN` goes FALSE on the next scan.\n\nThis confirms your LD program is executing correctly: setting the input coil drives the output coil through your ladder logic.\n\n**In the OTForge canvas:** switch to the **OT Process** layer — the edge between the PLC Controller and the Pump node should turn **green** when PUMP_RUN is TRUE and **red** when FALSE. The canvas polls the Modbus registers every 2 seconds, so there is a brief visual delay.",
+        "successCheck": "When you click TRUE on PUMP_CMD in the Monitoring tab, PUMP_RUN immediately turns green (TRUE) in the same row. Clicking FALSE on PUMP_CMD turns PUMP_RUN red (FALSE). In the OT canvas, switch to the OT Process layer — the PLC→Pump edge turns green when the pump is running and red when it is off, updating within the 2-second canvas poll cycle. You have successfully written, compiled, uploaded, and verified an IEC 61131-3 Ladder Diagram program. You are now ready for ICS Lab 01, where you will use this same Modbus coil write mechanism — from the attacker's perspective."
+      }
+    ]
+  },
+  "visual": {
+    "nodes": [
+      {
+        "id": "plc-1",
+        "type": "plc",
+        "position": {
+          "x": 100,
+          "y": 200
+        },
+        "data": {
+          "label": "OpenPLC Controller",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "pump-1",
+        "type": "pump",
+        "position": {
+          "x": 360,
+          "y": 200
+        },
+        "data": {
+          "label": "Process Pump",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "switch-ot",
+        "type": "switch",
+        "position": {
+          "x": 220,
+          "y": 320
+        },
+        "data": {
+          "label": "OT Network Switch",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "hmi-1",
+        "type": "hmi",
+        "position": {
+          "x": 100,
+          "y": 380
+        },
+        "data": {
+          "label": "FUXA HMI",
+          "zone": "control"
+        }
+      },
+      {
+        "id": "workstation-1",
+        "type": "workstation",
+        "position": {
+          "x": 360,
+          "y": 380
+        },
+        "data": {
+          "label": "Engineering Workstation",
+          "zone": "control"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-plc-pump",
+        "source": "plc-1",
+        "target": "pump-1",
+        "data": {
+          "protocol": "modbus-tcp",
+          "label": "Coil 1: PUMP_RUN",
+          "fluidType": "electric",
+          "coilSource": {
+            "nodeId": "plc-1",
+            "coilIndex": 1
+          }
+        }
+      },
+      {
+        "id": "e-plc-switch",
+        "source": "plc-1",
+        "target": "switch-ot",
+        "data": {
+          "protocol": "modbus-tcp",
+          "label": "Modbus TCP :502"
+        }
+      },
+      {
+        "id": "e-hmi-switch",
+        "source": "hmi-1",
+        "target": "switch-ot",
+        "data": {
+          "protocol": "modbus-tcp",
+          "label": "Modbus TCP :502"
+        }
+      },
+      {
+        "id": "e-workstation-switch",
+        "source": "workstation-1",
+        "target": "switch-ot",
+        "data": {
+          "protocol": "none",
+          "label": "OpenPLC IDE :18080"
+        }
+      }
+    ],
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 1
+    }
+  },
+  "network": {
+    "segments": [
+      {
+        "zone": "ot",
+        "subnet": "10.200.10.0/24",
+        "gateway": "10.200.10.1",
+        "dockerNetwork": "ics-sim-ot-net"
+      },
+      {
+        "zone": "control",
+        "subnet": "10.200.20.0/24",
+        "gateway": "10.200.20.1",
+        "dockerNetwork": "ics-sim-control-net"
+      }
+    ],
+    "routes": []
+  },
+  "devices": {
+    "devices": {
+      "plc-1": {
+        "nodeId": "plc-1",
+        "category": "plc",
+        "ipAddress": "10.200.10.10",
+        "protocols": [
+          "modbus-tcp"
+        ],
+        "modbus": {
+          "mode": "tcp",
+          "port": 502,
+          "unitId": 1,
+          "registers": {
+            "coils": {
+              "0": 0,
+              "1": 0
+            },
+            "holdingRegisters": {}
+          }
+        },
+        "plcProgram": {
+          "language": "st",
+          "source": "UFJPR1JBTSBwdW1wX2NvbnRyb2wKICBWQVIKICAgIFBVTVBfQ01EIEFUICVRWDAuMCA6IEJPT0w7CiAgICBQVU1QX1JVTiBBVCAlUVgwLjEgOiBCT09MOwogIEVORF9WQVIKCiAgUFVNUF9SVU4gOj0gUFVNUF9DTUQ7CgpFTkRfUFJPR1JBTQoKQ09ORklHVVJBVElPTiBjb25maWcwCiAgVEFTSyB0YXNrMChJTlRFUlZBTCA6PSBUIzEwMG1zLCBQUklPUklUWSA6PSAwKTsKICBQUk9HUkFNIHByb2cwIFdJVEggdGFzazAgOiBwdW1wX2NvbnRyb2w7CkVORF9DT05GSUdVUkFUSU9OCg==",
+          "variables": [
+            {
+              "name": "PUMP_CMD",
+              "type": "BOOL",
+              "address": "%QX0.0",
+              "protocol": "modbus-tcp",
+              "protocolAddress": "0"
+            },
+            {
+              "name": "PUMP_RUN",
+              "type": "BOOL",
+              "address": "%QX0.1",
+              "protocol": "modbus-tcp",
+              "protocolAddress": "1"
+            }
+          ]
+        }
+      },
+      "switch-ot": {
+        "nodeId": "switch-ot",
+        "category": "switch",
+        "ipAddress": "10.200.10.240",
+        "protocols": [
+          "none"
+        ]
+      },
+      "hmi-1": {
+        "nodeId": "hmi-1",
+        "category": "hmi",
+        "ipAddress": "10.200.20.10",
+        "protocols": [
+          "modbus-tcp"
+        ]
+      },
+      "workstation-1": {
+        "nodeId": "workstation-1",
+        "category": "engineering-workstation",
+        "ipAddress": "10.200.20.11",
+        "protocols": [
+          "none"
+        ]
+      }
+    }
+  },
+  "security": {
+    "defaultFirewallPolicy": "allow",
+    "firewallRules": [
+      {
+        "id": "rule-allow-control-ot-modbus",
+        "sourceZone": "control",
+        "destinationZone": "ot",
+        "protocol": "tcp",
+        "destinationPort": 502,
+        "action": "allow",
+        "comment": "Allow FUXA HMI to read and write Modbus registers on the PLC"
+      },
+      {
+        "id": "rule-allow-ot-control",
+        "sourceZone": "ot",
+        "destinationZone": "control",
+        "protocol": "any",
+        "destinationPort": "any",
+        "action": "allow",
+        "comment": "Allow PLC to report back to the control zone HMI"
+      }
+    ],
+    "ids": {
+      "enabledRulesets": [],
+      "disabledRuleIds": [],
+      "zeekScripts": []
+    },
+    "logging": {
+      "retentionDays": 1,
+      "influxdbEnabled": false,
+      "lokiEnabled": false
+    }
+  },
+  "registry": [],
+  "packLayers": []
+}
