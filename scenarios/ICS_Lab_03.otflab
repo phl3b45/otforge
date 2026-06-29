@@ -120,7 +120,7 @@
       },
       {
         "id": "ids-1",
-        "type": "device",
+        "type": "ids-ips",
         "position": { "x": 500, "y": 160 },
         "data": {
           "nodeId": "ids-1",
@@ -470,12 +470,6 @@
         "nodeId": "firewall-1",
         "category": "firewall",
         "ipAddress": "10.200.30.11",
-        "protocols": ["none"]
-      },
-      "ids-1": {
-        "nodeId": "ids-1",
-        "category": "ids-ips",
-        "ipAddress": "10.200.30.10",
         "protocols": ["none"]
       },
       "attack-1": {
