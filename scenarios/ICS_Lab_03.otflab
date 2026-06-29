@@ -136,7 +136,6 @@
         "data": {
           "nodeId": "scada-1",
           "label": "SCADA Master",
-          "category": "historian",
           "zone": "control"
         }
       },
@@ -191,7 +190,6 @@
         "data": {
           "nodeId": "rtu-1",
           "label": "RTU-1\nPipeline Sect. A",
-          "category": "plc",
           "zone": "ot"
         }
       },
@@ -202,7 +200,6 @@
         "data": {
           "nodeId": "rtu-2",
           "label": "RTU-2\nCompressor Stn B",
-          "category": "plc",
           "zone": "ot"
         }
       },
@@ -213,40 +210,36 @@
         "data": {
           "nodeId": "ied-1",
           "label": "IED-1\nEmergency Shutdown",
-          "category": "plc",
           "zone": "ot"
         }
       },
       {
         "id": "compressor-a",
-        "type": "device",
+        "type": "pump",
         "position": { "x": 60, "y": 580 },
         "data": {
           "nodeId": "compressor-a",
           "label": "Compressor A",
-          "category": "pump",
           "zone": "ot"
         }
       },
       {
         "id": "compressor-b",
-        "type": "device",
+        "type": "pump",
         "position": { "x": 270, "y": 580 },
         "data": {
           "nodeId": "compressor-b",
           "label": "Compressor B\n(Attack Target)",
-          "category": "pump",
           "zone": "ot"
         }
       },
       {
         "id": "esd-valve",
-        "type": "device",
+        "type": "valve",
         "position": { "x": 480, "y": 580 },
         "data": {
           "nodeId": "esd-valve",
           "label": "ESD Valve",
-          "category": "valve",
           "zone": "ot"
         }
       }
@@ -446,12 +439,12 @@
       "switch-ot": {
         "nodeId": "switch-ot",
         "category": "switch",
-        "ipAddress": "10.200.10.240",
+        "ipAddress": "10.200.10.20",
         "protocols": ["none"]
       },
       "scada-1": {
         "nodeId": "scada-1",
-        "category": "historian",
+        "category": "scada-server",
         "ipAddress": "10.200.20.10",
         "protocols": ["none"]
       },
