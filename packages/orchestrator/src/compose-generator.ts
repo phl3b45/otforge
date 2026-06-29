@@ -1111,10 +1111,13 @@ export function generateCompose(
       ],
       interval: '5s',
       timeout: '3s',
-      retries: 12,
-      start_period: '15s'
+      retries: 24,
+      // Loki 3.x initialises a distributed ring on startup; the scheduler
+      // component (127.0.0.1:9095 gRPC) must join the ring before /ready
+      // returns.  Under memory pressure this can take 90 s.
+      start_period: '60s'
     },
-    deploy: { resources: { limits: { memory: '80m', cpus: '0.25' } } }
+    deploy: { resources: { limits: { memory: '256m', cpus: '0.25' } } }
   }
 
   // ── Grafana — dashboards (AGPL — pulled at runtime, not bundled) ──────────
@@ -1138,7 +1141,12 @@ export function generateCompose(
     'GF_USERS_VIEWERS_CAN_EDIT=true',
     'GF_SECURITY_ALLOW_EMBEDDING=true', // Required for Electron webview embedding
     'GF_SERVER_ROOT_URL=http://localhost:3000', // Canonical URL for link generation
-    'GF_ANALYTICS_REPORTING_ENABLED=false' // No telemetry from lab environments
+    'GF_ANALYTICS_REPORTING_ENABLED=false', // No telemetry from lab environments
+    // WAL mode lets concurrent goroutines read while a single writer holds the
+    // lock, eliminating the SQLITE_BUSY deadlocks that appear at cold start in
+    // Grafana 12/13 when the API server, advisor, and provisioning all write
+    // simultaneously to the same SQLite database.
+    'GF_DATABASE_WAL=true'
   ]
 
   const grafanaVolumes = [`${projectName}-grafana-data:/var/lib/grafana`]
@@ -1173,10 +1181,13 @@ export function generateCompose(
       test: ['CMD-SHELL', 'curl -f http://localhost:3000/api/health || exit 1'],
       interval: '5s',
       timeout: '3s',
-      retries: 15,
-      start_period: '20s'
+      retries: 24,
+      // The Grafana 11.4.0 image in the Dockerfile initialises its SQLite
+      // database and provisions datasources on first run; allow 2 minutes
+      // before the healthcheck starts penalising cold starts.
+      start_period: '120s'
     },
-    deploy: { resources: { limits: { memory: '150m', cpus: '0.5' } } }
+    deploy: { resources: { limits: { memory: '256m', cpus: '0.5' } } }
   }
 
   // ── Promtail — log shipping sidecar (AGPL — pulled at runtime) ───────────
