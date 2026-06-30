@@ -12,3 +12,10 @@ CVE-2022-25235
 CVE-2022-25236
 CVE-2022-26485
 CVE-2022-26486
+
+# libssh2 integer overflow in Zeek base image (CVE-2026-7598).
+# libssh2 is a transitive dependency of the Zeek network analysis image.
+# OTForge does not use SSH in any Zeek container code path; Zeek uses it
+# only for passive traffic analysis on af-packet sockets. Suppressed until
+# an upstream Zeek image rebuild ships a patched libssh2.
+CVE-2026-7598
