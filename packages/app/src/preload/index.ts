@@ -32,6 +32,7 @@ import type {
   ScenarioDeleteFileResult,
   SimulationStartResult,
   SimulationStopResult,
+  SimulationUpdateResult,
   ContainerStatus,
   LicenseValidationResult,
   OTForgeScenario,
@@ -128,7 +129,18 @@ const api = {
      * Returns the current state and health of all containers in the active simulation.
      * Returns an empty array when no simulation is running.
      */
-    status: (): Promise<ContainerStatus[]> => ipcRenderer.invoke('simulation:status')
+    status: (): Promise<ContainerStatus[]> => ipcRenderer.invoke('simulation:status'),
+
+    /**
+     * Force-pulls the newest image for every service in the scenario via
+     * `docker compose pull`. Unlike start (which uses --pull missing), this
+     * always re-fetches each :latest tag, so students receive updated GHCR
+     * images that a cached tag would otherwise mask. Does not start containers.
+     * Progress is streamed via on.simulationUpdateProgress().
+     * @param scenario - The full scenario whose images to refresh.
+     */
+    updateImages: (scenario: OTForgeScenario): Promise<SimulationUpdateResult> =>
+      ipcRenderer.invoke('simulation:updateImages', scenario)
   },
 
   // ── System info ───────────────────────────────────────────────────────────────
@@ -686,6 +698,19 @@ const api = {
     simulationPullProgress: (cb: (status: { line: string }) => void) => {
       ipcRenderer.on('simulation:pullProgress', (_event, status) => cb(status))
       return () => ipcRenderer.removeAllListeners('simulation:pullProgress')
+    },
+
+    /**
+     * Fires for each output line emitted by `docker compose pull` during a
+     * toolbar-triggered "Update Images" action. Lets the renderer show the most
+     * recent Docker line in the update overlay.
+     *
+     * @param cb - Callback receiving { line: string } — one Docker output line.
+     * @returns Unsubscribe function — call in useEffect cleanup.
+     */
+    simulationUpdateProgress: (cb: (status: { line: string }) => void) => {
+      ipcRenderer.on('simulation:updateProgress', (_event, status) => cb(status))
+      return () => ipcRenderer.removeAllListeners('simulation:updateProgress')
     }
   }
 }
