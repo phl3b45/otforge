@@ -1,4 +1,10 @@
 node_modules
+# package-lock.json is intentionally NOT tracked. npm rewrites it with
+# platform-specific content on every install, so tracking it caused students'
+# `git pull` to fail with lockfile merge conflicts before they could even run
+# the app. CI installs with `npm install` (see .github/workflows/build.yml) and
+# `.npmrc` sets package-lock=false so npm never regenerates it.
+package-lock.json
 dist
 out
 build
