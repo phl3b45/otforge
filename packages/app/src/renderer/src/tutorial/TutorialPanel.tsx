@@ -56,6 +56,17 @@ interface TutorialPanelProps {
   devices?: Record<string, DeviceIpEntry>
   /** Called when the user clicks the × close button. */
   onClose: () => void
+  /**
+   * Step to open on (0-based). Used when resuming a saved session so the student
+   * lands back where they left off. Defaults to 0. Read once on mount — remount
+   * the panel (via a changing React key) to force a jump to a new value.
+   */
+  initialIndex?: number
+  /**
+   * Called whenever the displayed step changes, with the new 0-based index.
+   * The parent uses this to know which step to persist when saving a session.
+   */
+  onStepChange?: (index: number) => void
 }
 
 // ── IP template resolver ───────────────────────────────────────────────────────
@@ -194,9 +205,18 @@ function inlineFormat(text: string): React.ReactNode[] {
  * Rendered as a fixed-position overlay that the student can drag to any corner
  * of the screen without covering the canvas or the attack terminal.
  */
-export function TutorialPanel({ steps, devices, onClose }: TutorialPanelProps): React.JSX.Element {
-  // Which step is currently displayed (0-based index)
-  const [currentIndex, setCurrentIndex] = useState<number>(0)
+export function TutorialPanel({
+  steps,
+  devices,
+  onClose,
+  initialIndex = 0,
+  onStepChange
+}: TutorialPanelProps): React.JSX.Element {
+  // Which step is currently displayed (0-based index). Seeded from initialIndex
+  // (clamped in range) so a resumed session opens on the saved step.
+  const [currentIndex, setCurrentIndex] = useState<number>(() =>
+    Math.min(Math.max(initialIndex, 0), Math.max(steps.length - 1, 0))
+  )
   // Whether the panel body is collapsed to header-only strip
   const [minimized, setMinimized] = useState<boolean>(false)
   // Transient copy feedback — "Copy" → "Copied!" for 1.5 s
@@ -212,6 +232,11 @@ export function TutorialPanel({ steps, devices, onClose }: TutorialPanelProps): 
 
   const step = steps[currentIndex]
   const total = steps.length
+
+  // Report the displayed step to the parent so it can persist it on session save.
+  useEffect(() => {
+    onStepChange?.(currentIndex)
+  }, [currentIndex, onStepChange])
 
   // ── Default position: bottom-right corner, 24 px inset ──────────────────────
   // Calculated on first render using window dimensions to avoid hardcoding.

@@ -47,7 +47,8 @@ import type {
   RtuConfig,
   SensorConfig,
   ControllerConfig,
-  FluidType
+  FluidType,
+  SessionSummary
 } from '@otforge/schema'
 import { ScadaCanvas } from './canvas/ScadaCanvas'
 import { DevicePalette } from './palette/DevicePalette'
@@ -90,11 +91,13 @@ type SimStatus = 'idle' | 'starting' | 'running' | 'stopping'
 function LaunchScreen({
   docker,
   onImport,
-  onNew
+  onNew,
+  onLoadSession
 }: {
   docker: DockerStatus | null
   onImport: () => void
   onNew: () => void
+  onLoadSession: () => void
 }) {
   return (
     <div className="launch-screen">
@@ -189,6 +192,14 @@ function LaunchScreen({
             disabled={!docker?.available}
           >
             Open .otflab File
+          </button>
+          {/* Resume a previously saved lab session (scenario + rules + step + work). */}
+          <button
+            className="btn btn-ghost btn-lg"
+            onClick={onLoadSession}
+            disabled={!docker?.available}
+          >
+            Resume Saved Lab
           </button>
         </div>
 
@@ -477,6 +488,21 @@ export default function App() {
    */
   const [showTutorial, setShowTutorial] = useState<boolean>(false)
 
+  // ── Saved-session state ────────────────────────────────────────────────────────
+  /** The step the TutorialPanel currently shows — captured when saving a session. */
+  const [currentTutorialStep, setCurrentTutorialStep] = useState<number>(0)
+  /** The step a newly-opened/loaded scenario should start on (0 for a fresh open). */
+  const [resumeTutorialStep, setResumeTutorialStep] = useState<number>(0)
+  /** Bumped on every scenario open/load to force TutorialPanel to remount fresh. */
+  const [tutorialKey, setTutorialKey] = useState<number>(0)
+  /** Whether the Load-Session picker overlay is open. */
+  const [sessionPickerOpen, setSessionPickerOpen] = useState<boolean>(false)
+  /** Saved sessions listed in the picker (loaded when it opens). */
+  const [savedSessions, setSavedSessions] = useState<SessionSummary[]>([])
+  /** Transient toast shown after a successful session save. */
+  const [sessionNotice, setSessionNotice] = useState<string | null>(null)
+  const sessionNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   /**
    * Whether the instructor has activated Builder Mode for the current scenario.
    *
@@ -660,6 +686,30 @@ export default function App() {
    * If the scenario has tutorial steps, the Tutorial panel is auto-shown so students
    * immediately see their guided instructions.
    */
+  /**
+   * Starts a simulation for an explicit scenario, driving the simStatus lifecycle.
+   * Takes the scenario as an argument (rather than reading state) so callers that
+   * have just set it — e.g. resuming a saved session — don't race React's async
+   * state update. Stable (no deps) so other handlers can depend on it freely.
+   */
+  const startSimulation = useCallback(async (sc: OTForgeScenario) => {
+    setSimError(null)
+    setSimStatus('starting')
+    setContainerStatuses([])
+    try {
+      const result = await window.electronAPI.simulation.start(sc)
+      if (result.ok) {
+        setSimStatus('running')
+      } else {
+        setSimStatus('idle')
+        setSimError(result.error ?? 'Simulation failed to start.')
+      }
+    } catch (err) {
+      setSimStatus('idle')
+      setSimError(`Unexpected error: ${(err as Error).message}`)
+    }
+  }, [])
+
   const handleImport = useCallback(async () => {
     const result = await window.electronAPI.scenario.import()
     if (result.scenario) {
@@ -668,8 +718,11 @@ export default function App() {
       setView('canvas')
       // Track the file path so Delete Scenario can remove it from disk.
       setCurrentFilePath(result.filePath ?? null)
-      // Auto-show the tutorial panel when the imported scenario has guided steps
+      // Auto-show the tutorial panel when the imported scenario has guided steps.
+      // A fresh open always starts on step 0; bump the key so TutorialPanel remounts.
       if (result.scenario.meta.tutorialSteps?.length) {
+        setResumeTutorialStep(0)
+        setTutorialKey(k => k + 1)
         setShowTutorial(true)
       }
     } else if (result.error && result.error !== 'Import cancelled') {
@@ -678,6 +731,60 @@ export default function App() {
       window.alert(`Could not open scenario:\n\n${result.error}`)
     }
   }, [])
+
+  /**
+   * Saves the current lab as a resumable session: the scenario (which carries the
+   * student's edited Suricata/firewall rules) plus the tutorial step they're on.
+   * Keyed by scenario name, so re-saving overwrites the same lab's session.
+   */
+  const handleSaveSession = useCallback(async () => {
+    if (!scenario) return
+    const result = await window.electronAPI.session.save(scenario, currentTutorialStep)
+    if (result.ok) {
+      setSessionNotice('Session saved — you can resume this lab later.')
+      if (sessionNoticeTimerRef.current) clearTimeout(sessionNoticeTimerRef.current)
+      sessionNoticeTimerRef.current = setTimeout(() => setSessionNotice(null), 6000)
+    } else {
+      setSimError(result.error ?? 'Failed to save session.')
+    }
+  }, [scenario, currentTutorialStep])
+
+  /** Opens the Load-Session picker, fetching the current list of saved sessions. */
+  const handleOpenSessionPicker = useCallback(async () => {
+    const sessions = await window.electronAPI.session.list()
+    setSavedSessions(sessions)
+    setSessionPickerOpen(true)
+  }, [])
+
+  /**
+   * Loads a saved session: applies its scenario, jumps the tutorial to the saved
+   * step, and automatically starts the simulation so the student is dropped right
+   * back into a running lab. (main's session:load armed the folder-restore, which
+   * fires during this start.) Mirrors handleImport's scenario-application.
+   */
+  const handleLoadSession = useCallback(
+    async (projectName: string) => {
+      const result = await window.electronAPI.session.load(projectName)
+      setSessionPickerOpen(false)
+      if (!result.ok || !result.scenario) {
+        setSimError(result.error ?? 'Failed to load session.')
+        return
+      }
+      setScenario(result.scenario)
+      setBuilderModeActive(false)
+      setView('canvas')
+      setCurrentFilePath(null) // a session is not backed by a .otflab file on disk
+      if (result.scenario.meta.tutorialSteps?.length) {
+        setResumeTutorialStep(result.tutorialStep ?? 0)
+        setTutorialKey(k => k + 1)
+        setShowTutorial(true)
+      }
+      // Auto-start with the loaded scenario passed explicitly (state isn't updated
+      // yet). This also triggers the saved-folder restore inside simulation start.
+      void startSimulation(result.scenario)
+    },
+    [startSimulation]
+  )
 
   /**
    * Creates a blank scenario and navigates to the canvas in View Mode.
@@ -1321,25 +1428,10 @@ export default function App() {
    * writeGrafanaProvisioning or generateCompose errors), ipcRenderer.invoke() rejects
    * and without a catch the simStatus would hang at 'starting' forever.
    */
-  const handleStart = useCallback(async () => {
+  const handleStart = useCallback(() => {
     if (!scenario) return
-    setSimError(null)
-    setSimStatus('starting')
-    setContainerStatuses([])
-    try {
-      const result = await window.electronAPI.simulation.start(scenario)
-      if (result.ok) {
-        setSimStatus('running')
-      } else {
-        setSimStatus('idle')
-        setSimError(result.error ?? 'Simulation failed to start.')
-      }
-    } catch (err) {
-      // IPC handler threw an unhandled exception — surface it to the user
-      setSimStatus('idle')
-      setSimError(`Unexpected error: ${(err as Error).message}`)
-    }
-  }, [scenario])
+    void startSimulation(scenario)
+  }, [scenario, startSimulation])
 
   /**
    * Toolbar "Update Images" handler.
@@ -1490,10 +1582,110 @@ export default function App() {
   // instead of a hardcoded padding value that drifts when sidebars change.
   const sidebarWidth = scenario?.meta.locked ? 220 : builderModeActive ? 210 : 0
 
+  // Session save toast + Load-Session picker, shared by both the LaunchScreen
+  // ("Resume Saved Lab") and the main workspace ("Load Session") so the picker
+  // works from either view.
+  const sessionOverlays = (
+    <>
+      {sessionNotice && (
+        <div className="desktop-hint-toast" role="status" aria-live="polite">
+          <div className="desktop-hint-toast-header">
+            <span className="desktop-hint-toast-title">✓ Session Saved</span>
+            <button
+              className="desktop-hint-toast-close"
+              onClick={() => {
+                if (sessionNoticeTimerRef.current) clearTimeout(sessionNoticeTimerRef.current)
+                setSessionNotice(null)
+              }}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+          <div className="desktop-hint-toast-body">{sessionNotice}</div>
+        </div>
+      )}
+      {sessionPickerOpen && (
+        <div
+          role="dialog"
+          aria-label="Load saved session"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 500,
+            background: 'rgba(1, 4, 9, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+          onClick={() => setSessionPickerOpen(false)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: 'min(560px, 90vw)',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              background: '#0d1117',
+              border: '1px solid #30363d',
+              borderRadius: 8,
+              padding: 20,
+              color: '#e6edf3'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ fontSize: 16 }}>Resume a Saved Session</strong>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => setSessionPickerOpen(false)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            {savedSessions.length === 0 ? (
+              <p style={{ marginTop: 16, color: '#8b949e' }}>
+                No saved sessions yet. Open a lab and click <strong>Save Session</strong> to create
+                one.
+              </p>
+            ) : (
+              <ul style={{ listStyle: 'none', margin: '16px 0 0', padding: 0 }}>
+                {savedSessions.map(s => (
+                  <li key={s.projectName} style={{ marginBottom: 8 }}>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      style={{ width: '100%', textAlign: 'left' }}
+                      onClick={() => handleLoadSession(s.projectName)}
+                    >
+                      <span style={{ fontWeight: 600 }}>{s.scenarioName}</span>
+                      <span style={{ color: '#8b949e', marginLeft: 8 }}>
+                        step {s.tutorialStep + 1} · saved {new Date(s.savedAt).toLocaleString()}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  )
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (view === 'launch') {
-    return <LaunchScreen docker={docker} onImport={handleImport} onNew={handleNew} />
+    return (
+      <>
+        <LaunchScreen
+          docker={docker}
+          onImport={handleImport}
+          onNew={handleNew}
+          onLoadSession={handleOpenSessionPicker}
+        />
+        {sessionOverlays}
+      </>
+    )
   }
 
   return (
@@ -1565,6 +1757,36 @@ export default function App() {
                 {updating ? 'Updating…' : 'Update Images'}
               </button>
             )}
+            {/*
+             * Save Session — snapshots the current lab (scenario + edited rules +
+             * tutorial step) so the student can resume later. Shown with a scenario
+             * loaded. (A later increment also captures their Lab_NN_Student_Saved_Work
+             * folder, which will require the simulation to be running.)
+             */}
+            {scenario && (
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={handleSaveSession}
+                title="Save your progress in this lab so you can resume it later"
+              >
+                Save Session
+              </button>
+            )}
+            {/*
+             * Load Session — reopens a previously saved lab at the step the student
+             * left off. Disabled while a simulation is running (it replaces the
+             * current scenario), same as Open.
+             */}
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={handleOpenSessionPicker}
+              disabled={!simIsIdle}
+              title={
+                simIsIdle ? 'Resume a saved lab session' : 'Stop the simulation to load a session'
+              }
+            >
+              Load Session
+            </button>
             {/*
              * Edit Scenario — shown whenever a scenario is open.
              * Grayed in Student Mode (builderModeActive = false) because editing
@@ -2074,9 +2296,12 @@ export default function App() {
        */}
       {showTutorial && scenario?.meta.tutorialSteps?.length && (
         <TutorialPanel
+          key={tutorialKey}
           steps={scenario.meta.tutorialSteps}
           devices={scenario.devices.devices}
           onClose={() => setShowTutorial(false)}
+          initialIndex={resumeTutorialStep}
+          onStepChange={setCurrentTutorialStep}
         />
       )}
 
@@ -2150,6 +2375,7 @@ export default function App() {
           <div className="desktop-hint-toast-body">{updateNotice}</div>
         </div>
       )}
+      {sessionOverlays}
     </div>
   )
 }

@@ -32,6 +32,9 @@ import type {
   SimulationStartResult,
   SimulationStopResult,
   SimulationUpdateResult,
+  SessionSummary,
+  SessionSaveResult,
+  SessionLoadResult,
   ContainerStatus,
   OTForgeScenario,
   DeviceConfig,
@@ -71,6 +74,7 @@ import {
 import type { OtZoneDevice, OtZoneTopology } from '@otforge/orchestrator'
 import type { NetworkZone, ACLRule } from '@otforge/schema'
 import { initDb, saveActiveScenario, loadActiveScenario, clearActiveScenario } from './db'
+import { saveSession, loadSession, listSessions, sessionDir } from './sessions'
 import { parsePlcFile } from './plc-import'
 
 const execAsync = promisify(exec)
@@ -416,6 +420,15 @@ const attackWindows = new Map<string, BrowserWindow>()
  * Used by workstation:launchWindow and workstation:getVncUrl to build the noVNC URL.
  */
 const activeWorkstationPorts = new Map<string, number>()
+
+/**
+ * Project name of a session the user just chose to Load, whose saved
+ * Lab_NN_Student_Saved_Work folder should be copied back into the workstation on
+ * the next simulation start for that project. Set by session:load, consumed and
+ * cleared once by configureWorkstationSaveFolder. Null means "fresh run — do not
+ * restore any prior work".
+ */
+let pendingSessionRestore: string | null = null
 
 /**
  * Tracks open noVNC BrowserWindows keyed by engineering-workstation device nodeId.
@@ -895,6 +908,11 @@ function registerIPCHandlers(): void {
         // Fire-and-forget — runs in the background while the renderer shows "running".
         configureAttackMachine().catch(() => {})
 
+        // Create the per-lab "…_Student_Saved_Work" folder on the workstation so
+        // students have a known place to keep work that Save Session preserves.
+        // Fire-and-forget — runs after the desktop finishes booting.
+        configureWorkstationSaveFolder(scenario).catch(() => {})
+
         return { ok: true, containersStarted: started }
       } catch (err) {
         // Reset active project so a retry doesn't think a simulation is already running
@@ -984,6 +1002,68 @@ function registerIPCHandlers(): void {
     if (!activeProjectName) return []
     return dockerClient.getStatus(activeProjectName)
   })
+
+  // ── Session save / load ───────────────────────────────────────────────────────
+  /**
+   * Saves the student's current session so a lab can be resumed later. Persists
+   * the scenario (which carries their edited Suricata/firewall rules) and the
+   * tutorial step to <userData>/sessions/<projectName>/. Keyed by scenario name,
+   * so re-saving the same lab overwrites its one session. A later increment also
+   * captures the student's Lab_NN_Student_Saved_Work folder into this directory.
+   */
+  ipcMain.handle(
+    'session:save',
+    async (
+      _e,
+      { scenario, tutorialStep }: { scenario: OTForgeScenario; tutorialStep: number }
+    ): Promise<SessionSaveResult> => {
+      try {
+        const projectName = toProjectName(scenario.meta.name)
+        await saveSession(app.getPath('userData'), {
+          projectName,
+          scenarioName: scenario.meta.name,
+          savedAt: new Date().toISOString(),
+          tutorialStep,
+          scenario
+        })
+        // Best-effort capture of the student's Lab_NN_Student_Saved_Work folder
+        // (only succeeds while the workstation is running); never fails the save.
+        await captureLabFolder(scenario, projectName)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: `Failed to save session: ${(err as Error).message}` }
+      }
+    }
+  )
+
+  /** Lists all saved sessions (summaries, newest first) for the Load picker. */
+  ipcMain.handle('session:list', async (): Promise<SessionSummary[]> => {
+    try {
+      return await listSessions(app.getPath('userData'))
+    } catch {
+      return []
+    }
+  })
+
+  /**
+   * Loads a saved session by project name, returning the scenario and the tutorial
+   * step to resume at. The renderer applies the scenario and jumps to that step.
+   */
+  ipcMain.handle(
+    'session:load',
+    async (_e, { projectName }: { projectName: string }): Promise<SessionLoadResult> => {
+      try {
+        const session = await loadSession(app.getPath('userData'), projectName)
+        if (!session) return { ok: false, error: 'No saved session found.' }
+        // Arm the one-shot restore: the next simulation start for this project
+        // copies the saved lab-work folder back into the workstation.
+        pendingSessionRestore = projectName
+        return { ok: true, scenario: session.scenario, tutorialStep: session.tutorialStep }
+      } catch (err) {
+        return { ok: false, error: `Failed to load session: ${(err as Error).message}` }
+      }
+    }
+  )
 
   // ── Firewall runtime reload ───────────────────────────────────────────────────
 
@@ -2874,6 +2954,120 @@ function isPortOpen(port: number, timeout = 2000): Promise<boolean> {
  *
  * docker exec runs as root (the container default), so no sudo is required.
  */
+/**
+ * Derives the student save-folder name for a scenario, e.g.
+ * "ICS Lab 03 — …" → "Lab_03_Student_Saved_Work". Non-numbered scenarios
+ * (OpenPLC_Lab, Learning…) fall back to a sanitized scenario name.
+ * Shared by folder provisioning (create) and session save/load (docker cp),
+ * so both always agree on the path.
+ */
+function labSaveFolderName(scenario: OTForgeScenario): string {
+  const name = scenario.meta.name ?? 'Lab'
+  const labMatch = name.match(/\bLab\s+0*(\d+)/i)
+  if (labMatch) {
+    return `Lab_${labMatch[1].padStart(2, '0')}_Student_Saved_Work`
+  }
+  const slug = name
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40)
+  return `${slug || 'Lab'}_Student_Saved_Work`
+}
+
+/**
+ * Creates the per-lab "…_Student_Saved_Work" folder on each workstation after the
+ * desktop boots, with a README telling students to keep their work there. The
+ * folder lives at /root/Desktop/<name> so it is one click from the Xfce desktop.
+ * Save Session later captures this folder (docker cp) into the session bundle.
+ *
+ * Best-effort and fire-and-forget: any failure just means the student can create
+ * the folder themselves; it must never block or crash a running simulation.
+ */
+async function configureWorkstationSaveFolder(scenario: OTForgeScenario): Promise<void> {
+  if (!activeProjectName || activeWorkstationPorts.size === 0) return
+  // Capture the active project name up-front — it's a mutable module var and this
+  // function awaits, so pin it for the restore-flag comparison and cp paths.
+  const proj = activeProjectName
+
+  const folder = labSaveFolderName(scenario)
+  // ASCII only, no shell-special characters (runs through cmd.exe on Windows).
+  const readme =
+    'Save any work you want to keep in this folder - PLC programs, Wireshark ' +
+    'captures, notes. Everything here is preserved when you click Save Session ' +
+    'in OTForge, so you can resume this lab later.'
+
+  const MAX_WAIT_MS = 90_000
+  const POLL_INTERVAL_MS = 3_000
+
+  for (const [nodeId, vncPort] of activeWorkstationPorts) {
+    // Same container-name derivation as compose-generator.ts / configureAttackMachine.
+    const sanitized = nodeId.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+    const containerName = `${proj}-${sanitized}`
+
+    // Wait for the workstation's noVNC port so the desktop is up before we touch it.
+    const deadline = Date.now() + MAX_WAIT_MS
+    while (Date.now() < deadline) {
+      if (await isPortOpen(vncPort, 1500)) break
+      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS))
+    }
+
+    try {
+      await execAsync(
+        `docker exec ${containerName} bash -c ` +
+          `"mkdir -p /root/Desktop/${folder} && echo '${readme}' > /root/Desktop/${folder}/README.txt"`,
+        { timeout: 30_000 }
+      )
+    } catch {
+      // Non-fatal — the student can still create the folder manually.
+    }
+
+    // If the student chose Load Session for this project, copy their saved work
+    // back into the freshly-created folder (contents merge over the README).
+    if (pendingSessionRestore === proj) {
+      const src = pathJoin(sessionDir(app.getPath('userData'), proj), 'lab-work')
+      try {
+        await access(src) // throws if the session has no captured work
+        await execAsync(`docker cp "${src}/." ${containerName}:/root/Desktop/${folder}`, {
+          timeout: 60_000
+        })
+      } catch {
+        // No saved lab-work, or cp failed — folder stays as freshly created.
+      }
+    }
+  }
+
+  // Consume the one-shot restore flag so a later fresh run doesn't re-restore.
+  if (pendingSessionRestore === proj) pendingSessionRestore = null
+}
+
+/**
+ * Captures the student's Lab_NN_Student_Saved_Work folder out of the running
+ * workstation into the session bundle (<userData>/sessions/<project>/lab-work),
+ * via `docker cp`. Best-effort: if the workstation isn't running or the folder
+ * doesn't exist, the session is still saved with the scenario + step.
+ */
+async function captureLabFolder(scenario: OTForgeScenario, projectName: string): Promise<void> {
+  const wsNode = Object.entries(scenario.devices.devices).find(
+    ([, d]) => d.category === 'engineering-workstation'
+  )?.[0]
+  if (!wsNode) return // scenario has no workstation to capture from
+
+  const sanitized = wsNode.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+  const containerName = `${projectName}-${sanitized}`
+  const folder = labSaveFolderName(scenario)
+  const dest = pathJoin(sessionDir(app.getPath('userData'), projectName), 'lab-work')
+
+  try {
+    // Remove any prior capture so the copy reflects the current folder exactly.
+    await rm(dest, { recursive: true, force: true })
+    await execAsync(`docker cp ${containerName}:/root/Desktop/${folder} "${dest}"`, {
+      timeout: 60_000
+    })
+  } catch {
+    // Workstation not running or folder absent — scenario + step were still saved.
+  }
+}
+
 async function configureAttackMachine(): Promise<void> {
   if (!activeProjectName || activeAttackPorts.size === 0) return
 

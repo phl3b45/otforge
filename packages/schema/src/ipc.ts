@@ -58,6 +58,35 @@ export interface SimulationUpdateResult {
   error?: string
 }
 
+/**
+ * Lightweight descriptor of a saved student session, returned by session:list.
+ * Excludes the full scenario payload so the picker stays cheap to render.
+ */
+export interface SessionSummary {
+  /** Sanitized scenario name — the session's directory key and load handle. */
+  projectName: string
+  /** Human-readable scenario name (meta.name) shown in the session picker. */
+  scenarioName: string
+  /** ISO timestamp of when the session was saved. */
+  savedAt: string
+  /** 0-based tutorial step the student was on when they saved. */
+  tutorialStep: number
+}
+
+/** Result of session:save. */
+export interface SessionSaveResult {
+  ok: boolean
+  error?: string
+}
+
+/** Result of session:load — the restored scenario plus where to resume. */
+export interface SessionLoadResult {
+  ok: boolean
+  scenario?: OTForgeScenario
+  tutorialStep?: number
+  error?: string
+}
+
 export interface ContainerStatus {
   nodeId: string
   containerId?: string
