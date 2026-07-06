@@ -686,6 +686,30 @@ export default function App() {
    * If the scenario has tutorial steps, the Tutorial panel is auto-shown so students
    * immediately see their guided instructions.
    */
+  /**
+   * Starts a simulation for an explicit scenario, driving the simStatus lifecycle.
+   * Takes the scenario as an argument (rather than reading state) so callers that
+   * have just set it — e.g. resuming a saved session — don't race React's async
+   * state update. Stable (no deps) so other handlers can depend on it freely.
+   */
+  const startSimulation = useCallback(async (sc: OTForgeScenario) => {
+    setSimError(null)
+    setSimStatus('starting')
+    setContainerStatuses([])
+    try {
+      const result = await window.electronAPI.simulation.start(sc)
+      if (result.ok) {
+        setSimStatus('running')
+      } else {
+        setSimStatus('idle')
+        setSimError(result.error ?? 'Simulation failed to start.')
+      }
+    } catch (err) {
+      setSimStatus('idle')
+      setSimError(`Unexpected error: ${(err as Error).message}`)
+    }
+  }, [])
+
   const handleImport = useCallback(async () => {
     const result = await window.electronAPI.scenario.import()
     if (result.scenario) {
@@ -733,26 +757,34 @@ export default function App() {
   }, [])
 
   /**
-   * Loads a saved session: applies its scenario and jumps the tutorial to the
-   * saved step. Mirrors handleImport's scenario-application (View Mode, canvas).
+   * Loads a saved session: applies its scenario, jumps the tutorial to the saved
+   * step, and automatically starts the simulation so the student is dropped right
+   * back into a running lab. (main's session:load armed the folder-restore, which
+   * fires during this start.) Mirrors handleImport's scenario-application.
    */
-  const handleLoadSession = useCallback(async (projectName: string) => {
-    const result = await window.electronAPI.session.load(projectName)
-    setSessionPickerOpen(false)
-    if (!result.ok || !result.scenario) {
-      setSimError(result.error ?? 'Failed to load session.')
-      return
-    }
-    setScenario(result.scenario)
-    setBuilderModeActive(false)
-    setView('canvas')
-    setCurrentFilePath(null) // a session is not backed by a .otflab file on disk
-    if (result.scenario.meta.tutorialSteps?.length) {
-      setResumeTutorialStep(result.tutorialStep ?? 0)
-      setTutorialKey(k => k + 1)
-      setShowTutorial(true)
-    }
-  }, [])
+  const handleLoadSession = useCallback(
+    async (projectName: string) => {
+      const result = await window.electronAPI.session.load(projectName)
+      setSessionPickerOpen(false)
+      if (!result.ok || !result.scenario) {
+        setSimError(result.error ?? 'Failed to load session.')
+        return
+      }
+      setScenario(result.scenario)
+      setBuilderModeActive(false)
+      setView('canvas')
+      setCurrentFilePath(null) // a session is not backed by a .otflab file on disk
+      if (result.scenario.meta.tutorialSteps?.length) {
+        setResumeTutorialStep(result.tutorialStep ?? 0)
+        setTutorialKey(k => k + 1)
+        setShowTutorial(true)
+      }
+      // Auto-start with the loaded scenario passed explicitly (state isn't updated
+      // yet). This also triggers the saved-folder restore inside simulation start.
+      void startSimulation(result.scenario)
+    },
+    [startSimulation]
+  )
 
   /**
    * Creates a blank scenario and navigates to the canvas in View Mode.
@@ -1396,25 +1428,10 @@ export default function App() {
    * writeGrafanaProvisioning or generateCompose errors), ipcRenderer.invoke() rejects
    * and without a catch the simStatus would hang at 'starting' forever.
    */
-  const handleStart = useCallback(async () => {
+  const handleStart = useCallback(() => {
     if (!scenario) return
-    setSimError(null)
-    setSimStatus('starting')
-    setContainerStatuses([])
-    try {
-      const result = await window.electronAPI.simulation.start(scenario)
-      if (result.ok) {
-        setSimStatus('running')
-      } else {
-        setSimStatus('idle')
-        setSimError(result.error ?? 'Simulation failed to start.')
-      }
-    } catch (err) {
-      // IPC handler threw an unhandled exception — surface it to the user
-      setSimStatus('idle')
-      setSimError(`Unexpected error: ${(err as Error).message}`)
-    }
-  }, [scenario])
+    void startSimulation(scenario)
+  }, [scenario, startSimulation])
 
   /**
    * Toolbar "Update Images" handler.
