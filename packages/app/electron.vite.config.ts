@@ -73,6 +73,24 @@ export default defineConfig({
 
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
+    /**
+     * Dev-server port for the renderer (HMR).
+     *
+     * electron-vite's default is 5173, but on Windows hosts running Docker
+     * Desktop / Hyper-V, WinNAT reserves large dynamic TCP port ranges (e.g.
+     * 5146–5245), and 5173 frequently lands inside one. A bind into a reserved
+     * range fails with `EACCES: permission denied` (NOT EADDRINUSE), which
+     * killed `npm run dev` with no other process actually holding the port.
+     *
+     * 3173 sits below the observed reservation clusters (which start ~4710), so
+     * it avoids the collision on the affected machines. The main process loads
+     * the renderer from process.env.ELECTRON_RENDERER_URL (see src/main/index.ts),
+     * which electron-vite sets from this port automatically — no other change
+     * is needed. strictPort is left off so an in-use port still auto-increments.
+     */
+    server: {
+      port: 3173
+    },
     build: {
       rollupOptions: {
         input: {
