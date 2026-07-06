@@ -7,7 +7,16 @@ FROM zeek/zeek:latest
 # --no-install-recommends intentionally omitted: security upgrades should pull
 # in recommended packages so that patch coverage is complete.
 # Fixes CVE-2026-45447 (openssl heap use-after-free, libssl3t64 3.5.6-1~deb13u2).
-RUN apt-get update && apt-get upgrade -y \
+#
+# SECURITY_REFRESH busts this layer's build cache so a rebuild re-runs the
+# upgrade against the *current* Debian repos rather than reusing a months-old
+# cached layer. Bump the date whenever a newly published security update needs
+# to be pulled. 2026-07-06: libssh2 1.11.1-1+deb13u1 fixes CVE-2026-55200
+# (CRITICAL out-of-bounds write), CVE-2026-55199 (HIGH DoS), and CVE-2026-7598
+# — none of which were in the repos when this image was last built (2026-06-29).
+ARG SECURITY_REFRESH=2026-07-06
+RUN echo "security-refresh: ${SECURITY_REFRESH}" \
+    && apt-get update && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ICS protocol monitoring script
