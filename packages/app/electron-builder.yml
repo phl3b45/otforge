@@ -1,5 +1,9 @@
 appId: com.iburres.otforge
 productName: OTForge
+# Set explicitly: without package-lock.json, electron-builder can't detect the
+# npm workspace root and would derive the executable name from the package
+# (@otforge/app -> @otforgeapp), which fails AppImage path validation.
+executableName: OTForge
 copyright: Copyright © 2026 Ian Burres
 
 directories:
