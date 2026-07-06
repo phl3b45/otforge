@@ -33,6 +33,9 @@ import type {
   SimulationStartResult,
   SimulationStopResult,
   SimulationUpdateResult,
+  SessionSummary,
+  SessionSaveResult,
+  SessionLoadResult,
   ContainerStatus,
   LicenseValidationResult,
   OTForgeScenario,
@@ -141,6 +144,29 @@ const api = {
      */
     updateImages: (scenario: OTForgeScenario): Promise<SimulationUpdateResult> =>
       ipcRenderer.invoke('simulation:updateImages', scenario)
+  },
+
+  // ── Saved sessions (resume a lab later) ───────────────────────────────────────
+  session: {
+    /**
+     * Saves the current scenario (with the student's edited rules) and tutorial
+     * step so the lab can be resumed later. Keyed by scenario name — re-saving
+     * the same lab overwrites its session.
+     * @param scenario     - The current scenario to snapshot.
+     * @param tutorialStep - 0-based step the student is on.
+     */
+    save: (scenario: OTForgeScenario, tutorialStep: number): Promise<SessionSaveResult> =>
+      ipcRenderer.invoke('session:save', { scenario, tutorialStep }),
+
+    /** Lists all saved sessions (newest first) for the Load Session picker. */
+    list: (): Promise<SessionSummary[]> => ipcRenderer.invoke('session:list'),
+
+    /**
+     * Loads a saved session by its projectName (from a SessionSummary).
+     * Returns the scenario and the tutorial step to resume at.
+     */
+    load: (projectName: string): Promise<SessionLoadResult> =>
+      ipcRenderer.invoke('session:load', { projectName })
   },
 
   // ── System info ───────────────────────────────────────────────────────────────

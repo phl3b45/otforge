@@ -32,6 +32,9 @@ import type {
   SimulationStartResult,
   SimulationStopResult,
   SimulationUpdateResult,
+  SessionSummary,
+  SessionSaveResult,
+  SessionLoadResult,
   ContainerStatus,
   OTForgeScenario,
   DeviceConfig,
@@ -71,6 +74,7 @@ import {
 import type { OtZoneDevice, OtZoneTopology } from '@otforge/orchestrator'
 import type { NetworkZone, ACLRule } from '@otforge/schema'
 import { initDb, saveActiveScenario, loadActiveScenario, clearActiveScenario } from './db'
+import { saveSession, loadSession, listSessions } from './sessions'
 import { parsePlcFile } from './plc-import'
 
 const execAsync = promisify(exec)
@@ -984,6 +988,62 @@ function registerIPCHandlers(): void {
     if (!activeProjectName) return []
     return dockerClient.getStatus(activeProjectName)
   })
+
+  // ── Session save / load ───────────────────────────────────────────────────────
+  /**
+   * Saves the student's current session so a lab can be resumed later. Persists
+   * the scenario (which carries their edited Suricata/firewall rules) and the
+   * tutorial step to <userData>/sessions/<projectName>/. Keyed by scenario name,
+   * so re-saving the same lab overwrites its one session. A later increment also
+   * captures the student's Lab_NN_Student_Saved_Work folder into this directory.
+   */
+  ipcMain.handle(
+    'session:save',
+    async (
+      _e,
+      { scenario, tutorialStep }: { scenario: OTForgeScenario; tutorialStep: number }
+    ): Promise<SessionSaveResult> => {
+      try {
+        const projectName = toProjectName(scenario.meta.name)
+        await saveSession(app.getPath('userData'), {
+          projectName,
+          scenarioName: scenario.meta.name,
+          savedAt: new Date().toISOString(),
+          tutorialStep,
+          scenario
+        })
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: `Failed to save session: ${(err as Error).message}` }
+      }
+    }
+  )
+
+  /** Lists all saved sessions (summaries, newest first) for the Load picker. */
+  ipcMain.handle('session:list', async (): Promise<SessionSummary[]> => {
+    try {
+      return await listSessions(app.getPath('userData'))
+    } catch {
+      return []
+    }
+  })
+
+  /**
+   * Loads a saved session by project name, returning the scenario and the tutorial
+   * step to resume at. The renderer applies the scenario and jumps to that step.
+   */
+  ipcMain.handle(
+    'session:load',
+    async (_e, { projectName }: { projectName: string }): Promise<SessionLoadResult> => {
+      try {
+        const session = await loadSession(app.getPath('userData'), projectName)
+        if (!session) return { ok: false, error: 'No saved session found.' }
+        return { ok: true, scenario: session.scenario, tutorialStep: session.tutorialStep }
+      } catch (err) {
+        return { ok: false, error: `Failed to load session: ${(err as Error).message}` }
+      }
+    }
+  )
 
   // ── Firewall runtime reload ───────────────────────────────────────────────────
 
