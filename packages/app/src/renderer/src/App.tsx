@@ -91,11 +91,13 @@ type SimStatus = 'idle' | 'starting' | 'running' | 'stopping'
 function LaunchScreen({
   docker,
   onImport,
-  onNew
+  onNew,
+  onLoadSession
 }: {
   docker: DockerStatus | null
   onImport: () => void
   onNew: () => void
+  onLoadSession: () => void
 }) {
   return (
     <div className="launch-screen">
@@ -190,6 +192,14 @@ function LaunchScreen({
             disabled={!docker?.available}
           >
             Open .otflab File
+          </button>
+          {/* Resume a previously saved lab session (scenario + rules + step + work). */}
+          <button
+            className="btn btn-ghost btn-lg"
+            onClick={onLoadSession}
+            disabled={!docker?.available}
+          >
+            Resume Saved Lab
           </button>
         </div>
 
@@ -1555,10 +1565,110 @@ export default function App() {
   // instead of a hardcoded padding value that drifts when sidebars change.
   const sidebarWidth = scenario?.meta.locked ? 220 : builderModeActive ? 210 : 0
 
+  // Session save toast + Load-Session picker, shared by both the LaunchScreen
+  // ("Resume Saved Lab") and the main workspace ("Load Session") so the picker
+  // works from either view.
+  const sessionOverlays = (
+    <>
+      {sessionNotice && (
+        <div className="desktop-hint-toast" role="status" aria-live="polite">
+          <div className="desktop-hint-toast-header">
+            <span className="desktop-hint-toast-title">✓ Session Saved</span>
+            <button
+              className="desktop-hint-toast-close"
+              onClick={() => {
+                if (sessionNoticeTimerRef.current) clearTimeout(sessionNoticeTimerRef.current)
+                setSessionNotice(null)
+              }}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+          <div className="desktop-hint-toast-body">{sessionNotice}</div>
+        </div>
+      )}
+      {sessionPickerOpen && (
+        <div
+          role="dialog"
+          aria-label="Load saved session"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 500,
+            background: 'rgba(1, 4, 9, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+          onClick={() => setSessionPickerOpen(false)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: 'min(560px, 90vw)',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              background: '#0d1117',
+              border: '1px solid #30363d',
+              borderRadius: 8,
+              padding: 20,
+              color: '#e6edf3'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ fontSize: 16 }}>Resume a Saved Session</strong>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => setSessionPickerOpen(false)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            {savedSessions.length === 0 ? (
+              <p style={{ marginTop: 16, color: '#8b949e' }}>
+                No saved sessions yet. Open a lab and click <strong>Save Session</strong> to create
+                one.
+              </p>
+            ) : (
+              <ul style={{ listStyle: 'none', margin: '16px 0 0', padding: 0 }}>
+                {savedSessions.map(s => (
+                  <li key={s.projectName} style={{ marginBottom: 8 }}>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      style={{ width: '100%', textAlign: 'left' }}
+                      onClick={() => handleLoadSession(s.projectName)}
+                    >
+                      <span style={{ fontWeight: 600 }}>{s.scenarioName}</span>
+                      <span style={{ color: '#8b949e', marginLeft: 8 }}>
+                        step {s.tutorialStep + 1} · saved {new Date(s.savedAt).toLocaleString()}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  )
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (view === 'launch') {
-    return <LaunchScreen docker={docker} onImport={handleImport} onNew={handleNew} />
+    return (
+      <>
+        <LaunchScreen
+          docker={docker}
+          onImport={handleImport}
+          onNew={handleNew}
+          onLoadSession={handleOpenSessionPicker}
+        />
+        {sessionOverlays}
+      </>
+    )
   }
 
   return (
@@ -2248,93 +2358,7 @@ export default function App() {
           <div className="desktop-hint-toast-body">{updateNotice}</div>
         </div>
       )}
-      {/* Session-saved toast — reuses the desktop-hint toast styling. */}
-      {sessionNotice && (
-        <div className="desktop-hint-toast" role="status" aria-live="polite">
-          <div className="desktop-hint-toast-header">
-            <span className="desktop-hint-toast-title">✓ Session Saved</span>
-            <button
-              className="desktop-hint-toast-close"
-              onClick={() => {
-                if (sessionNoticeTimerRef.current) clearTimeout(sessionNoticeTimerRef.current)
-                setSessionNotice(null)
-              }}
-              aria-label="Dismiss"
-            >
-              ×
-            </button>
-          </div>
-          <div className="desktop-hint-toast-body">{sessionNotice}</div>
-        </div>
-      )}
-      {/*
-       * Load-Session picker — a lightweight modal listing saved sessions. Inline
-       * layout styles avoid depending on picker-specific CSS; buttons reuse .btn.
-       */}
-      {sessionPickerOpen && (
-        <div
-          role="dialog"
-          aria-label="Load saved session"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 500,
-            background: 'rgba(1, 4, 9, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-          onClick={() => setSessionPickerOpen(false)}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              width: 'min(560px, 90vw)',
-              maxHeight: '80vh',
-              overflowY: 'auto',
-              background: '#0d1117',
-              border: '1px solid #30363d',
-              borderRadius: 8,
-              padding: 20,
-              color: '#e6edf3'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <strong style={{ fontSize: 16 }}>Resume a Saved Session</strong>
-              <button
-                className="btn btn-sm btn-ghost"
-                onClick={() => setSessionPickerOpen(false)}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-            {savedSessions.length === 0 ? (
-              <p style={{ marginTop: 16, color: '#8b949e' }}>
-                No saved sessions yet. Open a lab and click <strong>Save Session</strong> to create
-                one.
-              </p>
-            ) : (
-              <ul style={{ listStyle: 'none', margin: '16px 0 0', padding: 0 }}>
-                {savedSessions.map(s => (
-                  <li key={s.projectName} style={{ marginBottom: 8 }}>
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      style={{ width: '100%', textAlign: 'left' }}
-                      onClick={() => handleLoadSession(s.projectName)}
-                    >
-                      <span style={{ fontWeight: 600 }}>{s.scenarioName}</span>
-                      <span style={{ color: '#8b949e', marginLeft: 8 }}>
-                        step {s.tutorialStep + 1} · saved {new Date(s.savedAt).toLocaleString()}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
+      {sessionOverlays}
     </div>
   )
 }
