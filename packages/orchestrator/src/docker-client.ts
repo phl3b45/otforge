@@ -450,6 +450,104 @@ export class DockerClient {
   }
 
   /**
+   * Force-pulls the newest version of every image in a scenario, streaming
+   * progress line-by-line. Backs the toolbar "Update Images" action.
+   *
+   * Unlike `docker compose up --pull missing` (used on start), this runs
+   * `docker compose pull`, which ALWAYS re-fetches each `:latest` tag even when
+   * an older copy is already cached. This is the only path by which a student
+   * who pulled an image weeks ago receives an updated GHCR image — the default
+   * `pull_policy: if_not_present` never re-pulls a tag that already exists
+   * locally.
+   *
+   * The compose file is (re)written from the supplied YAML first, so this works
+   * even for a scenario that has never been started (no compose file on disk yet).
+   * Running containers are not affected — `pull` only refreshes the local image
+   * cache; the new image takes effect on the next simulation start.
+   *
+   * @param projectName - Sanitized Compose project name (lowercase alphanumeric + hyphen).
+   * @param composeYaml - Complete docker-compose.yml content as a YAML string.
+   * @param onProgress  - Optional callback fired with each cleaned output line.
+   * @returns { ok: true } on success, { ok: false, error } on failure.
+   */
+  async updateImages(
+    projectName: string,
+    composeYaml: string,
+    onProgress?: (line: string) => void
+  ): Promise<{ ok: boolean; error?: string }> {
+    const scenarioDir = join(this.workDir, projectName)
+    const composeFile = join(scenarioDir, 'docker-compose.yml')
+
+    try {
+      // recursive: true makes mkdir a no-op if the directory already exists
+      await mkdir(scenarioDir, { recursive: true })
+      await writeFile(composeFile, composeYaml, 'utf-8')
+      await this._composePull(projectName, composeFile, onProgress)
+      return { ok: true }
+    } catch (err) {
+      const pullErr = err as Error & { _composeOutput?: string }
+      const rawOutput = pullErr._composeOutput ?? pullErr.message
+      const errorLines = rawOutput
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => /error|failed|cannot|denied|unauthorized|no such|not found/i.test(l))
+        .filter((l, i, arr) => arr.indexOf(l) === i)
+        .slice(0, 8)
+      const shortError =
+        errorLines.length > 0 ? errorLines.join('\n') : `docker compose pull failed: ${rawOutput}`
+      return { ok: false, error: shortError }
+    }
+  }
+
+  /**
+   * Runs `docker compose pull` via spawn so output can be streamed line-by-line,
+   * mirroring the cleaning logic in `_composeUp` (CR→LF split, ANSI strip).
+   */
+  private _composePull(
+    projectName: string,
+    composeFile: string,
+    onProgress?: (line: string) => void
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const allLines: string[] = []
+      const child = spawn('docker', ['compose', '-p', projectName, '-f', composeFile, 'pull'], {
+        env: buildEnv()
+      })
+
+      const processChunk = (buf: Buffer): void => {
+        buf
+          .toString()
+          .replace(/\r/g, '\n')
+          .split('\n')
+          .forEach(raw => {
+            // eslint-disable-next-line no-control-regex
+            const line = raw.replace(/\x1B\[[0-9;]*[mGKHF]/g, '').trim()
+            if (!line) return
+            allLines.push(line)
+            onProgress?.(line)
+          })
+      }
+
+      child.stdout?.on('data', processChunk)
+      child.stderr?.on('data', processChunk)
+
+      child.on('close', code => {
+        if (code === 0) {
+          resolve()
+        } else {
+          const e = new Error(`docker compose pull exited with code ${code}`) as Error & {
+            _composeOutput: string
+          }
+          e._composeOutput = allLines.join('\n')
+          reject(e)
+        }
+      })
+
+      child.on('error', reject)
+    })
+  }
+
+  /**
    * Returns the absolute path to a scenario's docker-compose.yml file.
    *
    * @param projectName - The Compose project name.

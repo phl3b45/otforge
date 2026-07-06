@@ -31,6 +31,7 @@ import type {
   ScenarioDeleteFileResult,
   SimulationStartResult,
   SimulationStopResult,
+  SimulationUpdateResult,
   ContainerStatus,
   OTForgeScenario,
   DeviceConfig,
@@ -542,15 +543,12 @@ function registerIPCHandlers(): void {
   // ── App metadata ─────────────────────────────────────────────────────────────
 
   /** Returns version strings displayed in the launch screen and about panel. */
-  ipcMain.handle(
-    'app:info',
-    (): AppInfo => ({
-      version: app.getVersion(),
-      nodeVersion: process.versions.node,
-      electronVersion: process.versions.electron,
-      platform: process.platform as AppInfo['platform']
-    })
-  )
+  ipcMain.handle('app:info', (): AppInfo => ({
+    version: app.getVersion(),
+    nodeVersion: process.versions.node,
+    electronVersion: process.versions.electron,
+    platform: process.platform as AppInfo['platform']
+  }))
 
   /** Opens a URL in the system browser (used for documentation links). */
   ipcMain.handle('app:openExternal', async (_e, { url }: { url: string }) => {
@@ -906,6 +904,45 @@ function registerIPCHandlers(): void {
         activeAttackPorts.clear()
         activeWorkstationPorts.clear()
         return { ok: false, error: `Simulation start failed: ${(err as Error).message}` }
+      }
+    }
+  )
+
+  /**
+   * Force-pulls the newest image for every service in the loaded scenario.
+   *
+   * Backs the toolbar "Update Images" button. Because the default
+   * `pull_policy: if_not_present` never re-pulls a `:latest` tag that already
+   * exists locally, a student who pulled an image weeks ago would otherwise
+   * keep running a stale image even after a new one is published to GHCR. This
+   * runs `docker compose pull`, which always re-fetches each tag.
+   *
+   * Reuses the same compose generation as simulation:start so the pull targets
+   * exactly the images this scenario would launch. It does NOT set
+   * activeProjectName or start any container — pulling only refreshes the local
+   * image cache; the updated image takes effect on the next Run Simulation.
+   *
+   * Progress lines are streamed to the renderer over 'simulation:updateProgress'.
+   */
+  ipcMain.handle(
+    'simulation:updateImages',
+    async (_e, scenario: OTForgeScenario): Promise<SimulationUpdateResult> => {
+      try {
+        const dockerAvailable = await dockerClient.isAvailable()
+        if (!dockerAvailable) {
+          return { ok: false, error: 'Docker Desktop is not running.' }
+        }
+
+        const projectName = toProjectName(scenario.meta.name)
+        const zones = await resolveZones()
+        const scenarioDir = pathJoin(app.getPath('userData'), 'scenarios', projectName)
+        const composeYaml = generateCompose(scenario, projectName, scenarioDir, zones)
+
+        return await dockerClient.updateImages(projectName, composeYaml, (line: string) => {
+          mainWindow?.webContents.send('simulation:updateProgress', { line })
+        })
+      } catch (err) {
+        return { ok: false, error: `Image update failed: ${(err as Error).message}` }
       }
     }
   )
@@ -2530,10 +2567,8 @@ function registerIPCHandlers(): void {
    * @returns { ok: true } on success, { ok: false, error } if simulation is not
    *   running or FUXA's port is not yet accepting connections.
    */
-  ipcMain.handle(
-    'hmi:openEditor',
-    async (): Promise<{ ok: boolean; error?: string }> =>
-      openFuxaWindow('FUXA — Editor', '/editor', '#1e1e2e')
+  ipcMain.handle('hmi:openEditor', async (): Promise<{ ok: boolean; error?: string }> =>
+    openFuxaWindow('FUXA — Editor', '/editor', '#1e1e2e')
   )
 
   /**
@@ -2544,14 +2579,12 @@ function registerIPCHandlers(): void {
    * @returns { ok: true } on success, { ok: false, error } if simulation is not
    *   running or FUXA's port is not yet accepting connections.
    */
-  ipcMain.handle(
-    'scada:open',
-    async (): Promise<{ ok: boolean; error?: string }> =>
-      openFuxaWindow(
-        'SCADA Overview — OT Process',
-        `/home?viewName=${encodeURIComponent('SCADA Overview')}`,
-        '#0d1117'
-      )
+  ipcMain.handle('scada:open', async (): Promise<{ ok: boolean; error?: string }> =>
+    openFuxaWindow(
+      'SCADA Overview — OT Process',
+      `/home?viewName=${encodeURIComponent('SCADA Overview')}`,
+      '#0d1117'
+    )
   )
 
   // ── PLC firmware import ────────────────────────────────────────────────────────

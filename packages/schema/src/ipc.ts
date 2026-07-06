@@ -53,6 +53,11 @@ export interface SimulationStopResult {
   error?: string
 }
 
+export interface SimulationUpdateResult {
+  ok: boolean
+  error?: string
+}
+
 export interface ContainerStatus {
   nodeId: string
   containerId?: string

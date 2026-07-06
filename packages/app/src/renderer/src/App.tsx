@@ -502,6 +502,19 @@ export default function App() {
   /** Most recent output line from docker compose during a pull — shown in the overlay. */
   const [pullProgress, setPullProgress] = useState<string>('')
 
+  /**
+   * True while a toolbar-triggered "Update Images" pull is in progress. Drives the
+   * "Updating Container Images" overlay. Independent of simStatus — the update runs
+   * with the simulation stopped and does not start any container.
+   */
+  const [updating, setUpdating] = useState<boolean>(false)
+  /** Most recent `docker compose pull` output line — shown in the update overlay. */
+  const [updateProgress, setUpdateProgress] = useState<string>('')
+  /** Transient success message shown as a toast after an image update completes. */
+  const [updateNotice, setUpdateNotice] = useState<string | null>(null)
+  /** Auto-dismiss timer for the update-success toast. */
+  const updateNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // attackLaunched state removed — toolbar button now opens AttackTerminalModal directly
   // so button color uses (attackTerminalDevice !== null) instead of a separate flag.
 
@@ -606,11 +619,23 @@ export default function App() {
       }
     })
 
+    // Stream `docker compose pull` output during a toolbar "Update Images" action
+    // into the update overlay, using the same line-filtering as the start pull.
+    const unsubUpdate = window.electronAPI.on.simulationUpdateProgress(({ line }) => {
+      if (
+        line.length < 120 &&
+        /pulling|pull|download|extract|layer|image|pushed|digest|up to date/i.test(line)
+      ) {
+        setUpdateProgress(line)
+      }
+    })
+
     // Clean up IPC listeners when the component unmounts
     return () => {
       unsubStatus()
       unsubPull()
       unsubProgress()
+      unsubUpdate()
     }
   }, [])
 
@@ -1317,6 +1342,37 @@ export default function App() {
   }, [scenario])
 
   /**
+   * Toolbar "Update Images" handler.
+   *
+   * Runs `docker compose pull` for the loaded scenario so the local cache picks
+   * up newly published GHCR images that the default `pull_policy: if_not_present`
+   * would otherwise never re-fetch (e.g. an updated Kali attack-base image). Does
+   * not start any container — the refreshed image is used on the next Run.
+   * Only enabled while the simulation is idle.
+   */
+  const handleUpdateImages = useCallback(async () => {
+    if (!scenario) return
+    setSimError(null)
+    setUpdateProgress('')
+    setUpdating(true)
+    try {
+      const result = await window.electronAPI.simulation.updateImages(scenario)
+      if (result.ok) {
+        setUpdateNotice('Container images are up to date.')
+        if (updateNoticeTimerRef.current) clearTimeout(updateNoticeTimerRef.current)
+        updateNoticeTimerRef.current = setTimeout(() => setUpdateNotice(null), 6000)
+      } else {
+        setSimError(result.error ?? 'Image update failed.')
+      }
+    } catch (err) {
+      setSimError(`Image update failed: ${(err as Error).message}`)
+    } finally {
+      setUpdating(false)
+      setUpdateProgress('')
+    }
+  }, [scenario])
+
+  /**
    * Stops the simulation:
    *   1. Transition to 'stopping'
    *   2. Call simulation:stop IPC which runs docker compose down --volumes
@@ -1486,6 +1542,29 @@ export default function App() {
             >
               Open
             </button>
+            {/*
+             * Update Images — force-pulls the newest GHCR images for the loaded
+             * scenario. Needed because pull_policy: if_not_present never re-pulls a
+             * :latest tag that already exists locally, so a published image update
+             * (e.g. a new Kali attack-base) would otherwise never reach the student.
+             * Shown only with a scenario loaded; disabled unless idle + Docker up.
+             */}
+            {scenario && (
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={handleUpdateImages}
+                disabled={!simIsIdle || !docker?.available || updating}
+                title={
+                  !docker?.available
+                    ? 'Docker is not running'
+                    : !simIsIdle
+                      ? 'Stop the simulation to update images'
+                      : 'Download the latest container images for this scenario from the registry'
+                }
+              >
+                {updating ? 'Updating…' : 'Update Images'}
+              </button>
+            )}
             {/*
              * Edit Scenario — shown whenever a scenario is open.
              * Grayed in Student Mode (builderModeActive = false) because editing
@@ -2029,6 +2108,46 @@ export default function App() {
               {pullProgress && <p className="pull-progress-line">{pullProgress}</p>}
             </div>
           </div>
+        </div>
+      )}
+      {/*
+       * "Updating Container Images" overlay — shown while a toolbar-triggered
+       * `docker compose pull` runs. Reuses the pull-overlay styles. Independent of
+       * simStatus since the update runs with the simulation stopped.
+       */}
+      {updating && (
+        <div className="pull-overlay" role="alertdialog" aria-label="Updating images">
+          <div className="pull-overlay-card">
+            <div className="pull-spinner" aria-hidden="true" />
+            <div className="pull-overlay-text">
+              <strong>Updating Container Images</strong>
+              <p>
+                Pulling the latest images for this scenario from the registry.
+                <br />
+                This may take a few minutes depending on your connection speed.
+              </p>
+              {updateProgress && <p className="pull-progress-line">{updateProgress}</p>}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Update-complete toast — reuses the desktop-hint toast styling. */}
+      {updateNotice && (
+        <div className="desktop-hint-toast" role="status" aria-live="polite">
+          <div className="desktop-hint-toast-header">
+            <span className="desktop-hint-toast-title">✓ Images Updated</span>
+            <button
+              className="desktop-hint-toast-close"
+              onClick={() => {
+                if (updateNoticeTimerRef.current) clearTimeout(updateNoticeTimerRef.current)
+                setUpdateNotice(null)
+              }}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+          <div className="desktop-hint-toast-body">{updateNotice}</div>
         </div>
       )}
     </div>
