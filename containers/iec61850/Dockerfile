@@ -8,21 +8,23 @@
 # Scope: MMS only for now. GOOSE and Sampled Values are layer-2 multicast and are
 # impractical on Docker bridge networks without extra plumbing — deferred.
 
-# ── Build stage: compile libiec61850 + its example servers ───────────────────
+# ── Build stage: compile libiec61850, then our substation IED server ─────────
 FROM debian:bookworm-slim AS build
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git cmake build-essential ca-certificates \
+    git make gcc g++ build-essential ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 RUN git clone --depth 1 https://github.com/mz-automation/libiec61850.git
+# Our custom substation IED server + its Makefile, dropped into the library's
+# examples tree so it links via libiec61850's own make flags.
+COPY server.c /src/libiec61850/examples/otforge-substation/server.c
+COPY substation.Makefile /src/libiec61850/examples/otforge-substation/Makefile
 WORKDIR /src/libiec61850
-RUN mkdir build && cd build \
-    && cmake -DBUILD_EXAMPLES=ON .. \
-    && make -j"$(nproc)"
-# Surface where the example server binaries landed (aids COPY path below and
-# future customization). Non-fatal listing.
-RUN find /src/libiec61850/build -type f -perm -111 -name 'server_example*' -print
+# Build the static library (POSIX make build), then our server against it.
+RUN make -j"$(nproc)"
+WORKDIR /src/libiec61850/examples/otforge-substation
+RUN make
 
 # ── Runtime stage ────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
@@ -33,12 +35,10 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
-# server_example_basic_io ships a static IEC 61850 data model (GGIO + analog
-# nodes) and serves it over MMS on port 102 — a working IED to start from. A
-# later increment swaps in a realistic substation model (MMXU measurements +
-# XCBR breaker).
+# Our substation IED: MMXU measurements (live) + a controllable XCBR breaker,
+# served over MMS on port 102 (see server.c).
 COPY --from=build \
-    /src/libiec61850/build/examples/server_example_basic_io/server_example_basic_io \
+    /src/libiec61850/examples/otforge-substation/iec61850-server \
     /app/iec61850-server
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
