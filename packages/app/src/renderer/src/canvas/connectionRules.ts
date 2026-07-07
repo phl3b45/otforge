@@ -889,6 +889,7 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
   plc: 'PLC',
   rtu: 'RTU',
   ied: 'IED',
+  'iec61850-ied': 'IEC 61850 IED',
   'safety-plc': 'Safety PLC / SIS',
   'dcs-controller': 'DCS Controller',
   'legacy-plc': 'Siemens S7 PLC', // Phase 10
@@ -957,6 +958,7 @@ const DEVICE_CABLE_CAPABILITIES: Record<DeviceCategory, Set<CableType>> = {
   rtu: new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']),
   // IEDs: Ethernet only (IEC 61850 GOOSE runs on Cat5e/fiber, no serial field bus)
   ied: new Set(['cat5e', 'cat6', 'mmf', 'smf', 'ac']),
+  'iec61850-ied': new Set(['cat5e', 'cat6', 'mmf', 'smf', 'ac']),
   // Safety PLC: same port set as PLC; isolated physical network segment per ISA-84
   'safety-plc': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']),
   // DCS Controller: larger system, fiber uplinks to DCS node bus are common

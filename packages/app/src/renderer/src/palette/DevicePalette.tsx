@@ -67,7 +67,8 @@ const PALETTE: PaletteSection[] = [
       { category: 'safety-plc', label: 'Safety PLC / SIS' },
       { category: 'dcs-controller', label: 'DCS Controller' },
       { category: 'rtu', label: 'RTU' },
-      { category: 'ied', label: 'IED' }
+      { category: 'ied', label: 'IED (DNP3)' },
+      { category: 'iec61850-ied', label: 'IEC 61850 IED' }
     ]
   },
   {
