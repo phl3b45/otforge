@@ -333,6 +333,7 @@ const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
   plc: ['modbus-tcp'],
   rtu: ['modbus-rtu'],
   ied: ['dnp3'],
+  'iec61850-ied': ['iec61850'],
   'safety-plc': ['modbus-tcp'], // SIS — same Modbus transport as standard PLC
   'dcs-controller': ['opc-ua'], // DCS prefers OPC-UA upward by convention
   'legacy-plc': ['s7comm'], // Siemens S7 — S7comm primary protocol (Phase 10)
@@ -377,6 +378,7 @@ const CATEGORY_LABELS: Record<DeviceCategory, string> = {
   plc: 'PLC',
   rtu: 'RTU',
   ied: 'IED',
+  'iec61850-ied': 'IEC 61850 IED',
   'safety-plc': 'Safety PLC',
   'dcs-controller': 'DCS Ctrl',
   'legacy-plc': 'S7 PLC', // Phase 10

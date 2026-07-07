@@ -65,18 +65,14 @@ export type CableType =
  *   attacker     — Red Team:     Isolated attack machine subnet (not shown in Purdue layer tabs)
  */
 export type NetworkZone =
-  | 'ot'
-  | 'control'
-  | 'plant-dmz'
-  | 'enterprise'
-  | 'internet-dmz'
-  | 'attacker'
+  'ot' | 'control' | 'plant-dmz' | 'enterprise' | 'internet-dmz' | 'attacker'
 
 export type DeviceCategory =
   // ── OT Process (Levels 0–2) ──────────────────────────────────────────────────
   | 'plc'
   | 'rtu'
-  | 'ied'
+  | 'ied' // Intelligent Electronic Device — DNP3 outstation (protection relay / bay controller)
+  | 'iec61850-ied' // IEC 61850 IED — MMS server (substation automation: power gen + distribution)
   | 'safety-plc' // Safety Instrumented System / Safety PLC (IEC 61511) — Triconex, Siemens Safety
   | 'dcs-controller' // Distributed Control System controller — Honeywell, Emerson DeltaV, ABB 800xA
   | 'legacy-plc' // Siemens S7-300/400/1200/1500 via S7comm (Phase 10)

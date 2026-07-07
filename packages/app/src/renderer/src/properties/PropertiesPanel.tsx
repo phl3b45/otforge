@@ -45,7 +45,8 @@ import { ControllerPanel } from './ControllerPanel'
 const CATEGORY_LABELS: Record<string, string> = {
   plc: 'Programmable Logic Controller',
   rtu: 'Remote Terminal Unit',
-  ied: 'Intelligent Electronic Device',
+  ied: 'Intelligent Electronic Device (DNP3)',
+  'iec61850-ied': 'IEC 61850 IED (MMS) — substation automation',
   hmi: 'Human Machine Interface',
   historian: 'Data Historian',
   sensor: 'Field Sensor',
