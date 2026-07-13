@@ -14,7 +14,12 @@ FROM zeek/zeek:latest
 # to be pulled. 2026-07-06: libssh2 1.11.1-1+deb13u1 fixes CVE-2026-55200
 # (CRITICAL out-of-bounds write), CVE-2026-55199 (HIGH DoS), and CVE-2026-7598
 # — none of which were in the repos when this image was last built (2026-06-29).
-ARG SECURITY_REFRESH=2026-07-06
+# 2026-07-13: libcurl3t64-gnutls 8.14.1-2+deb13u4 fixes CVE-2026-5773 (HIGH,
+# wrong file transfer via incorrect SMB connection reuse) and CVE-2026-6276
+# (HIGH, cookie-leak information disclosure on connection reuse) — flagged by
+# the Trivy scan on the fix/zeek-capture-and-scripts rebuild; not in the repos
+# when this image was last built (2026-07-06).
+ARG SECURITY_REFRESH=2026-07-13
 RUN echo "security-refresh: ${SECURITY_REFRESH}" \
     && apt-get update && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
