@@ -49,6 +49,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   rtu: 'Remote Terminal Unit',
   ied: 'Intelligent Electronic Device (DNP3)',
   'iec61850-ied': 'IEC 61850 IED (MMS) — substation automation',
+  'ethernetip-adapter': 'EtherNet/IP Adapter (CIP) — remote I/O',
   hmi: 'Human Machine Interface',
   historian: 'Data Historian',
   sensor: 'BACnet Device — building automation (generic / AHU / VAV / chiller / zone sensor)',

@@ -74,6 +74,7 @@ export const VALID_CONNECTIONS: Partial<
     rtu: ['modbus-tcp', 'modbus-rtu', 'dnp3'],
     ied: ['modbus-tcp', 'iec61850'],
     'iec61850-ied': ['iec61850'],
+    'ethernetip-adapter': ['ethernet-ip'], // PLC is the EtherNet/IP scanner for remote I/O
     plc: ['modbus-tcp', 'ethernet-ip'], // peer-to-peer PLC network
     'safety-plc': ['ethernet-ip', 'modbus-tcp'], // PLC shares data with adjacent SIS
     'legacy-plc': ['s7comm', 'modbus-tcp'], // PLC → Siemens S7 peer (Phase 10)
@@ -130,6 +131,18 @@ export const VALID_CONNECTIONS: Partial<
   // only. GOOSE/Sampled Values are deferred (layer-2 multicast, impractical on
   // Docker bridges) so no peer-to-peer entry exists yet — see containers/iec61850/.
   'iec61850-ied': {
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
+  // ── EtherNet/IP (CIP) remote I/O adapter — scanned by a PLC, not a peer ────
+  // Models a real remote I/O block (POINT I/O, FLEX I/O, a PowerFlex drive's I/O
+  // interface) rather than a full PLC. Explicit messaging only (no Class 1 cyclic
+  // I/O — see containers/ethernetip/server.py) — the adapter itself never
+  // initiates a connection, it only responds to its scanning PLC.
+  'ethernetip-adapter': {
     switch: ['none'],
     router: ['none'],
     firewall: ['none'],
@@ -484,6 +497,7 @@ export const VALID_CONNECTIONS: Partial<
     rtu: ['none'], // Ethernet to RTU management interface
     ied: ['none'], // Ethernet to IED configuration tool
     'iec61850-ied': ['none', 'iec61850'], // MMS engineering client (e.g. libiec61850 tools)
+    'ethernetip-adapter': ['none', 'ethernet-ip'], // EtherNet/IP config tool (e.g. RSLinx/RSLogix-style client)
     sensor: ['none', 'bacnet'], // BAS engineering client (e.g. bacpypes3 tools)
     'safety-plc': ['none'], // SIS engineering console (TriStation, Safety Builder)
     'dcs-controller': ['none'], // DCS engineering workstation (DeltaV Explorer, Experion)
@@ -574,6 +588,7 @@ export const VALID_CONNECTIONS: Partial<
     rtu: ['none'],
     ied: ['none'],
     'iec61850-ied': ['none'],
+    'ethernetip-adapter': ['none'],
     'safety-plc': ['none'],
     'dcs-controller': ['none'],
     'legacy-plc': ['none'], // Phase 10
@@ -611,6 +626,7 @@ export const VALID_CONNECTIONS: Partial<
     rtu: ['none'],
     ied: ['none'],
     'iec61850-ied': ['none'],
+    'ethernetip-adapter': ['none'],
     'safety-plc': ['none'],
     'dcs-controller': ['none'],
     'legacy-plc': ['none'], // Phase 10
@@ -648,6 +664,7 @@ export const VALID_CONNECTIONS: Partial<
     rtu: ['none'],
     ied: ['none'],
     'iec61850-ied': ['none'],
+    'ethernetip-adapter': ['none'],
     'safety-plc': ['none'],
     'dcs-controller': ['none'],
     'legacy-plc': ['none'], // Phase 10
@@ -685,6 +702,7 @@ export const VALID_CONNECTIONS: Partial<
     rtu: ['none'],
     ied: ['none'],
     'iec61850-ied': ['none'],
+    'ethernetip-adapter': ['none'],
     'safety-plc': ['none'],
     'dcs-controller': ['none'],
     'legacy-plc': ['none'], // Phase 10
@@ -757,6 +775,9 @@ export const VALID_CONNECTIONS: Partial<
     // the real IEC 61850 IED — analogous to the GOOSE/IEC 104 breaker-trip attacks
     // used in the Ukraine grid incidents.
     'iec61850-ied': ['iec61850', 'none'],
+    // Unauthenticated Set_Attribute_Single write to the adapter's Output Assembly —
+    // the same write path a legitimate scanning PLC uses, but from an unauthorized host.
+    'ethernetip-adapter': ['ethernet-ip', 'none'],
     // TRITON/TRISIS attack vector: TriStation protocol injection into SIS — Schneider Triconex, 2017
     'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip', 'opc-ua', 'none'],
     // DCS attacks: OPC-UA credential attacks, Modbus setpoint manipulation
@@ -929,6 +950,7 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
   rtu: 'RTU',
   ied: 'IED',
   'iec61850-ied': 'IEC 61850 IED',
+  'ethernetip-adapter': 'EtherNet/IP Adapter',
   'safety-plc': 'Safety PLC / SIS',
   'dcs-controller': 'DCS Controller',
   'legacy-plc': 'Siemens S7 PLC', // Phase 10
@@ -998,6 +1020,9 @@ const DEVICE_CABLE_CAPABILITIES: Record<DeviceCategory, Set<CableType>> = {
   // IEDs: Ethernet only (IEC 61850 GOOSE runs on Cat5e/fiber, no serial field bus)
   ied: new Set(['cat5e', 'cat6', 'mmf', 'smf', 'ac']),
   'iec61850-ied': new Set(['cat5e', 'cat6', 'mmf', 'smf', 'ac']),
+  // EtherNet/IP remote I/O adapter: standard Ethernet only (wireless EtherNet/IP is
+  // not common in OT deployments) + mains power for the field enclosure/DIN rail.
+  'ethernetip-adapter': new Set(['cat5e', 'cat6', 'cat6a', 'mmf', 'smf', 'ac']),
   // Safety PLC: same port set as PLC; isolated physical network segment per ISA-84
   'safety-plc': new Set(['rs485', 'rs232', 'cat5e', 'cat6', 'ac']),
   // DCS Controller: larger system, fiber uplinks to DCS node bus are common
