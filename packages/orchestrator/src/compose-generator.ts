@@ -52,6 +52,8 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   // DNP3 outstation — OpenDNP3 Python bindings on Alpine (containers/dnp3)
   ied: 'ghcr.io/iburres/otforge-dnp3:latest',
   'iec61850-ied': 'ghcr.io/iburres/otforge-iec61850:latest',
+  // EtherNet/IP (CIP) remote I/O adapter — hand-rolled asyncio server on Alpine (containers/ethernetip)
+  'ethernetip-adapter': 'ghcr.io/iburres/otforge-ethernetip:latest',
   // Phase 10: Conpot legacy device emulation (S7comm + IEC 104)
   'legacy-plc': 'ghcr.io/iburres/otforge-conpot:latest',
   'iec104-rtu': 'ghcr.io/iburres/otforge-conpot:latest',
@@ -137,6 +139,7 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   rtu: { memory: 80, cpus: '0.25' }, // pymodbus on Alpine
   ied: { memory: 80, cpus: '0.25' }, // pure-Python DNP3 on Alpine
   'iec61850-ied': { memory: 128, cpus: '0.25' }, // libiec61850 MMS server on Debian
+  'ethernetip-adapter': { memory: 64, cpus: '0.25' }, // hand-rolled asyncio ENIP/CIP server on Alpine
   'legacy-plc': { memory: 80, cpus: '0.25' }, // pure-Python S7comm on Alpine (Phase 10)
   'iec104-rtu': { memory: 80, cpus: '0.25' }, // pure-Python IEC 104 on Alpine (Phase 10)
   'process-unit': { memory: 96, cpus: '0.25' }, // pymodbus + physics loop on Alpine (Phase 11)

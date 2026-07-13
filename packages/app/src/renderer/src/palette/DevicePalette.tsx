@@ -45,7 +45,7 @@ interface PaletteSection {
  * Order within each section reflects typical design-order for that layer.
  *
  * OT tab sections (Levels 0–2):
- *   Primary Control   — PLCs, Safety PLC, DCS Controller, RTU, IED
+ *   Primary Control   — PLCs, Safety PLC, DCS Controller, RTU, IED, EtherNet/IP Adapter
  *   Field Instruments — sensor, smart sensor (kind chosen in Properties Panel;
  *                       covers temperature/gas/vibration/flow/pressure/level/
  *                       analyzer/pmu; real Modbus-backed container generates
@@ -68,7 +68,8 @@ const PALETTE: PaletteSection[] = [
       { category: 'dcs-controller', label: 'DCS Controller' },
       { category: 'rtu', label: 'RTU' },
       { category: 'ied', label: 'IED (DNP3)' },
-      { category: 'iec61850-ied', label: 'IEC 61850 IED' }
+      { category: 'iec61850-ied', label: 'IEC 61850 IED' },
+      { category: 'ethernetip-adapter', label: 'EtherNet/IP Adapter' }
     ]
   },
   {
