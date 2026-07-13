@@ -32,7 +32,7 @@
  * Z-index: 150 — above the workspace (100) but below full-screen modals (200+).
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import type { TutorialStep } from '@otforge/schema'
 
 // ── Props ──────────────────────────────────────────────────────────────────────
@@ -104,67 +104,158 @@ function resolveTemplates(text: string, devices?: Record<string, DeviceIpEntry>)
   })
 }
 
-// ── Helper: simple Markdown → plain-text paragraph breaks ─────────────────────
+// ── Helper: simple Markdown → React elements ──────────────────────────────────
 
-/**
- * Converts a limited subset of Markdown to React elements without pulling in a
- * full markdown parser. Handles:
- *   - `**bold**`  → <strong>
- *   - `` `code` `` → <code> (inline)
- *   - `\n\n`      → paragraph break
- *   - `- item`    → bullet list item
- *
- * This is intentionally minimal — full Markdown support belongs in a later
- * iteration if the tutorial system grows beyond simple instructional text.
- */
-function renderBody(body: string): React.ReactNode {
-  // Split on double-newlines for paragraphs; single newlines preserved inside
-  const paragraphs = body.trim().split(/\n\n+/)
-  return paragraphs.map((para, pi) => {
-    // Fenced code blocks: ```[lang]\n...\n```
-    const fenceMatch = para.match(/^```[^\n]*\n([\s\S]*?)```$/)
-    if (fenceMatch) {
-      return (
-        <pre key={pi} className="tutorial-code-block">
-          <code>{fenceMatch[1].trimEnd()}</code>
-        </pre>
-      )
+/** Split a pipe-table row into trimmed cell strings. */
+function parseTableRow(line: string): string[] {
+  const cells = line.split('|').map(c => c.trim())
+  if (cells[0] === '') cells.shift()
+  if (cells.at(-1) === '') cells.pop()
+  return cells
+}
+
+function isTableSeparator(cells: string[]): boolean {
+  return cells.length > 0 && cells.every(c => /^:?-{2,}:?$/.test(c))
+}
+
+/** Returns table rows when `para` is a GFM pipe table, otherwise null. */
+function parseTableBlock(para: string): string[][] | null {
+  const lines = para.split('\n').filter(l => l.trim())
+  if (lines.length < 2 || !lines.every(l => l.includes('|'))) return null
+  const rows = lines.map(parseTableRow).filter(r => r.length > 0 && !isTableSeparator(r))
+  return rows.length >= 2 ? rows : null
+}
+
+/** Returns list items and optional intro text when `para` contains `-` bullets. */
+function parseListBlock(para: string): { intro?: string; items: string[] } | null {
+  const lines = para.split('\n')
+  const firstItem = lines.findIndex(l => /^-\s/.test(l))
+  if (firstItem < 0) return null
+  const items = lines
+    .slice(firstItem)
+    .filter(l => /^-\s/.test(l))
+    .map(l => l.slice(2))
+  if (items.length === 0) return null
+  const intro = firstItem > 0 ? lines.slice(0, firstItem).join('\n').trim() : undefined
+  return intro ? { intro, items } : { items }
+}
+
+/** Split a paragraph that embeds `##`/`###` lines (single newline) into sub-chunks. */
+function splitOnHeadings(para: string): string[] {
+  const chunks: string[] = []
+  let buf: string[] = []
+  for (const line of para.split('\n')) {
+    if (/^#{2,3} /.test(line)) {
+      if (buf.length) chunks.push(buf.join('\n'))
+      buf = [line]
+    } else {
+      buf.push(line)
     }
-    // Detect bullet list blocks
-    if (para.startsWith('- ') || para.includes('\n- ')) {
-      const items = para.split('\n').filter(l => l.startsWith('- '))
-      return (
-        <ul key={pi} className="tutorial-list">
-          {items.map((item, ii) => (
-            <li key={ii}>{inlineFormat(item.slice(2))}</li>
+  }
+  if (buf.length) chunks.push(buf.join('\n'))
+  return chunks.length ? chunks : [para]
+}
+
+function renderHeading(para: string, key: string): React.ReactNode | null {
+  const match = para.match(/^(#{2,3}) ([^\n]*)(?:\n([\s\S]*))?$/)
+  if (!match) return null
+  const level = match[1].length
+  const text = match[2]
+  const rest = match[3]?.trim() ?? ''
+  return (
+    <>
+      {level === 2 ? (
+        <h2 className="tutorial-heading">{inlineFormat(text)}</h2>
+      ) : (
+        <h3 className="tutorial-subheading">{inlineFormat(text)}</h3>
+      )}
+      {rest ? renderBlock(rest, `${key}-rest`) : null}
+    </>
+  )
+}
+
+function renderBlock(para: string, key: string): React.ReactNode {
+  const heading = renderHeading(para, key)
+  if (heading) return <div key={key}>{heading}</div>
+
+  const fenceMatch = para.match(/^```[^\n]*\n([\s\S]*?)```$/)
+  if (fenceMatch) {
+    return (
+      <pre key={key} className="tutorial-code-block">
+        <code>{fenceMatch[1].trimEnd()}</code>
+      </pre>
+    )
+  }
+
+  const tableRows = parseTableBlock(para)
+  if (tableRows) {
+    const [header, ...bodyRows] = tableRows
+    return (
+      <table key={key} className="tutorial-table">
+        <thead>
+          <tr>
+            {header.map((cell, ci) => (
+              <th key={ci}>{inlineFormat(cell)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {bodyRows.map((row, ri) => (
+            <tr key={ri}>
+              {row.map((cell, ci) => (
+                <td key={ci}>{inlineFormat(cell)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )
+  }
+
+  const list = parseListBlock(para)
+  if (list) {
+    return (
+      <div key={key} className="tutorial-list-block">
+        {list.intro && <p className="tutorial-para">{inlineFormat(list.intro)}</p>}
+        <ul className="tutorial-list">
+          {list.items.map((item, ii) => (
+            <li key={ii}>{inlineFormat(item)}</li>
           ))}
         </ul>
-      )
-    }
-    // Headings: ## or ###
-    if (para.startsWith('## ') || para.startsWith('### ')) {
-      const level = para.startsWith('### ') ? 3 : 2
-      const text = para.replace(/^#{2,3} /, '')
-      return level === 2 ? (
-        <h2 key={pi} className="tutorial-heading">
-          {inlineFormat(text)}
-        </h2>
-      ) : (
-        <h3 key={pi} className="tutorial-subheading">
-          {inlineFormat(text)}
-        </h3>
-      )
-    }
-    return (
-      <p key={pi} className="tutorial-para">
-        {inlineFormat(para)}
-      </p>
+      </div>
     )
-  })
+  }
+
+  return (
+    <p key={key} className="tutorial-para">
+      {inlineFormat(para)}
+    </p>
+  )
 }
 
 /**
- * Processes inline Markdown tokens (**bold**, `code`) within a text string,
+ * Converts a limited subset of Markdown to React elements without pulling in a
+ * full markdown parser. Handles headings, fenced code, pipe tables, bullet lists,
+ * and inline **bold**, *italic*, and `code`.
+ */
+function renderBody(body: string): React.ReactNode {
+  const paragraphs = body.trim().split(/\n\n+/)
+  let key = 0
+  return paragraphs.flatMap(para =>
+    splitOnHeadings(para).map(chunk => renderBlock(chunk, String(key++)))
+  )
+}
+
+if (import.meta.env?.DEV) {
+  const table = parseTableBlock('| A | B |\n|---|---|\n| 1 | 2 |')
+  console.assert(table?.[0]?.[0] === 'A' && table?.[1]?.[1] === '2')
+  const list = parseListBlock('intro line\n- one\n- two')
+  console.assert(list?.intro === 'intro line' && list?.items.length === 2)
+  console.assert(splitOnHeadings('### Primary Control\n- one\n- two').length === 1)
+}
+
+/**
+ * Processes inline Markdown tokens (**bold**, *italic*, `code`) within a text string,
  * returning an array of React nodes (strings and elements) for rendering.
  *
  * Uses a simple split-on-delimiter approach rather than a regex engine to
@@ -183,13 +274,20 @@ function inlineFormat(text: string): React.ReactNode[] {
         </code>
       )
     } else {
-      // Even indices — process **bold** spans
+      // Even indices — process **bold** then *italic*
       const boldTokens = segment.split('**')
       boldTokens.forEach((boldSeg, j) => {
         if (j % 2 === 1) {
           nodes.push(<strong key={`b${i}-${j}`}>{boldSeg}</strong>)
-        } else if (boldSeg) {
-          nodes.push(boldSeg)
+        } else {
+          const italicTokens = boldSeg.split('*')
+          italicTokens.forEach((italSeg, k) => {
+            if (k % 2 === 1) {
+              nodes.push(<em key={`i${i}-${j}-${k}`}>{italSeg}</em>)
+            } else if (italSeg) {
+              nodes.push(italSeg)
+            }
+          })
         }
       })
     }
@@ -221,8 +319,11 @@ export function TutorialPanel({
   const [minimized, setMinimized] = useState<boolean>(false)
   // Transient copy feedback — "Copy" → "Copied!" for 1.5 s
   const [copied, setCopied] = useState<boolean>(false)
-  // Panel position (px from top-left of viewport)
-  const [position, setPosition] = useState<{ x: number; y: number }>({ x: -1, y: -1 })
+  // Panel position (px from top-left of viewport). Default: top-right, 24 px inset.
+  const [position, setPosition] = useState<{ x: number; y: number }>(() => ({
+    x: Math.max(0, window.innerWidth - 440 - 24),
+    y: 24
+  }))
   // Whether the user is currently dragging the header
   const dragging = useRef<boolean>(false)
   // Offset from panel top-left to the mouse click point during drag
@@ -238,21 +339,17 @@ export function TutorialPanel({
     onStepChange?.(currentIndex)
   }, [currentIndex, onStepChange])
 
-  // ── Default position: bottom-right corner, 24 px inset ──────────────────────
-  // Calculated on first render using window dimensions to avoid hardcoding.
-  // The panel is 440 px wide (matching .tutorial-panel CSS); place it bottom-right.
-  useEffect(() => {
-    const panelW = 440
-    // Estimate panel height for bottom-right initial placement.
-    // CSS bounds the panel at calc(100vh - 24px); use min(780, vh-72) so the
-    // computed top-y keeps the panel's bottom at viewport - 48 px on tall screens
-    // and clamps to y=0 on very small screens (≤820 px height).
-    const panelH = Math.min(780, window.innerHeight - 72)
-    setPosition({
-      x: Math.max(0, window.innerWidth - panelW - 24),
-      y: Math.max(0, window.innerHeight - panelH - 48)
-    })
-  }, [])
+  // Keep the full panel (footer included) inside the viewport after layout.
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    if (!panel) return
+    const w = panel.offsetWidth
+    const h = panel.offsetHeight
+    setPosition(prev => ({
+      x: Math.max(0, Math.min(prev.x, window.innerWidth - w)),
+      y: Math.max(0, Math.min(prev.y, window.innerHeight - h))
+    }))
+  }, [currentIndex, minimized])
 
   // ── Keyboard navigation: ← Previous, → Next ─────────────────────────────────
   useEffect(() => {
@@ -278,16 +375,14 @@ export function TutorialPanel({
   // Re-clamp on every resize so the panel stays fully visible.
   useEffect(() => {
     function handleResize(): void {
-      setPosition(prev => {
-        if (prev.x < 0) return prev // not yet initialised
-        const panel = panelRef.current
-        const panelW = panel?.offsetWidth ?? 440
-        const panelH = panel?.offsetHeight ?? 200
-        return {
-          x: Math.max(0, Math.min(prev.x, window.innerWidth - panelW)),
-          y: Math.max(0, Math.min(prev.y, window.innerHeight - panelH))
-        }
-      })
+      const panel = panelRef.current
+      if (!panel) return
+      const panelW = panel.offsetWidth
+      const panelH = panel.offsetHeight
+      setPosition(prev => ({
+        x: Math.max(0, Math.min(prev.x, window.innerWidth - panelW)),
+        y: Math.max(0, Math.min(prev.y, window.innerHeight - panelH))
+      }))
     }
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
@@ -362,9 +457,6 @@ export function TutorialPanel({
       setCopied(false)
     }
   }, [currentIndex])
-
-  // Do not render until position is initialised (avoids flash at 0,0)
-  if (position.x < 0) return <></>
 
   return (
     <div

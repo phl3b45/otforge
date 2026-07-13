@@ -5274,7 +5274,7 @@ code.prop-value {
   /* Cap total panel height so it never overflows the viewport.
      The body section flexes to fill the remaining space and scrolls
      internally, keeping header, progress bar, and footer always visible. */
-  max-height: calc(100vh - 24px);
+  max-height: calc(100vh - 48px);
   overflow: hidden;
   /* Smooth height transition when minimising */
   transition: box-shadow 0.15s;
@@ -5409,14 +5409,45 @@ code.prop-value {
   margin-bottom: 0;
 }
 
-.tutorial-list {
+.tutorial-list-block {
   margin: 0 0 8px;
+}
+
+.tutorial-list {
+  margin: 0;
   padding-left: 18px;
   color: #c9d1d9;
+  list-style-type: disc;
 }
 
 .tutorial-list li {
   margin-bottom: 4px;
+}
+
+.tutorial-table {
+  width: 100%;
+  margin: 0 0 8px;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  color: #c9d1d9;
+}
+
+.tutorial-table th,
+.tutorial-table td {
+  padding: 4px 8px;
+  border: 1px solid #30363d;
+  text-align: left;
+  vertical-align: top;
+}
+
+.tutorial-table th {
+  background: #161b22;
+  font-weight: 600;
+  color: #e6edf3;
+}
+
+.tutorial-table tbody tr:nth-child(even) {
+  background: #0d1117;
 }
 
 .tutorial-code-block {
