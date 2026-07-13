@@ -863,7 +863,7 @@ PYEOF
 chmod +x /root/Desktop/Attack_Scripts/dnp3_attack.py
 
 # ── iec61850_attack.py ──────────────────────────────────────────────────────────
-# Lab 04: Unauthorized IEC 61850 MMS control operate against a substation IED.
+# IEC 61850 Tutorial: Unauthorized IEC 61850 MMS control operate against a substation IED.
 # Sends the same client Operate service request a legitimate engineering
 # workstation would send to trip/close XCBR1 (the feeder breaker) — but from
 # an unauthorized network location. The MMS profile served here has no
@@ -925,7 +925,7 @@ echo "[otforge-attack]   /root/Desktop/Attack_Scripts/write_coil.py      — coi
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/plc_init.py        — re-seed PLC baseline (inlet pump=ON, outlet valve=OPEN)"
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/monitor_level.py   — live tank-level bar (--fast for 0.5 s poll)"
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/dnp3_attack.py     — DNP3 Direct Operate attack (Lab 03)"
-echo "[otforge-attack]   /root/Desktop/Attack_Scripts/iec61850_attack.py — IEC 61850 MMS breaker control attack (Lab 04)"
+echo "[otforge-attack]   /root/Desktop/Attack_Scripts/iec61850_attack.py — IEC 61850 MMS breaker control attack (IEC 61850 Tutorial)"
 
 # ── PLC Modbus baseline initialization ────────────────────────────────────────
 # Runs in the background so VNC/noVNC startup is not delayed.
