@@ -691,14 +691,20 @@ function registerIPCHandlers(): void {
    * check misses (e.g. diverged history) — it fails loudly rather than
    * force-merging.
    *
-   * On success, restartRequired is always true, purely as a signal for the
-   * renderer's informational message — nothing calls app.relaunch() here.
-   * electron-vite dev already watches main/preload source files and restarts
-   * the Electron process on its own the instant git pull changes them, so a
-   * manual relaunch would race that automatic one; confirmed live that doing
-   * so hangs the relaunched instance (it starts without the dev-server context
-   * electron-vite's own supervisor sets up). Progress lines are streamed to
-   * the renderer over 'app:updateProgress'.
+   * Whether a restart is actually needed is decided by comparing the git HEAD
+   * commit before and after `git pull` — if it moved, source changed and the
+   * running process is stale. (electron-vite dev's own file watcher was
+   * assumed to auto-restart Electron on a main-process change from `git pull`;
+   * confirmed live with a real dev server that it does not, so this handler
+   * owns the restart decision entirely rather than relying on that.) When a
+   * restart is needed, a native dialog tells the user to run `npm run dev`
+   * again, then the app exits right after. Deliberately not spawning `npm run
+   * dev` back up automatically — that would mean handing off to a detached
+   * process the user can't see the console output of, right as this one
+   * disappears; simpler and more transparent to have the user run it
+   * themselves. When nothing changed, a native "already up to date" dialog is shown
+   * instead and the app keeps running. Progress lines are streamed to the
+   * renderer over 'app:updateProgress' throughout.
    */
   ipcMain.handle('app:update', async (_e, scenario?: OTForgeScenario): Promise<AppUpdateResult> => {
     if (!is.dev) {
@@ -730,8 +736,13 @@ function registerIPCHandlers(): void {
     }
 
     try {
+      const { stdout: beforeHead } = await execAsync('git rev-parse HEAD', { cwd: projectRoot })
+
       send('Pulling latest source (git pull)...')
       await runStreamedCommand('git', ['pull'], projectRoot, send)
+
+      const { stdout: afterHead } = await execAsync('git rev-parse HEAD', { cwd: projectRoot })
+      const restartRequired = beforeHead.trim() !== afterHead.trim()
 
       send('Installing dependencies (npm install)...')
       await runStreamedCommand('npm', ['install'], projectRoot, send)
@@ -757,17 +768,27 @@ function registerIPCHandlers(): void {
         send('No scenario loaded — skipping container image refresh.')
       }
 
-      // No automatic app.relaunch()/app.exit() here — deliberately. electron-vite
-      // dev already watches main/preload source files and restarts the Electron
-      // process on its own the moment git pull changes them; the pull above
-      // already happened by the time we get here, so that restart is already
-      // in flight (or was already applied, if nothing main-process-side
-      // changed). A manual relaunch races that automatic one — confirmed to
-      // hang the relaunched instance (it launched without the dev server
-      // context electron-vite's own supervisor sets up). restartRequired
-      // stays as a signal for the renderer's informational message, not an
-      // instruction to actually call anything.
-      return { ok: true, restartRequired: true }
+      if (restartRequired) {
+        await dialog.showMessageBox(mainWindow!, {
+          type: 'info',
+          title: 'OTForge Updated',
+          message: 'Update downloaded — restart required',
+          detail:
+            "This update changed OTForge's own code, so it needs to restart to take effect.\n\n" +
+            'Click OK, then stop this process (Ctrl+C) and run `npm run dev` again.',
+          buttons: ['OK']
+        })
+        app.exit(0)
+      } else {
+        await dialog.showMessageBox(mainWindow!, {
+          type: 'info',
+          title: 'OTForge',
+          message: 'OTForge is already up to date.',
+          buttons: ['OK']
+        })
+      }
+
+      return { ok: true, restartRequired }
     } catch (err) {
       return { ok: false, error: `Update failed: ${(err as Error).message}` }
     }
