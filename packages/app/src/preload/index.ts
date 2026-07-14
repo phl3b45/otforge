@@ -72,10 +72,7 @@ const api = {
      *   refreshed too); omit to only update source + dependencies.
      */
     update: (scenario?: OTForgeScenario): Promise<AppUpdateResult> =>
-      ipcRenderer.invoke('app:update', scenario),
-
-    /** Relaunches the app — call after app:update succeeds and the user confirms. */
-    relaunch: (): Promise<void> => ipcRenderer.invoke('app:relaunch')
+      ipcRenderer.invoke('app:update', scenario)
   },
 
   // ── Docker health ─────────────────────────────────────────────────────────────

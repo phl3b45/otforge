@@ -152,6 +152,13 @@ function getProjectRoot(): string {
  * Windows resolve `npm` (a .cmd shim) the same way `git` resolves as a normal
  * binary, without hardcoding a platform-specific executable name.
  *
+ * `command` and `args` are joined into a single string rather than passed as
+ * `spawn(command, args, { shell: true })` — Node deprecates (DEP0190) passing a
+ * separate args array alongside shell: true, since the shell only ever sees the
+ * concatenated string anyway (no real escaping happens). Safe here because
+ * every caller passes fixed literal tokens ('pull', 'install', ...), never
+ * user-supplied or path-derived values that could contain shell metacharacters.
+ *
  * Rejects with an Error including the last few output lines if the process
  * exits non-zero, so the renderer can show a useful message instead of a bare
  * exit code.
@@ -164,7 +171,7 @@ function runStreamedCommand(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const allLines: string[] = []
-    const child = spawn(command, args, { cwd, shell: true })
+    const child = spawn([command, ...args].join(' '), { cwd, shell: true })
 
     const processChunk = (buf: Buffer): void => {
       buf
@@ -653,8 +660,13 @@ function registerIPCHandlers(): void {
    * porcelain check misses (e.g. diverged history) — it fails loudly rather
    * than force-merging.
    *
-   * On success, restartRequired is always true — the updated main/renderer
-   * bundles only take effect after a relaunch. Progress lines are streamed to
+   * On success, restartRequired is always true, purely as a signal for the
+   * renderer's informational message — nothing calls app.relaunch() here.
+   * electron-vite dev already watches main/preload source files and restarts
+   * the Electron process on its own the instant git pull changes them, so a
+   * manual relaunch would race that automatic one; confirmed live that doing
+   * so hangs the relaunched instance (it starts without the dev-server context
+   * electron-vite's own supervisor sets up). Progress lines are streamed to
    * the renderer over 'app:updateProgress'.
    */
   ipcMain.handle('app:update', async (_e, scenario?: OTForgeScenario): Promise<AppUpdateResult> => {
@@ -712,21 +724,20 @@ function registerIPCHandlers(): void {
         send('No scenario loaded — skipping container image refresh.')
       }
 
+      // No automatic app.relaunch()/app.exit() here — deliberately. electron-vite
+      // dev already watches main/preload source files and restarts the Electron
+      // process on its own the moment git pull changes them; the pull above
+      // already happened by the time we get here, so that restart is already
+      // in flight (or was already applied, if nothing main-process-side
+      // changed). A manual relaunch races that automatic one — confirmed to
+      // hang the relaunched instance (it launched without the dev server
+      // context electron-vite's own supervisor sets up). restartRequired
+      // stays as a signal for the renderer's informational message, not an
+      // instruction to actually call anything.
       return { ok: true, restartRequired: true }
     } catch (err) {
       return { ok: false, error: `Update failed: ${(err as Error).message}` }
     }
-  })
-
-  /**
-   * Relaunches the app — used by the "Restart to apply" prompt after
-   * app:update completes. Separate from app:update itself so the renderer can
-   * show a confirmation prompt before the process actually restarts, rather
-   * than the window disappearing out from under the update-complete message.
-   */
-  ipcMain.handle('app:relaunch', (): void => {
-    app.relaunch()
-    app.exit(0)
   })
 
   // ── Docker health check ───────────────────────────────────────────────────────
