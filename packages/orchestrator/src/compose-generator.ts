@@ -746,6 +746,31 @@ export function generateCompose(
         'attacker-net': { ipv4_address: device.ipAddress },
         'internet-dmz-net': { ipv4_address: `${internetDmzBase}.250` }
       }
+
+      // Insider Threat mode (scenario.security.insiderThreat): the attack machine
+      // was dragged from the palette directly onto an internal Purdue tab instead
+      // of added via the toolbar (which has no visual node at all — see
+      // ScadaCanvas.tsx's onDrop, which keeps this device's IP in the attacker
+      // subnet regardless of drop location specifically so the dual-homing above
+      // still works). Its canvas node's zone records where it was placed; grant
+      // real Docker network access there too, on top of the two legs above, using
+      // the same auto-IP-in-.200-.239 convention as the generic extraNetworks
+      // handling further down this loop. 'attacker'/'internet-dmz' are skipped —
+      // already covered by the two legs above.
+      const insiderZone = scenario.visual.nodes.find(n => n.id === nodeId)?.data.zone
+      if (insiderZone && insiderZone !== 'attacker' && insiderZone !== 'internet-dmz') {
+        const insiderNetName = `${insiderZone}-net`
+        const insiderBase = effectiveZones[insiderZone].subnet.replace('.0/24', '')
+        let insiderHost = 200
+        const usedSet = usedIpsPerNet.get(insiderNetName) ?? new Set<number>()
+        while (usedSet.has(insiderHost) && insiderHost < 240) insiderHost++
+        usedSet.add(insiderHost)
+        usedIpsPerNet.set(insiderNetName, usedSet)
+        services[serviceName].networks[insiderNetName] = {
+          ipv4_address: `${insiderBase}.${insiderHost}`
+        }
+      }
+
       services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
       // Port 6080: noVNC WebSocket bridge served by our custom otforge-attack-base image
       services[serviceName].ports = [`${webPort}:6080`]

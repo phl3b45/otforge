@@ -792,6 +792,23 @@ export interface SecurityLayer {
     influxdbEnabled: boolean
     lokiEnabled: boolean
   }
+  /**
+   * When true, the attack machine can be placed directly on any Purdue layer
+   * tab (dragged from the device palette like any other device) to model an
+   * insider threat — an attacker who already has a foothold inside the
+   * network, rather than the default external-attacker kill-chain model where
+   * the attack machine has no visual canvas node and only reaches the
+   * internet-dmz zone.
+   *
+   * compose-generator.ts detects an attack-machine device whose canvas zone
+   * (from scenario.visual.nodes) differs from the default 'attacker' zone and
+   * automatically adds that zone to the device's extraNetworks, so the
+   * placement grants real Docker network access, not just a visual position.
+   *
+   * Defaults to false/undefined so existing scenarios keep the external-only
+   * behavior unless an author explicitly opts in.
+   */
+  insiderThreat?: boolean
 }
 
 // ── Device type registry ───────────────────────────────────────────────────────

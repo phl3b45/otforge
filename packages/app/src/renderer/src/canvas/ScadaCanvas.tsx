@@ -1822,7 +1822,17 @@ export function ScadaCanvas({
       const device: DeviceConfig = {
         nodeId,
         category,
-        ipAddress: nextAvailableIp(zone, existingDevices),
+        // Attack machine always gets an attacker-zone IP regardless of which Purdue
+        // tab it's dropped on (Insider Threat mode — see scenario.security.insiderThreat).
+        // attacker-net is the one zone network created without internal: true, so this
+        // is what preserves real internet/host routing for Kali. The device's VISUAL
+        // zone (below, used for node.data.zone) still tracks the drop location — that's
+        // what compose-generator.ts reads to grant real access to that zone too, on top
+        // of the default attacker-net + internet-dmz-net legs.
+        ipAddress:
+          category === 'attack-machine'
+            ? nextAvailableIp('attacker', existingDevices)
+            : nextAvailableIp(zone, existingDevices),
         // Pack device types supply their own default protocols; built-ins use the map.
         protocols: packDeviceType?.defaultProtocols ?? DEFAULT_PROTOCOLS[category],
         // dockerImage override: pack device types specify the exact image to use.

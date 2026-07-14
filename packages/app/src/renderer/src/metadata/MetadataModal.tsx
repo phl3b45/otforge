@@ -33,8 +33,14 @@ export const SECTOR_OPTIONS: { value: Sector; label: string }[] = [
 interface MetadataModalProps {
   /** Current scenario metadata to pre-populate the form. */
   meta: OTForgeMeta
-  /** Called with the updated meta object when the user clicks Save. */
-  onSave: (updated: OTForgeMeta) => void
+  /** Current scenario.security.insiderThreat value (defaults to false when unset). */
+  insiderThreat: boolean
+  /**
+   * Called with the updated meta object and insiderThreat flag when the user
+   * clicks Save. insiderThreat is a separate parameter (not part of meta)
+   * because it lives on scenario.security, not scenario.meta.
+   */
+  onSave: (updated: OTForgeMeta, insiderThreat: boolean) => void
   /** Called when the modal is dismissed without saving. */
   onClose: () => void
 }
@@ -49,12 +55,13 @@ interface MetadataModalProps {
  *   - Sector         — select; determines which sector-specific tools/icons apply.
  *   - Mission Brief  — multiline markdown; displayed in Student mode side panel.
  */
-export function MetadataModal({ meta, onSave, onClose }: MetadataModalProps) {
+export function MetadataModal({ meta, insiderThreat, onSave, onClose }: MetadataModalProps) {
   const [name, setName] = useState(meta.name)
   const [description, setDescription] = useState(meta.description)
   const [author, setAuthor] = useState(meta.author)
   const [sector, setSector] = useState<Sector>(meta.sector)
   const [brief, setBrief] = useState(meta.brief)
+  const [insider, setInsider] = useState(insiderThreat)
 
   /**
    * Ref to the Scenario Name input — focused automatically on mount so the user
@@ -87,15 +94,18 @@ export function MetadataModal({ meta, onSave, onClose }: MetadataModalProps) {
   function handleSave() {
     const trimmedName = name.trim()
     if (!trimmedName) return
-    onSave({
-      ...meta,
-      name: trimmedName,
-      description: description.trim(),
-      author: author.trim(),
-      sector,
-      brief: brief.trim(),
-      updatedAt: new Date().toISOString()
-    })
+    onSave(
+      {
+        ...meta,
+        name: trimmedName,
+        description: description.trim(),
+        author: author.trim(),
+        sector,
+        brief: brief.trim(),
+        updatedAt: new Date().toISOString()
+      },
+      insider
+    )
   }
 
   return (
@@ -186,6 +196,27 @@ export function MetadataModal({ meta, onSave, onClose }: MetadataModalProps) {
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* Insider Threat Mode */}
+          <div className="meta-field">
+            <label className="meta-checkbox-label" htmlFor="meta-insider-threat">
+              <input
+                id="meta-insider-threat"
+                type="checkbox"
+                checked={insider}
+                onChange={e => setInsider(e.target.checked)}
+              />
+              Insider Threat Mode
+            </label>
+            <p className="meta-hint">
+              By default the attack machine represents an external attacker — it has no canvas node
+              and only reaches the internet-dmz zone, so students must pivot inward through a
+              realistic compromise chain. Enable this to instead place the attack machine directly
+              on any Purdue layer (dragged from the device palette like any other device), modeling
+              an attacker who already has an internal foothold. The layer it is placed on grants it
+              real network access there, in addition to its default legs.
+            </p>
           </div>
 
           {/* Mission Brief */}

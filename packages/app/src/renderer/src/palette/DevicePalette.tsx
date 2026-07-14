@@ -37,6 +37,13 @@ interface PaletteSection {
   items: { category: DeviceCategory; label: string }[]
   /** Which layers this section is shown on. Omit to show on all layers. */
   layers?: NetworkZone[]
+  /**
+   * When true, this section is only shown when scenario.security.insiderThreat
+   * is enabled — see the "Insider Threat" section below. Omit `layers` on such
+   * a section so it's eligible on every Purdue tab; DevicePalette's insiderThreatMode
+   * prop is the actual gate.
+   */
+  insiderOnly?: boolean
 }
 
 /**
@@ -201,6 +208,20 @@ const PALETTE: PaletteSection[] = [
       { category: 'dns-server', label: 'DNS Server' },
       { category: 'firewall', label: 'Firewall' }
     ]
+  },
+  // ── Insider Threat (scenario.security.insiderThreat only) ───────────────────
+  // No `layers` restriction — eligible on every Purdue tab. Normally the attack
+  // machine has no canvas node at all (added via the toolbar "Add Attack Machine"
+  // button, external-attacker model — see project_network_access_architecture).
+  // When insiderThreat is enabled, dragging this onto any tab places the attack
+  // machine there instead, granting it real network access to that zone in
+  // addition to its default attacker-net/internet-dmz-net legs (compose-generator.ts
+  // reads the dropped node's zone to add this — its IP stays in the attacker
+  // subnet regardless of drop location, preserving real internet/host routing).
+  {
+    label: 'Insider Threat',
+    insiderOnly: true,
+    items: [{ category: 'attack-machine', label: 'Attack Machine (Insider)' }]
   }
 ]
 
@@ -242,7 +263,9 @@ const PALETTE_COLORS: Partial<Record<DeviceCategory, string>> = {
   'email-server': '#f78166',
   'internet-server': '#f78166',
   // DNS server — same orange family as other Internet DMZ devices (Phase 12)
-  'dns-server': '#f78166'
+  'dns-server': '#f78166',
+  // Attack machine (Insider Threat mode) — matches LAYER_COLORS.attacker
+  'attack-machine': '#f85149'
 }
 
 /**
@@ -334,6 +357,12 @@ interface DevicePaletteProps {
    * bottom of the palette when any matching types are present.
    */
   packDeviceTypes?: ResolvedPackDeviceType[]
+  /**
+   * scenario.security.insiderThreat — gates the "Insider Threat" palette section
+   * (the attack machine, normally added only via the toolbar button with no
+   * canvas node, becomes a normal draggable item on every Purdue tab).
+   */
+  insiderThreatMode?: boolean
 }
 
 /**
@@ -347,13 +376,16 @@ interface DevicePaletteProps {
 export function DevicePalette({
   activeLayer,
   readOnly = false,
-  packDeviceTypes = []
+  packDeviceTypes = [],
+  insiderThreatMode = false
 }: DevicePaletteProps) {
   // In Student mode the MissionPanel occupies this column; hide the palette entirely.
   if (readOnly) return null
 
   const visibleSections = PALETTE.filter(
-    section => !section.layers || section.layers.includes(activeLayer)
+    section =>
+      (!section.layers || section.layers.includes(activeLayer)) &&
+      (!section.insiderOnly || insiderThreatMode)
   )
 
   // Filter pack device types to those whose category belongs to the active layer.

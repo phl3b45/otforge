@@ -4291,6 +4291,23 @@ code.prop-value {
   margin-bottom: 4px;
 }
 
+.meta-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.meta-checkbox-label input[type='checkbox'] {
+  accent-color: var(--accent-red);
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+}
+
 .meta-input {
   background: var(--bg-panel);
   border: 1px solid var(--border);
