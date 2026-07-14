@@ -1457,8 +1457,8 @@ export default function App() {
    * `docker compose pull` for that scenario's images. Only enabled in dev mode
    * (appInfo.isDev) and while the simulation is idle.
    *
-   * On success, shows the restart prompt — the updated main/renderer bundles
-   * only take effect after a relaunch.
+   * On success, shows a purely informational update-complete notice — see the
+   * comment above that dialog for why there is no automatic relaunch.
    */
   const handleUpdateOTForge = useCallback(async () => {
     setSimError(null)
@@ -1478,11 +1478,6 @@ export default function App() {
       setUpdateProgress('')
     }
   }, [scenario])
-
-  /** Relaunches the app after the user confirms the post-update restart prompt. */
-  const handleRestartNow = useCallback(() => {
-    void window.electronAPI.app.relaunch()
-  }, [])
 
   /**
    * Stops the simulation:
@@ -2390,15 +2385,19 @@ export default function App() {
         </div>
       )}
       {/*
-       * Restart prompt — shown after a successful "Update OTForge" run. The
-       * updated main/renderer bundles only take effect after a relaunch, so
-       * this is a confirmation dialog (not an auto-dismiss toast) with an
-       * explicit choice: restart now, or dismiss and restart later themselves.
+       * Update-complete notice — shown after a successful "Update OTForge" run.
+       * Purely informational: electron-vite dev already watches main/preload
+       * source files and restarts Electron on its own the instant git pull
+       * changes them, so there is no "Restart Now" action to offer — a manual
+       * app.relaunch() here would race that automatic restart and hang
+       * (confirmed live). If nothing seems to happen within a few seconds
+       * (e.g. only renderer files changed, which Vite HMRs without a restart
+       * at all), the user's fallback is to stop and re-run `npm run dev`.
        */}
       {showRestartPrompt && (
         <div
           role="alertdialog"
-          aria-label="Restart to apply update"
+          aria-label="Update complete"
           style={{
             position: 'fixed',
             inset: 0,
@@ -2421,14 +2420,16 @@ export default function App() {
           >
             <strong style={{ fontSize: 16 }}>✓ OTForge Updated</strong>
             <p style={{ marginTop: 8 }}>
-              The update is downloaded. Restart OTForge now to apply it, or restart later yourself.
+              The update is downloaded. OTForge will restart automatically in a few seconds if
+              anything in the app itself changed. If it does not, stop this process and run{' '}
+              <code>npm run dev</code> again to apply it.
             </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button className="btn btn-sm btn-ghost" onClick={() => setShowRestartPrompt(false)}>
-                Later
-              </button>
-              <button className="btn btn-sm btn-primary" onClick={handleRestartNow}>
-                Restart Now
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={() => setShowRestartPrompt(false)}
+              >
+                Got it
               </button>
             </div>
           </div>

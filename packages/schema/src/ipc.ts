@@ -115,8 +115,14 @@ export interface AppInfo {
  * Result of the "Update OTForge" self-updater (app:update): `git pull` +
  * `npm install` in the project root, then (when a scenario is loaded and
  * Docker is available) a `docker compose pull` for that scenario's images.
- * `restartRequired` is true on success — the renderer should prompt the user
- * to relaunch so the updated main/renderer bundles take effect.
+ *
+ * `restartRequired` is true on success but is informational only — nothing
+ * calls app.relaunch(). electron-vite dev already watches main/preload
+ * source files and restarts Electron on its own the instant git pull changes
+ * them; a manual relaunch races that automatic one and hangs (confirmed
+ * live — the manually relaunched instance starts without the dev-server
+ * context electron-vite's own supervisor sets up). The renderer just shows
+ * an informational message when this is true.
  */
 export interface AppUpdateResult {
   ok: boolean
