@@ -25,3 +25,12 @@ packages/app/src/renderer/dist
 containers/openplc/openplc-src/
 # Test coverage reports — generated artifacts, not committed.
 packages/orchestrator/coverage/
+# Dev-mode Export default target — student/custom scenario saves land here,
+# never inside the tracked scenarios/ folder itself. See getScenarioExportDir()
+# in packages/app/src/main/index.ts.
+scenarios/custom/
+# Electron/Chromium resource-pack byproduct. Not produced by anything in this
+# repo's own scripts, never tracked, but has turned up at the project root for
+# at least one student (likely from running a packaged build once) and, being
+# untracked, used to permanently trip the "Update OTForge" dirty-tree guard.
+resources.pak

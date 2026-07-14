@@ -132,6 +132,32 @@ function getScenariosLibraryDir(): string {
 }
 
 /**
+ * Returns the directory the Export save dialog should default into.
+ *
+ * In production this is identical to getScenariosLibraryDir() (Documents/OTForge/
+ * Scenarios) — not a git checkout, so there's nothing to protect.
+ *
+ * In dev mode, getScenariosLibraryDir() points at the project's tracked
+ * scenarios/ folder. Defaulting Export there means any custom-named save (or a
+ * student just trying the button) drops a new file into a git-tracked
+ * directory. That file is untracked, but the "Update OTForge" dirty-tree
+ * guard used to treat untracked files as blocking too, so a single stray
+ * export permanently broke updates until someone who knew git cleaned it up
+ * (the guard itself no longer counts untracked files, but keeping exports out
+ * of the tracked tree in the first place avoids the confusion of `git status`
+ * showing files the student never intentionally added to the project).
+ * custom/ is created on demand and is gitignored.
+ */
+async function getScenarioExportDir(): Promise<string> {
+  if (!is.dev) {
+    return getScenariosLibraryDir()
+  }
+  const dir = pathJoin(getScenariosLibraryDir(), 'custom')
+  await mkdir(dir, { recursive: true })
+  return dir
+}
+
+/**
  * Returns the absolute path to the git checkout root (the npm workspaces
  * project root, two levels up from packages/app in electron-vite dev mode).
  *
@@ -653,12 +679,17 @@ function registerIPCHandlers(): void {
    * from a git checkout); a packaged build has no .git directory or workspace
    * package.json to update.
    *
-   * Guards against a dirty working tree: `git status --porcelain` catches both
-   * uncommitted local edits and an unresolved merge conflict (conflicted files
-   * show as `UU` entries), so an instructor's local changes are never silently
-   * overwritten. `git pull` itself is the fallback safety net for anything the
-   * porcelain check misses (e.g. diverged history) — it fails loudly rather
-   * than force-merging.
+   * Guards against a dirty working tree: `git status --porcelain --untracked-
+   * files=no` catches uncommitted edits to tracked files and an unresolved
+   * merge conflict (conflicted files show as `UU` entries), so an instructor's
+   * local changes are never silently overwritten. Untracked files are
+   * deliberately excluded from this check — `git pull` does not conflict with
+   * them (git itself refuses loudly in the rare case an incoming commit would
+   * clobber one), and counting them blocks the button forever on froth like a
+   * student's own exported scenario sitting in the tracked scenarios/ folder.
+   * `git pull` itself is the fallback safety net for anything the porcelain
+   * check misses (e.g. diverged history) — it fails loudly rather than
+   * force-merging.
    *
    * On success, restartRequired is always true, purely as a signal for the
    * renderer's informational message — nothing calls app.relaunch() here.
@@ -684,7 +715,9 @@ function registerIPCHandlers(): void {
     }
 
     try {
-      const { stdout } = await execAsync('git status --porcelain', { cwd: projectRoot })
+      const { stdout } = await execAsync('git status --porcelain --untracked-files=no', {
+        cwd: projectRoot
+      })
       if (stdout.trim().length > 0) {
         return {
           ok: false,
@@ -881,14 +914,15 @@ function registerIPCHandlers(): void {
       let targetPath = options.filePath
 
       // Show a save dialog if no explicit path was provided.
-      // Default to the scenarios library folder so custom scenarios are saved
-      // alongside the bundled tutorials, making them easy to find on next Open.
+      // Default to a custom/ subfolder next to the bundled tutorials — visible
+      // in the same Open dialog, but never inside the git-tracked scenarios/
+      // directory itself. See getScenarioExportDir().
       if (!targetPath) {
         const cleanName = scenario.meta.name.replace(/\s+/g, '-')
         const result = await dialog.showSaveDialog(mainWindow!, {
           title: 'Save ICS Scenario',
           filters: [{ name: 'OTForge Scenario', extensions: ['otflab'] }],
-          defaultPath: pathJoin(getScenariosLibraryDir(), `${cleanName}.otflab`)
+          defaultPath: pathJoin(await getScenarioExportDir(), `${cleanName}.otflab`)
         })
         if (result.canceled || !result.filePath) return { ok: false, error: 'Export cancelled' }
         targetPath = result.filePath
