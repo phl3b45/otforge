@@ -32,7 +32,7 @@ import type {
   ScenarioDeleteFileResult,
   SimulationStartResult,
   SimulationStopResult,
-  SimulationUpdateResult,
+  AppUpdateResult,
   SessionSummary,
   SessionSaveResult,
   SessionLoadResult,
@@ -60,7 +60,22 @@ const api = {
     /** Returns version strings for the about panel (app version, Electron, Node, platform). */
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),
     /** Opens a URL in the system's default browser (used for documentation links). */
-    openExternal: (url: string): Promise<void> => ipcRenderer.invoke('app:openExternal', { url })
+    openExternal: (url: string): Promise<void> => ipcRenderer.invoke('app:openExternal', { url }),
+
+    /**
+     * "Update OTForge" self-updater: git pull + npm install in the project root,
+     * then (if a scenario is loaded and Docker is available) a docker compose
+     * pull for that scenario's images. Only works in dev mode (npm run dev from
+     * a git checkout) — check AppInfo.isDev before enabling the button.
+     * Progress is streamed via on.appUpdateProgress().
+     * @param scenario - The currently loaded scenario, if any (its images get
+     *   refreshed too); omit to only update source + dependencies.
+     */
+    update: (scenario?: OTForgeScenario): Promise<AppUpdateResult> =>
+      ipcRenderer.invoke('app:update', scenario),
+
+    /** Relaunches the app — call after app:update succeeds and the user confirms. */
+    relaunch: (): Promise<void> => ipcRenderer.invoke('app:relaunch')
   },
 
   // ── Docker health ─────────────────────────────────────────────────────────────
@@ -132,18 +147,7 @@ const api = {
      * Returns the current state and health of all containers in the active simulation.
      * Returns an empty array when no simulation is running.
      */
-    status: (): Promise<ContainerStatus[]> => ipcRenderer.invoke('simulation:status'),
-
-    /**
-     * Force-pulls the newest image for every service in the scenario via
-     * `docker compose pull`. Unlike start (which uses --pull missing), this
-     * always re-fetches each :latest tag, so students receive updated GHCR
-     * images that a cached tag would otherwise mask. Does not start containers.
-     * Progress is streamed via on.simulationUpdateProgress().
-     * @param scenario - The full scenario whose images to refresh.
-     */
-    updateImages: (scenario: OTForgeScenario): Promise<SimulationUpdateResult> =>
-      ipcRenderer.invoke('simulation:updateImages', scenario)
+    status: (): Promise<ContainerStatus[]> => ipcRenderer.invoke('simulation:status')
   },
 
   // ── Saved sessions (resume a lab later) ───────────────────────────────────────
@@ -727,16 +731,15 @@ const api = {
     },
 
     /**
-     * Fires for each output line emitted by `docker compose pull` during a
-     * toolbar-triggered "Update Images" action. Lets the renderer show the most
-     * recent Docker line in the update overlay.
+     * Fires for each output line emitted during an "Update OTForge" self-update
+     * (git pull, npm install, and any container image pull that follows).
      *
-     * @param cb - Callback receiving { line: string } — one Docker output line.
+     * @param cb - Callback receiving { line: string } — one output line.
      * @returns Unsubscribe function — call in useEffect cleanup.
      */
-    simulationUpdateProgress: (cb: (status: { line: string }) => void) => {
-      ipcRenderer.on('simulation:updateProgress', (_event, status) => cb(status))
-      return () => ipcRenderer.removeAllListeners('simulation:updateProgress')
+    appUpdateProgress: (cb: (status: { line: string }) => void) => {
+      ipcRenderer.on('app:updateProgress', (_event, status) => cb(status))
+      return () => ipcRenderer.removeAllListeners('app:updateProgress')
     }
   }
 }
