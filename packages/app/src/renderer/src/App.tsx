@@ -1207,12 +1207,13 @@ export default function App() {
    * the instructor clicks Scenario Builder, fills in the metadata, and clicks Save.
    * After that, `builderModeActive = true` unlocks the DevicePalette and canvas.
    *
-   * @param updated - The new OTForgeMeta object from the form.
+   * @param updated       - The new OTForgeMeta object from the form.
+   * @param insiderThreat - The new scenario.security.insiderThreat value.
    */
-  const handleMetadataSave = useCallback((updated: OTForgeMeta) => {
+  const handleMetadataSave = useCallback((updated: OTForgeMeta, insiderThreat: boolean) => {
     setScenario(prev => {
       if (!prev) return prev
-      return { ...prev, meta: updated }
+      return { ...prev, meta: updated, security: { ...prev.security, insiderThreat } }
     })
     setBuilderModeActive(true) // Scenario Builder saved → activate builder/edit mode
     setShowMetadataModal(false)
@@ -1340,8 +1341,18 @@ export default function App() {
   const handleAttackMachineRemove = useCallback(() => {
     setScenario(prev => {
       if (!prev) return prev
+      // Only remove attack-machine devices that have no visual canvas node — an
+      // Insider Threat mode attack machine dropped onto a Purdue tab DOES have one
+      // and is removed like any other device (select + delete on canvas), which
+      // already prunes visual.nodes/edges together with devices.devices. Filtering
+      // on visual node presence here (rather than removing every attack-machine
+      // device unconditionally) avoids orphaning an insider-placed node's visual
+      // entry while its backing device silently disappears.
+      const visualNodeIds = new Set(prev.visual.nodes.map(n => n.id))
       const filtered = Object.fromEntries(
-        Object.entries(prev.devices.devices).filter(([, d]) => d.category !== 'attack-machine')
+        Object.entries(prev.devices.devices).filter(
+          ([nodeId, d]) => d.category !== 'attack-machine' || visualNodeIds.has(nodeId)
+        )
       )
       return { ...prev, devices: { devices: filtered } }
     })
@@ -1555,6 +1566,14 @@ export default function App() {
   const hasAttackMachine = attackDevices.length > 0
   // First attack machine — device object passed to handlers and the terminal modal
   const firstAttackDevice = (attackDevices[0]?.[1] as DeviceConfig) ?? null
+  // Non-visual attack machine (the default external-attacker one, added via this
+  // toolbar button) — distinct from an Insider Threat mode attack machine, which
+  // has its own visual canvas node and is added/removed via the palette/canvas
+  // like any other device. Gates the idle Add/Remove Attack Machine button so its
+  // label always matches what clicking it will actually do (see
+  // handleAttackMachineRemove).
+  const visualNodeIds = new Set(scenario?.visual.nodes.map(n => n.id) ?? [])
+  const hasNonVisualAttackMachine = attackDevices.some(([nodeId]) => !visualNodeIds.has(nodeId))
   const hasTutorial = !!scenario?.meta.tutorialSteps?.length
 
   // Engineering workstation helpers — first workstation device for the toolbar button
@@ -1948,16 +1967,18 @@ export default function App() {
             ) : (
               !simIsRunning && (
                 <button
-                  className={`btn btn-sm ${hasAttackMachine ? 'btn-attack-active' : 'btn-attack-add'}`}
-                  onClick={hasAttackMachine ? handleAttackMachineRemove : handleAttackMachineAdd}
+                  className={`btn btn-sm ${hasNonVisualAttackMachine ? 'btn-attack-active' : 'btn-attack-add'}`}
+                  onClick={
+                    hasNonVisualAttackMachine ? handleAttackMachineRemove : handleAttackMachineAdd
+                  }
                   disabled={simIsStarting || simIsStopping}
                   title={
-                    hasAttackMachine
+                    hasNonVisualAttackMachine
                       ? 'Remove the Kali Linux attack machine from this scenario'
                       : 'Add a Kali Linux attack machine to this scenario'
                   }
                 >
-                  {hasAttackMachine ? 'Remove Attack Machine' : 'Add Attack Machine'}
+                  {hasNonVisualAttackMachine ? 'Remove Attack Machine' : 'Add Attack Machine'}
                 </button>
               )
             )}
@@ -2123,6 +2144,7 @@ export default function App() {
             activeLayer={activeLayer}
             readOnly={false}
             packDeviceTypes={allPackDeviceTypes}
+            insiderThreatMode={scenario?.security.insiderThreat ?? false}
           />
         ) : (
           <CanvasViewHint simRunning={simIsRunning} />
@@ -2251,6 +2273,7 @@ export default function App() {
           // setState(initialValue) would not reinitialize from the new blank meta.
           key={scenario.meta.createdAt}
           meta={scenario.meta}
+          insiderThreat={scenario.security.insiderThreat ?? false}
           onSave={handleMetadataSave}
           onClose={handleMetadataClose}
         />

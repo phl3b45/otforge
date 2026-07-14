@@ -421,6 +421,58 @@ describe('attack-machine device', () => {
   })
 })
 
+describe('attack-machine — Insider Threat mode (visual zone placement)', () => {
+  /**
+   * Insider Threat mode (scenario.security.insiderThreat) lets the attack machine
+   * be dropped from the palette directly onto an internal Purdue tab instead of
+   * added via the toolbar (which never creates a visual node — see
+   * ScadaCanvas.tsx onDrop). Its canvas node's zone should grant it a real,
+   * additional network leg there, on top of the default attacker-net +
+   * internet-dmz-net dual-homing every attack machine gets.
+   */
+  function insiderScenario(zone: NetworkZone): OTForgeScenario {
+    const scenario = makeScenario([
+      ['kali-1', { category: 'attack-machine', ipAddress: '10.200.60.10' }]
+    ])
+    scenario.visual.nodes = [
+      {
+        id: 'kali-1',
+        type: 'attack-machine',
+        position: { x: 0, y: 0 },
+        data: { label: 'Kali', zone }
+      }
+    ]
+    return scenario
+  }
+
+  it('adds the dropped-tab zone as a third network leg', () => {
+    const compose = gen(insiderScenario('enterprise'))
+    const nets = Object.keys(compose.services['kali-1'].networks)
+    expect(nets).toEqual(
+      expect.arrayContaining(['attacker-net', 'internet-dmz-net', 'enterprise-net'])
+    )
+  })
+
+  it('assigns the insider leg an IP in the .200-.239 extra-network range', () => {
+    const compose = gen(insiderScenario('enterprise'))
+    expect(compose.services['kali-1'].networks['enterprise-net'].ipv4_address).toBe('10.200.40.200')
+  })
+
+  it('does not duplicate/conflict when dropped on the internet-dmz tab (already a default leg)', () => {
+    const compose = gen(insiderScenario('internet-dmz'))
+    const nets = Object.keys(compose.services['kali-1'].networks)
+    expect(nets).toEqual(['attacker-net', 'internet-dmz-net'])
+  })
+
+  it('still attaches only the two default legs when no visual node exists (default external-attacker case)', () => {
+    const compose = gen(
+      makeScenario([['kali-1', { category: 'attack-machine', ipAddress: '10.200.60.10' }]])
+    )
+    const nets = Object.keys(compose.services['kali-1'].networks)
+    expect(nets).toEqual(['attacker-net', 'internet-dmz-net'])
+  })
+})
+
 // ── PLC port publishing ───────────────────────────────────────────────────────
 
 describe('PLC port publishing', () => {

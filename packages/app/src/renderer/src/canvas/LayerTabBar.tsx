@@ -119,7 +119,14 @@ function inferLayerFromCategory(category: string): PurdueLayerZone {
  *
  * Reads each CanvasNode's data.zone when visual positions are saved.
  * Falls back to category-based inference when no visual layer exists yet.
- * Attack machines (zone='attacker') are excluded from all counts.
+ *
+ * The default (non-Insider-Threat) attack machine has no visual node at all
+ * (added via the toolbar button, not the palette), so it never appears here
+ * regardless of which branch runs. An Insider Threat mode attack machine
+ * (scenario.security.insiderThreat, dropped from the palette onto a Purdue
+ * tab) DOES have a visual node whose data.zone is that real tab — e.g.
+ * 'enterprise' — so it counts normally in the branch below like any other
+ * device. Nothing here ever produces zone='attacker'; there is no 6th tab.
  *
  * @param scenario - The active scenario, or null.
  * @returns A map from PurdueLayerZone to device count.
@@ -139,7 +146,6 @@ function countDevicesByLayer(scenario: OTForgeScenario | null): Record<PurdueLay
     for (const node of scenario.visual.nodes) {
       const z = node.data.zone as NetworkZone
       if (z in counts) counts[z as PurdueLayerZone]++
-      // attacker zone nodes are silently excluded from tab counts
     }
   } else {
     // No visual data yet — infer from device category
