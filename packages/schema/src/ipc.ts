@@ -53,11 +53,6 @@ export interface SimulationStopResult {
   error?: string
 }
 
-export interface SimulationUpdateResult {
-  ok: boolean
-  error?: string
-}
-
 /**
  * Lightweight descriptor of a saved student session, returned by session:list.
  * Excludes the full scenario payload so the picker stays cheap to render.
@@ -107,6 +102,26 @@ export interface AppInfo {
   nodeVersion: string
   electronVersion: string
   platform: 'win32' | 'darwin' | 'linux'
+  /**
+   * True when running via `npm run dev` (electron-vite dev server) from a git
+   * checkout. False in a packaged build. The "Update OTForge" self-updater
+   * (app:update) only works in dev mode — a packaged build has no .git
+   * directory or workspace package.json to update.
+   */
+  isDev: boolean
+}
+
+/**
+ * Result of the "Update OTForge" self-updater (app:update): `git pull` +
+ * `npm install` in the project root, then (when a scenario is loaded and
+ * Docker is available) a `docker compose pull` for that scenario's images.
+ * `restartRequired` is true on success — the renderer should prompt the user
+ * to relaunch so the updated main/renderer bundles take effect.
+ */
+export interface AppUpdateResult {
+  ok: boolean
+  error?: string
+  restartRequired?: boolean
 }
 
 // ── PLC firmware import (Phase 9 add-on) ──────────────────────────────────────

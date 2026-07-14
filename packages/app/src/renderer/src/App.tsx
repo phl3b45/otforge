@@ -35,6 +35,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import type {
   DockerStatus,
+  AppInfo,
   OTForgeScenario,
   OTForgeMeta,
   DeviceConfig,
@@ -449,6 +450,8 @@ type View = 'launch' | 'canvas'
 export default function App() {
   const [view, setView] = useState<View>('launch')
   const [docker, setDocker] = useState<DockerStatus | null>(null)
+  /** Electron/app version metadata, including isDev (gates the Update OTForge button). */
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [scenario, setScenario] = useState<OTForgeScenario | null>(null)
   const [selectedDevice, setSelectedDevice] = useState<DeviceConfig | null>(null)
   const [selectedZone, setSelectedZone] = useState<string | null>(null)
@@ -529,17 +532,20 @@ export default function App() {
   const [pullProgress, setPullProgress] = useState<string>('')
 
   /**
-   * True while a toolbar-triggered "Update Images" pull is in progress. Drives the
-   * "Updating Container Images" overlay. Independent of simStatus — the update runs
-   * with the simulation stopped and does not start any container.
+   * True while a toolbar-triggered "Update OTForge" self-update is in progress
+   * (git pull + npm install + container image refresh). Drives the "Updating
+   * OTForge" overlay. Independent of simStatus — the update runs with the
+   * simulation stopped and does not start any container.
    */
   const [updating, setUpdating] = useState<boolean>(false)
-  /** Most recent `docker compose pull` output line — shown in the update overlay. */
+  /** Most recent output line (git/npm/docker) — shown in the update overlay. */
   const [updateProgress, setUpdateProgress] = useState<string>('')
-  /** Transient success message shown as a toast after an image update completes. */
-  const [updateNotice, setUpdateNotice] = useState<string | null>(null)
-  /** Auto-dismiss timer for the update-success toast. */
-  const updateNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /**
+   * Shown after a successful "Update OTForge" run — the updated main/renderer
+   * bundles only take effect after a relaunch, so this prompts the user to
+   * restart now (via app.relaunch()) or dismiss and restart later themselves.
+   */
+  const [showRestartPrompt, setShowRestartPrompt] = useState<boolean>(false)
 
   // attackLaunched state removed — toolbar button now opens AttackTerminalModal directly
   // so button color uses (attackTerminalDevice !== null) instead of a separate flag.
@@ -601,12 +607,15 @@ export default function App() {
 
   useEffect(() => {
     // Fetch app metadata, Docker status, and installed packs concurrently on first render
-    Promise.all([window.electronAPI.docker.check(), window.electronAPI.packs.list()]).then(
-      ([dockerStatus, packList]) => {
-        setDocker(dockerStatus)
-        setInstalledPacks(packList.packs)
-      }
-    )
+    Promise.all([
+      window.electronAPI.app.info(),
+      window.electronAPI.docker.check(),
+      window.electronAPI.packs.list()
+    ]).then(([info, dockerStatus, packList]) => {
+      setAppInfo(info)
+      setDocker(dockerStatus)
+      setInstalledPacks(packList.packs)
+    })
 
     // Subscribe to live container status push events from the main process
     const unsubStatus = window.electronAPI.on.containerStatusUpdate(status => {
@@ -645,15 +654,12 @@ export default function App() {
       }
     })
 
-    // Stream `docker compose pull` output during a toolbar "Update Images" action
-    // into the update overlay, using the same line-filtering as the start pull.
-    const unsubUpdate = window.electronAPI.on.simulationUpdateProgress(({ line }) => {
-      if (
-        line.length < 120 &&
-        /pulling|pull|download|extract|layer|image|pushed|digest|up to date/i.test(line)
-      ) {
-        setUpdateProgress(line)
-      }
+    // Stream git/npm/docker output during a toolbar "Update OTForge" action
+    // into the update overlay — unlike the simulation-start pull stream, every
+    // line here is relevant (git pull / npm install output, not mixed with
+    // unrelated container startup logs), so no content filtering is needed.
+    const unsubUpdate = window.electronAPI.on.appUpdateProgress(({ line }) => {
+      setUpdateProgress(line)
     })
 
     // Clean up IPC listeners when the component unmounts
@@ -1445,35 +1451,38 @@ export default function App() {
   }, [scenario, startSimulation])
 
   /**
-   * Toolbar "Update Images" handler.
+   * Toolbar "Update OTForge" handler — supersedes the old scenario-scoped
+   * "Update Images" button. Runs, in order: `git pull` in the project root,
+   * `npm install`, then (if a scenario is loaded and Docker is available) a
+   * `docker compose pull` for that scenario's images. Only enabled in dev mode
+   * (appInfo.isDev) and while the simulation is idle.
    *
-   * Runs `docker compose pull` for the loaded scenario so the local cache picks
-   * up newly published GHCR images that the default `pull_policy: if_not_present`
-   * would otherwise never re-fetch (e.g. an updated Kali attack-base image). Does
-   * not start any container — the refreshed image is used on the next Run.
-   * Only enabled while the simulation is idle.
+   * On success, shows the restart prompt — the updated main/renderer bundles
+   * only take effect after a relaunch.
    */
-  const handleUpdateImages = useCallback(async () => {
-    if (!scenario) return
+  const handleUpdateOTForge = useCallback(async () => {
     setSimError(null)
     setUpdateProgress('')
     setUpdating(true)
     try {
-      const result = await window.electronAPI.simulation.updateImages(scenario)
+      const result = await window.electronAPI.app.update(scenario ?? undefined)
       if (result.ok) {
-        setUpdateNotice('Container images are up to date.')
-        if (updateNoticeTimerRef.current) clearTimeout(updateNoticeTimerRef.current)
-        updateNoticeTimerRef.current = setTimeout(() => setUpdateNotice(null), 6000)
+        setShowRestartPrompt(true)
       } else {
-        setSimError(result.error ?? 'Image update failed.')
+        setSimError(result.error ?? 'Update failed.')
       }
     } catch (err) {
-      setSimError(`Image update failed: ${(err as Error).message}`)
+      setSimError(`Update failed: ${(err as Error).message}`)
     } finally {
       setUpdating(false)
       setUpdateProgress('')
     }
   }, [scenario])
+
+  /** Relaunches the app after the user confirms the post-update restart prompt. */
+  const handleRestartNow = useCallback(() => {
+    void window.electronAPI.app.relaunch()
+  }, [])
 
   /**
    * Stops the simulation:
@@ -1754,26 +1763,26 @@ export default function App() {
               Open
             </button>
             {/*
-             * Update Images — force-pulls the newest GHCR images for the loaded
-             * scenario. Needed because pull_policy: if_not_present never re-pulls a
-             * :latest tag that already exists locally, so a published image update
-             * (e.g. a new Kali attack-base) would otherwise never reach the student.
-             * Shown only with a scenario loaded; disabled unless idle + Docker up.
+             * Update OTForge — self-updater: git pull + npm install in the project
+             * root, then (if a scenario is loaded and Docker is up) a docker compose
+             * pull for that scenario's images. Supersedes the old scenario-scoped
+             * "Update Images" button — not gated on a scenario being loaded, since
+             * the source/dependency update doesn't need one. Only works in dev mode
+             * (npm run dev from a git checkout) — a packaged build has no .git
+             * directory or workspace package.json to update.
              */}
-            {scenario && (
+            {appInfo?.isDev && (
               <button
                 className="btn btn-sm btn-ghost"
-                onClick={handleUpdateImages}
-                disabled={!simIsIdle || !docker?.available || updating}
+                onClick={handleUpdateOTForge}
+                disabled={!simIsIdle || updating}
                 title={
-                  !docker?.available
-                    ? 'Docker is not running'
-                    : !simIsIdle
-                      ? 'Stop the simulation to update images'
-                      : 'Download the latest container images for this scenario from the registry'
+                  !simIsIdle
+                    ? 'Stop the simulation to update OTForge'
+                    : 'Pull the latest OTForge source, dependencies, and (if a scenario is loaded) its container images'
                 }
               >
-                {updating ? 'Updating…' : 'Update Images'}
+                {updating ? 'Updating…' : 'Update OTForge'}
               </button>
             )}
             {/*
@@ -2359,18 +2368,19 @@ export default function App() {
         </div>
       )}
       {/*
-       * "Updating Container Images" overlay — shown while a toolbar-triggered
-       * `docker compose pull` runs. Reuses the pull-overlay styles. Independent of
-       * simStatus since the update runs with the simulation stopped.
+       * "Updating OTForge" overlay — shown while a toolbar-triggered self-update
+       * (git pull + npm install + optional image refresh) runs. Reuses the
+       * pull-overlay styles. Independent of simStatus since the update runs
+       * with the simulation stopped.
        */}
       {updating && (
-        <div className="pull-overlay" role="alertdialog" aria-label="Updating images">
+        <div className="pull-overlay" role="alertdialog" aria-label="Updating OTForge">
           <div className="pull-overlay-card">
             <div className="pull-spinner" aria-hidden="true" />
             <div className="pull-overlay-text">
-              <strong>Updating Container Images</strong>
+              <strong>Updating OTForge</strong>
               <p>
-                Pulling the latest images for this scenario from the registry.
+                Pulling the latest source, dependencies, and container images.
                 <br />
                 This may take a few minutes depending on your connection speed.
               </p>
@@ -2379,23 +2389,49 @@ export default function App() {
           </div>
         </div>
       )}
-      {/* Update-complete toast — reuses the desktop-hint toast styling. */}
-      {updateNotice && (
-        <div className="desktop-hint-toast" role="status" aria-live="polite">
-          <div className="desktop-hint-toast-header">
-            <span className="desktop-hint-toast-title">✓ Images Updated</span>
-            <button
-              className="desktop-hint-toast-close"
-              onClick={() => {
-                if (updateNoticeTimerRef.current) clearTimeout(updateNoticeTimerRef.current)
-                setUpdateNotice(null)
-              }}
-              aria-label="Dismiss"
-            >
-              ×
-            </button>
+      {/*
+       * Restart prompt — shown after a successful "Update OTForge" run. The
+       * updated main/renderer bundles only take effect after a relaunch, so
+       * this is a confirmation dialog (not an auto-dismiss toast) with an
+       * explicit choice: restart now, or dismiss and restart later themselves.
+       */}
+      {showRestartPrompt && (
+        <div
+          role="alertdialog"
+          aria-label="Restart to apply update"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 600,
+            background: 'rgba(1, 4, 9, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <div
+            style={{
+              width: 'min(420px, 90vw)',
+              background: '#0d1117',
+              border: '1px solid #30363d',
+              borderRadius: 8,
+              padding: 20,
+              color: '#e6edf3'
+            }}
+          >
+            <strong style={{ fontSize: 16 }}>✓ OTForge Updated</strong>
+            <p style={{ marginTop: 8 }}>
+              The update is downloaded. Restart OTForge now to apply it, or restart later yourself.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button className="btn btn-sm btn-ghost" onClick={() => setShowRestartPrompt(false)}>
+                Later
+              </button>
+              <button className="btn btn-sm btn-primary" onClick={handleRestartNow}>
+                Restart Now
+              </button>
+            </div>
           </div>
-          <div className="desktop-hint-toast-body">{updateNotice}</div>
         </div>
       )}
       {sessionOverlays}

@@ -31,7 +31,7 @@ import type {
   ScenarioDeleteFileResult,
   SimulationStartResult,
   SimulationStopResult,
-  SimulationUpdateResult,
+  AppUpdateResult,
   SessionSummary,
   SessionSaveResult,
   SessionLoadResult,
@@ -129,6 +129,74 @@ function getScenariosLibraryDir(): string {
     return pathJoin(app.getAppPath(), '..', '..', 'scenarios')
   }
   return pathJoin(app.getPath('documents'), 'OTForge', 'Scenarios')
+}
+
+/**
+ * Returns the absolute path to the git checkout root (the npm workspaces
+ * project root, two levels up from packages/app in electron-vite dev mode).
+ *
+ * Only meaningful when `is.dev` is true — a packaged build has no .git
+ * directory or workspace package.json, so the "Update OTForge" self-updater
+ * (app:update) refuses to run outside dev mode. Callers must check `is.dev`
+ * before calling this.
+ */
+function getProjectRoot(): string {
+  return pathJoin(app.getAppPath(), '..', '..')
+}
+
+/**
+ * Runs a command via spawn(), streaming stdout+stderr to onProgress line-by-line
+ * (CR→LF split, ANSI escape codes stripped) — mirrors DockerClient's internal
+ * `_composePull` streaming so `git pull`/`npm install` output renders the same
+ * way as `docker compose pull` output in the update overlay. `shell: true` lets
+ * Windows resolve `npm` (a .cmd shim) the same way `git` resolves as a normal
+ * binary, without hardcoding a platform-specific executable name.
+ *
+ * Rejects with an Error including the last few output lines if the process
+ * exits non-zero, so the renderer can show a useful message instead of a bare
+ * exit code.
+ */
+function runStreamedCommand(
+  command: string,
+  args: string[],
+  cwd: string,
+  onProgress?: (line: string) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const allLines: string[] = []
+    const child = spawn(command, args, { cwd, shell: true })
+
+    const processChunk = (buf: Buffer): void => {
+      buf
+        .toString()
+        .replace(/\r/g, '\n')
+        .split('\n')
+        .forEach(raw => {
+          // eslint-disable-next-line no-control-regex
+          const line = raw.replace(/\x1B\[[0-9;]*[mGKHF]/g, '').trim()
+          if (!line) return
+          allLines.push(line)
+          onProgress?.(line)
+        })
+    }
+
+    child.stdout?.on('data', processChunk)
+    child.stderr?.on('data', processChunk)
+
+    child.on('close', code => {
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(
+          new Error(
+            `${command} ${args.join(' ')} exited with code ${code}: ${allLines.slice(-8).join(' | ')}`
+          )
+        )
+      }
+    })
+
+    child.on('error', reject)
+  })
 }
 
 /**
@@ -560,12 +628,105 @@ function registerIPCHandlers(): void {
     version: app.getVersion(),
     nodeVersion: process.versions.node,
     electronVersion: process.versions.electron,
-    platform: process.platform as AppInfo['platform']
+    platform: process.platform as AppInfo['platform'],
+    isDev: is.dev
   }))
 
   /** Opens a URL in the system browser (used for documentation links). */
   ipcMain.handle('app:openExternal', async (_e, { url }: { url: string }) => {
     await shell.openExternal(url)
+  })
+
+  /**
+   * "Update OTForge" self-updater — supersedes the old scenario-scoped "Update
+   * Images" toolbar button (removed). Runs, in order: `git pull` in the project
+   * root, `npm install`, then — if a scenario is loaded and Docker is available
+   * — a `docker compose pull` for that scenario's images via
+   * DockerClient.updateImages(). Only available in dev mode (`npm run dev`
+   * from a git checkout); a packaged build has no .git directory or workspace
+   * package.json to update.
+   *
+   * Guards against a dirty working tree: `git status --porcelain` catches both
+   * uncommitted local edits and an unresolved merge conflict (conflicted files
+   * show as `UU` entries), so an instructor's local changes are never silently
+   * overwritten. `git pull` itself is the fallback safety net for anything the
+   * porcelain check misses (e.g. diverged history) — it fails loudly rather
+   * than force-merging.
+   *
+   * On success, restartRequired is always true — the updated main/renderer
+   * bundles only take effect after a relaunch. Progress lines are streamed to
+   * the renderer over 'app:updateProgress'.
+   */
+  ipcMain.handle('app:update', async (_e, scenario?: OTForgeScenario): Promise<AppUpdateResult> => {
+    if (!is.dev) {
+      return {
+        ok: false,
+        error:
+          'Update OTForge only works when running from a git checkout (npm run dev), not a packaged build.'
+      }
+    }
+
+    const projectRoot = getProjectRoot()
+    const send = (line: string): void => {
+      mainWindow?.webContents.send('app:updateProgress', { line })
+    }
+
+    try {
+      const { stdout } = await execAsync('git status --porcelain', { cwd: projectRoot })
+      if (stdout.trim().length > 0) {
+        return {
+          ok: false,
+          error:
+            'You have uncommitted local changes in the OTForge repo. Commit, stash, or discard them before updating, then try again.'
+        }
+      }
+    } catch (err) {
+      return { ok: false, error: `Could not check git status: ${(err as Error).message}` }
+    }
+
+    try {
+      send('Pulling latest source (git pull)...')
+      await runStreamedCommand('git', ['pull'], projectRoot, send)
+
+      send('Installing dependencies (npm install)...')
+      await runStreamedCommand('npm', ['install'], projectRoot, send)
+
+      if (scenario) {
+        const dockerAvailable = await dockerClient.isAvailable()
+        if (dockerAvailable) {
+          send('Refreshing container images for the loaded scenario...')
+          const projectName = toProjectName(scenario.meta.name)
+          const zones = await resolveZones()
+          const scenarioDir = pathJoin(app.getPath('userData'), 'scenarios', projectName)
+          const composeYaml = generateCompose(scenario, projectName, scenarioDir, zones)
+          const imageResult = await dockerClient.updateImages(projectName, composeYaml, send)
+          if (!imageResult.ok) {
+            send(
+              `Container image refresh failed: ${imageResult.error} (source update still applied)`
+            )
+          }
+        } else {
+          send('Docker is not running — skipping container image refresh.')
+        }
+      } else {
+        send('No scenario loaded — skipping container image refresh.')
+      }
+
+      return { ok: true, restartRequired: true }
+    } catch (err) {
+      return { ok: false, error: `Update failed: ${(err as Error).message}` }
+    }
+  })
+
+  /**
+   * Relaunches the app — used by the "Restart to apply" prompt after
+   * app:update completes. Separate from app:update itself so the renderer can
+   * show a confirmation prompt before the process actually restarts, rather
+   * than the window disappearing out from under the update-complete message.
+   */
+  ipcMain.handle('app:relaunch', (): void => {
+    app.relaunch()
+    app.exit(0)
   })
 
   // ── Docker health check ───────────────────────────────────────────────────────
@@ -922,45 +1083,6 @@ function registerIPCHandlers(): void {
         activeAttackPorts.clear()
         activeWorkstationPorts.clear()
         return { ok: false, error: `Simulation start failed: ${(err as Error).message}` }
-      }
-    }
-  )
-
-  /**
-   * Force-pulls the newest image for every service in the loaded scenario.
-   *
-   * Backs the toolbar "Update Images" button. Because the default
-   * `pull_policy: if_not_present` never re-pulls a `:latest` tag that already
-   * exists locally, a student who pulled an image weeks ago would otherwise
-   * keep running a stale image even after a new one is published to GHCR. This
-   * runs `docker compose pull`, which always re-fetches each tag.
-   *
-   * Reuses the same compose generation as simulation:start so the pull targets
-   * exactly the images this scenario would launch. It does NOT set
-   * activeProjectName or start any container — pulling only refreshes the local
-   * image cache; the updated image takes effect on the next Run Simulation.
-   *
-   * Progress lines are streamed to the renderer over 'simulation:updateProgress'.
-   */
-  ipcMain.handle(
-    'simulation:updateImages',
-    async (_e, scenario: OTForgeScenario): Promise<SimulationUpdateResult> => {
-      try {
-        const dockerAvailable = await dockerClient.isAvailable()
-        if (!dockerAvailable) {
-          return { ok: false, error: 'Docker Desktop is not running.' }
-        }
-
-        const projectName = toProjectName(scenario.meta.name)
-        const zones = await resolveZones()
-        const scenarioDir = pathJoin(app.getPath('userData'), 'scenarios', projectName)
-        const composeYaml = generateCompose(scenario, projectName, scenarioDir, zones)
-
-        return await dockerClient.updateImages(projectName, composeYaml, (line: string) => {
-          mainWindow?.webContents.send('simulation:updateProgress', { line })
-        })
-      } catch (err) {
-        return { ok: false, error: `Image update failed: ${(err as Error).message}` }
       }
     }
   )
