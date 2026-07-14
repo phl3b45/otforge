@@ -540,12 +540,6 @@ export default function App() {
   const [updating, setUpdating] = useState<boolean>(false)
   /** Most recent output line (git/npm/docker) — shown in the update overlay. */
   const [updateProgress, setUpdateProgress] = useState<string>('')
-  /**
-   * Shown after a successful "Update OTForge" run — the updated main/renderer
-   * bundles only take effect after a relaunch, so this prompts the user to
-   * restart now (via app.relaunch()) or dismiss and restart later themselves.
-   */
-  const [showRestartPrompt, setShowRestartPrompt] = useState<boolean>(false)
 
   // attackLaunched state removed — toolbar button now opens AttackTerminalModal directly
   // so button color uses (attackTerminalDevice !== null) instead of a separate flag.
@@ -1457,8 +1451,11 @@ export default function App() {
    * `docker compose pull` for that scenario's images. Only enabled in dev mode
    * (appInfo.isDev) and while the simulation is idle.
    *
-   * On success, shows a purely informational update-complete notice — see the
-   * comment above that dialog for why there is no automatic relaunch.
+   * On success, the main process itself shows a native "Restart required" or
+   * "Already up to date" dialog and, when a restart is required, exits the
+   * app right after — nothing further to do here on success. If the app is
+   * exiting, this promise may never resolve; the `finally` block simply never
+   * runs in that case, which is harmless since the window is closing anyway.
    */
   const handleUpdateOTForge = useCallback(async () => {
     setSimError(null)
@@ -1466,9 +1463,7 @@ export default function App() {
     setUpdating(true)
     try {
       const result = await window.electronAPI.app.update(scenario ?? undefined)
-      if (result.ok) {
-        setShowRestartPrompt(true)
-      } else {
+      if (!result.ok) {
         setSimError(result.error ?? 'Update failed.')
       }
     } catch (err) {
@@ -2380,57 +2375,6 @@ export default function App() {
                 This may take a few minutes depending on your connection speed.
               </p>
               {updateProgress && <p className="pull-progress-line">{updateProgress}</p>}
-            </div>
-          </div>
-        </div>
-      )}
-      {/*
-       * Update-complete notice — shown after a successful "Update OTForge" run.
-       * Purely informational: electron-vite dev already watches main/preload
-       * source files and restarts Electron on its own the instant git pull
-       * changes them, so there is no "Restart Now" action to offer — a manual
-       * app.relaunch() here would race that automatic restart and hang
-       * (confirmed live). If nothing seems to happen within a few seconds
-       * (e.g. only renderer files changed, which Vite HMRs without a restart
-       * at all), the user's fallback is to stop and re-run `npm run dev`.
-       */}
-      {showRestartPrompt && (
-        <div
-          role="alertdialog"
-          aria-label="Update complete"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 600,
-            background: 'rgba(1, 4, 9, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-        >
-          <div
-            style={{
-              width: 'min(420px, 90vw)',
-              background: '#0d1117',
-              border: '1px solid #30363d',
-              borderRadius: 8,
-              padding: 20,
-              color: '#e6edf3'
-            }}
-          >
-            <strong style={{ fontSize: 16 }}>✓ OTForge Updated</strong>
-            <p style={{ marginTop: 8 }}>
-              The update is downloaded. OTForge will restart automatically in a few seconds if
-              anything in the app itself changed. If it does not, stop this process and run{' '}
-              <code>npm run dev</code> again to apply it.
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button
-                className="btn btn-sm btn-primary"
-                onClick={() => setShowRestartPrompt(false)}
-              >
-                Got it
-              </button>
             </div>
           </div>
         </div>

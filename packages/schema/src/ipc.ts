@@ -116,13 +116,14 @@ export interface AppInfo {
  * `npm install` in the project root, then (when a scenario is loaded and
  * Docker is available) a `docker compose pull` for that scenario's images.
  *
- * `restartRequired` is true on success but is informational only — nothing
- * calls app.relaunch(). electron-vite dev already watches main/preload
- * source files and restarts Electron on its own the instant git pull changes
- * them; a manual relaunch races that automatic one and hangs (confirmed
- * live — the manually relaunched instance starts without the dev-server
- * context electron-vite's own supervisor sets up). The renderer just shows
- * an informational message when this is true.
+ * `restartRequired` reflects whether `git pull` actually moved the local
+ * HEAD commit — i.e. whether source changed and the running process is now
+ * stale. The main process itself decides what to do with this: it shows a
+ * native "restart required" or "already up to date" dialog and, when a
+ * restart is required, calls app.exit() right after the user dismisses the
+ * dialog. The renderer does not need to react to this field at all — by the
+ * time app:update's promise resolves, the user has already been told
+ * everything they need to know.
  */
 export interface AppUpdateResult {
   ok: boolean
