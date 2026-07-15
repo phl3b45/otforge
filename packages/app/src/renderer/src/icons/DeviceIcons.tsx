@@ -909,6 +909,7 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   ied: IedSvg,
   'iec61850-ied': IedSvg,
   'ethernetip-adapter': RtuSvg, // remote I/O adapter — reuses the generic remote-terminal icon
+  'profinet-device': RtuSvg, // PROFINET IO device — reuses the generic remote-terminal icon, same as the EtherNet/IP adapter
   'safety-plc': SafetyPlcSvg, // IEC 61511 Safety PLC / SIS — Triconex, Siemens Safety
   'dcs-controller': DcsControllerSvg, // Distributed Control System — DeltaV, Experion, 800xA
   'legacy-plc': LegacyPlcSvg, // Siemens S7-300/400/1200/1500 via S7comm (Phase 10)

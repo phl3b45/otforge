@@ -109,6 +109,7 @@ const PROTOCOL_COLORS: Partial<Record<Protocol, string>> = {
   s7comm: '#79b8ff', // Siemens S7comm — blue (Phase 10)
   'iec-104': '#e3b341', // IEC 60870-5-104 — gold (Phase 10)
   mqtt: '#e87040', // MQTT — orange; IIoT broker-based pub/sub
+  profinet: '#00a0e3', // PROFINET — Siemens/PI brand blue
   none: '#484f58'
 }
 

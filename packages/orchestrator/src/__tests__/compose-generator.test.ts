@@ -421,6 +421,57 @@ describe('attack-machine device', () => {
   })
 })
 
+describe('profinet-device', () => {
+  it('uses the otforge-profinet image', () => {
+    const compose = gen(
+      makeScenario([['pn-1', { category: 'profinet-device', ipAddress: '10.200.10.10' }]])
+    )
+    expect(compose.services['pn-1'].image).toBe('ghcr.io/iburres/otforge-profinet:latest')
+  })
+
+  it('assigns 64m memory limit (hand-rolled raw-socket DCP server on Alpine)', () => {
+    const compose = gen(
+      makeScenario([['pn-1', { category: 'profinet-device', ipAddress: '10.200.10.10' }]])
+    )
+    expect(compose.services['pn-1'].deploy.resources.limits.memory).toBe('64m')
+  })
+
+  it('grants NET_ADMIN and NET_RAW for its raw AF_PACKET DCP socket', () => {
+    const compose = gen(
+      makeScenario([['pn-1', { category: 'profinet-device', ipAddress: '10.200.10.10' }]])
+    )
+    expect(compose.services['pn-1'].cap_add).toContain('NET_ADMIN')
+    expect(compose.services['pn-1'].cap_add).toContain('NET_RAW')
+  })
+
+  it('injects PROFINET_STATION_NAME, PROFINET_VENDOR_ID, PROFINET_DEVICE_ID when a profinet config is present', () => {
+    const compose = gen(
+      makeScenario([
+        [
+          'pn-1',
+          {
+            category: 'profinet-device',
+            ipAddress: '10.200.10.10',
+            profinet: { stationName: 'press-station-3', vendorId: 42, deviceId: 7 }
+          }
+        ]
+      ])
+    )
+    const env = compose.services['pn-1'].environment ?? []
+    expect(env).toContain('PROFINET_STATION_NAME=press-station-3')
+    expect(env).toContain('PROFINET_VENDOR_ID=42')
+    expect(env).toContain('PROFINET_DEVICE_ID=7')
+  })
+
+  it('does not inject PROFINET_* vars when no profinet config is present', () => {
+    const compose = gen(
+      makeScenario([['pn-1', { category: 'profinet-device', ipAddress: '10.200.10.10' }]])
+    )
+    const env = compose.services['pn-1'].environment ?? []
+    expect(env.some(e => e.startsWith('PROFINET_'))).toBe(false)
+  })
+})
+
 describe('attack-machine — Insider Threat mode (visual zone placement)', () => {
   /**
    * Insider Threat mode (scenario.security.insiderThreat) lets the attack machine
