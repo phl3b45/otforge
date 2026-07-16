@@ -260,7 +260,7 @@ function CanvasViewHint({ simRunning }: { simRunning?: boolean }) {
       <p>
         {simRunning
           ? 'Simulation is running. Canvas is read-only.'
-          : 'Canvas is read-only. Use New Scenario in the toolbar to enter Author Mode.'}
+          : 'Canvas is read-only. Click the mode badge to enter Author Mode.'}
       </p>
     </div>
   )
@@ -1808,7 +1808,7 @@ export default function App() {
             {/*
              * Edit Scenario — shown whenever a scenario is open.
              * Grayed in Student Mode (builderModeActive = false) because editing
-             * requires Author Mode — activate it via New Scenario first.
+             * requires Author Mode — click the mode badge to activate it.
              */}
             {scenario && (
               <button
@@ -1819,7 +1819,7 @@ export default function App() {
                   !simIsIdle
                     ? 'Stop the simulation to edit scenario metadata'
                     : !builderModeActive
-                      ? 'Enter Author Mode via New Scenario to edit metadata'
+                      ? 'Enter Author Mode to edit metadata'
                       : 'Edit scenario name, description, and mission brief'
                 }
               >
@@ -2056,12 +2056,10 @@ export default function App() {
            *   Author Mode  — builderModeActive = true; instructor can drag/drop/edit
            *   Student Mode — builderModeActive = false; default after any file import
            *
-           * Only scenarios with meta.allowModeToggle = true (e.g. the Navigation
-           * Tutorial) get a clickable toggle. All attack labs and regular Student
-           * Copies show a static badge so students cannot accidentally enter edit
-           * mode mid-lab. Fully-locked scenarios always show Student Mode.
+           * Unlocked Author Copies get a clickable toggle. Locked Student Copies
+           * show a static badge so students cannot accidentally enter edit mode.
            */}
-          {scenario.meta.allowModeToggle && !scenario.meta.locked ? (
+          {!scenario.meta.locked ? (
             <button
               className={`mode-badge mode-badge-toggle ${builderModeActive ? 'mode-badge-author' : 'mode-badge-student'}`}
               onClick={() => setBuilderModeActive(prev => !prev)}
