@@ -1288,6 +1288,7 @@ export default function App() {
    * zone which has no Purdue layer tab). It is added directly to scenario.devices
    * so the compose generator creates the Kali Linux container and noVNC port mapping
    * at simulation start. The device's IP defaults to 10.200.60.10 (attacker subnet).
+   * Replaces any existing attack-machine (toolbar or insider) so only one Kali exists.
    */
   const handleAttackMachineAdd = useCallback(() => {
     const nodeId = `attack-machine-${Date.now()}`
@@ -1326,7 +1327,20 @@ export default function App() {
       }
       return {
         ...base,
-        devices: { devices: { ...base.devices.devices, [nodeId]: device } }
+        visual: {
+          ...base.visual,
+          nodes: base.visual.nodes.filter(n => n.type !== 'attack-machine')
+        },
+        devices: {
+          devices: {
+            ...Object.fromEntries(
+              Object.entries(base.devices.devices).filter(
+                ([, d]) => d.category !== 'attack-machine'
+              )
+            ),
+            [nodeId]: device
+          }
+        }
       }
     })
   }, [])
