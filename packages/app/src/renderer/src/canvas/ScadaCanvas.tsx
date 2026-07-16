@@ -793,6 +793,13 @@ export function ScadaCanvas({
   const prevLayerRef = useRef<NetworkZone | null>(null)
 
   /**
+   * Tracks node-graph identity for the sync effect. Edge-only scenario updates
+   * must not call setNodes — replacing every node object leaves React Flow edge
+   * paths bound to stale handle bounds (traces vanish until a layer-tab switch).
+   */
+  const prevNodeSyncKeyRef = useRef<string>('')
+
+  /**
    * Timer ref for auto-dismissing the invalid connection tooltip.
    * Stored in a ref so the previous timer can be cancelled before setting a new one
    * (prevents stale closures from clearing a tooltip the user just triggered).
@@ -1051,6 +1058,7 @@ export function ScadaCanvas({
     if (!scenario) {
       setNodes([])
       setEdges([])
+      prevNodeSyncKeyRef.current = ''
       // No nodes — show the full 25 × 25 canvas area so the user sees the grid
       setTimeout(() => {
         if (rfInstance.current) fitCanvasView(rfInstance.current)
@@ -1095,7 +1103,19 @@ export function ScadaCanvas({
         ? deviceNodes.map(n => (n.id === selId ? { ...n, selected: true } : n))
         : deviceNodes)
     ]
-    setNodes(allNodes)
+    // Skip setNodes when only edges changed (e.g. new connection). Remounting nodes
+    // on every edge edit desyncs RF handle bounds from edge SVG paths.
+    const nodeSyncKey = `${activeLayer}:${scenario.visual.nodes
+      .map(n => `${n.id}@${n.position.x},${n.position.y},${n.data.zone},${n.data.label}`)
+      .join('|')}:${(scenario.visual.siteRegions ?? [])
+      .map(r => `${r.id}@${r.position.x},${r.position.y},${r.width}x${r.height},${r.zone}`)
+      .join('|')}:${Object.values(scenario.devices.devices)
+      .map(d => `${d.nodeId}@${d.ipAddress}@${d.label ?? ''}`)
+      .join(',')}`
+    if (nodeSyncKey !== prevNodeSyncKeyRef.current) {
+      prevNodeSyncKeyRef.current = nodeSyncKey
+      setNodes(allNodes)
+    }
     // Mark every edge as reconnectable so the user can drag endpoints to reroute
     // connections without having to delete and recreate them (read-only mode excluded).
     setEdges(
