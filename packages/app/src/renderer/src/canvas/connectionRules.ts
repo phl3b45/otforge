@@ -162,6 +162,20 @@ export const VALID_CONNECTIONS: Partial<
     'ids-ips': ['none']
   },
 
+  // ── IP camera (real container — see containers/camera/) ────────────────────
+  // A dual-homed IoT device: primary zone is wherever it's placed (typically
+  // Internet DMZ, representing internet-facing exposure), with an extraNetworks
+  // leg into another zone (typically Control) modeling the common real-world
+  // misconfiguration of a "convenience" camera bridging a supposedly isolated
+  // segment. No ICS application protocol — the exploitable surface is weak/
+  // default SSH credentials, not a Purdue-model canvas connection.
+  'ip-camera': {
+    switch: ['none'],
+    router: ['none'],
+    firewall: ['none'],
+    'ids-ips': ['none']
+  },
+
   // ── Safety PLC / SIS (IEC 61511 safety instrumented system) ─────────────────
   // The SIS is architecturally ISOLATED from the basic process control system
   // (BPCS/PLC). It only accepts read connections upward (HMI/historian view its
@@ -604,6 +618,7 @@ export const VALID_CONNECTIONS: Partial<
     'iec61850-ied': ['none'],
     'ethernetip-adapter': ['none'],
     'profinet-device': ['none'],
+    'ip-camera': ['none'],
     'safety-plc': ['none'],
     'dcs-controller': ['none'],
     'legacy-plc': ['none'], // Phase 10
@@ -643,6 +658,7 @@ export const VALID_CONNECTIONS: Partial<
     'iec61850-ied': ['none'],
     'ethernetip-adapter': ['none'],
     'profinet-device': ['none'],
+    'ip-camera': ['none'],
     'safety-plc': ['none'],
     'dcs-controller': ['none'],
     'legacy-plc': ['none'], // Phase 10
@@ -682,6 +698,7 @@ export const VALID_CONNECTIONS: Partial<
     'iec61850-ied': ['none'],
     'ethernetip-adapter': ['none'],
     'profinet-device': ['none'],
+    'ip-camera': ['none'],
     'safety-plc': ['none'],
     'dcs-controller': ['none'],
     'legacy-plc': ['none'], // Phase 10
@@ -721,6 +738,7 @@ export const VALID_CONNECTIONS: Partial<
     'iec61850-ied': ['none'],
     'ethernetip-adapter': ['none'],
     'profinet-device': ['none'],
+    'ip-camera': ['none'],
     'safety-plc': ['none'],
     'dcs-controller': ['none'],
     'legacy-plc': ['none'], // Phase 10
@@ -799,6 +817,9 @@ export const VALID_CONNECTIONS: Partial<
     // Unauthenticated DCP Set — rename the station or reassign its IP with zero
     // credentials, the same way a legitimate engineering tool would configure it.
     'profinet-device': ['profinet', 'none'],
+    // Weak/default SSH credentials — classic IoT/camera compromise (Mirai-style),
+    // the initial foothold for a pivot into whatever zone the camera is also attached to.
+    'ip-camera': ['none'],
     // TRITON/TRISIS attack vector: TriStation protocol injection into SIS — Schneider Triconex, 2017
     'safety-plc': ['modbus-tcp', 'modbus-rtu', 'ethernet-ip', 'opc-ua', 'none'],
     // DCS attacks: OPC-UA credential attacks, Modbus setpoint manipulation
@@ -1003,6 +1024,7 @@ const CATEGORY_NAMES: Record<DeviceCategory, string> = {
   'email-server': 'Email Server',
   'internet-server': 'Internet Server',
   'dns-server': 'DNS Server', // Phase 12
+  'ip-camera': 'IP Camera',
   'attack-machine': 'Attack Machine'
 }
 
@@ -1104,6 +1126,8 @@ const DEVICE_CABLE_CAPABILITIES: Record<DeviceCategory, Set<CableType>> = {
   'email-server': new Set(['cat6', 'cat6a', 'smf', 'sata', 'ac']),
   'internet-server': new Set(['cat6', 'cat6a', 'smf', 'sata', 'ac']),
   'dns-server': new Set(['cat6', 'cat6a', 'smf', 'sata', 'ac']),
+  // IP camera: PoE Ethernet is standard; many cheaper/consumer models are Wi-Fi only.
+  'ip-camera': new Set(['cat5e', 'cat6', 'wifi', 'ac']),
 
   // ── Attack machine — all cable types (adversary simulates any physical access) ─────
   'attack-machine': new Set([

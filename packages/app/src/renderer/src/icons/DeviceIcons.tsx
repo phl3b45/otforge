@@ -549,6 +549,29 @@ function DnsServerSvg() {
 }
 
 /**
+ * IP Camera — a classic dome/box camera silhouette: body, lens, and a small
+ * mounting bracket. Distinct enough from the server/workstation icons to read
+ * clearly as "IoT camera" at a glance on the canvas.
+ */
+function IpCameraSvg() {
+  return (
+    <svg viewBox="0 0 24 24" {...S}>
+      {/* Camera body */}
+      <rect x="3" y="8" width="14" height="9" rx="2" />
+      {/* Lens */}
+      <circle cx="10" cy="12.5" r="2.5" />
+      {/* Lens highlight/aperture dot */}
+      <circle cx="10" cy="12.5" r="0.8" fill="currentColor" stroke="none" />
+      {/* Status/IR LED */}
+      <circle cx="15" cy="10" r="0.8" fill="currentColor" stroke="none" />
+      {/* Mounting arm */}
+      <line x1="17" y1="12.5" x2="20" y2="12.5" />
+      <line x1="20" y1="9" x2="20" y2="16" />
+    </svg>
+  )
+}
+
+/**
  * Safety PLC / SIS — PLC ladder-logic body with a safety certification badge at top
  * (circle + checkmark). Colored red in palette to immediately convey safety-critical
  * function. Targeted by TRITON/TRISIS malware (Schneider Electric Triconex, 2017).
@@ -948,6 +971,7 @@ const ICON_MAP: Record<DeviceCategory, () => JSX.Element> = {
   'email-server': EmailServerSvg,
   'internet-server': InternetServerSvg,
   'dns-server': DnsServerSvg, // authoritative DNS for meridian-process.com (Phase 12)
+  'ip-camera': IpCameraSvg, // real otforge-camera container — weak-credential SSH pivot device
   // ── Red Team ─────────────────────────────────────────────────────────────────
   'attack-machine': AttackMachineSvg
 }

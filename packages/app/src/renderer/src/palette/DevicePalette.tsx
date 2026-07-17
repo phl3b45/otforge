@@ -207,6 +207,9 @@ const PALETTE: PaletteSection[] = [
       { category: 'internet-server', label: 'Internet Server' },
       // dns-server: authoritative DNS for the simulated company domain (Phase 12)
       { category: 'dns-server', label: 'DNS Server' },
+      // ip-camera: real otforge-camera container — weak default SSH credentials,
+      // commonly deployed dual-homed (extraNetworks) into an internal zone as a pivot device
+      { category: 'ip-camera', label: 'IP Camera' },
       { category: 'firewall', label: 'Firewall' }
     ]
   },
@@ -265,6 +268,7 @@ const PALETTE_COLORS: Partial<Record<DeviceCategory, string>> = {
   'internet-server': '#f78166',
   // DNS server — same orange family as other Internet DMZ devices (Phase 12)
   'dns-server': '#f78166',
+  'ip-camera': '#f78166',
   // Attack machine (Insider Threat mode) — matches LAYER_COLORS.attacker
   'attack-machine': '#f85149'
 }

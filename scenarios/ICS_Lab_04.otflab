@@ -1,0 +1,626 @@
+{
+  "meta": {
+    "formatVersion": "1.0",
+    "name": "ICS Lab 04 — TRITON/TRISIS: Safety Instrumented System Compromise",
+    "description": "Students take the role of an OT security engineer at Meridian Petrochemical's Gulf Coast reactor unit. Modeled on the real 2017 TRITON/TRISIS incident (XENOTIME/TEMP.Veles vs. a Schneider Electric Triconex Safety Instrumented System), students reconnoiter an inadequately segmented OT network, execute an unauthorized Modbus write that disables the reactor's high-pressure shutdown relay, detect the attack in Suricata/Zeek, then build and verify two independent layers of mitigation: a host-scoped Suricata IPS rule and a corrected firewall segmentation policy. Developed for ICS/SCADA cybersecurity courses at UTSA.",
+    "sector": "chemical-batch",
+    "author": "Ian Burres — UTSA",
+    "createdAt": "2026-07-15T00:00:00.000Z",
+    "updatedAt": "2026-07-15T00:00:00.000Z",
+    "appVersion": "0.13.0",
+    "locked": false,
+    "brief": "## Mission: Protect Reactor R-101's Safety System\n\nMeridian Petrochemical operates a Gulf Coast reactor unit. Reactor R-101 runs a high-pressure exothermic process protected by a Triconex-style Safety Instrumented System (SIS) — an independent safety layer whose sole job is to close feed isolation valve SDV-101 and de-energize ESD relay K1 if reactor pressure exceeds a safe limit, regardless of what the normal process controller (the BPCS) is doing.\n\nAn attacker has reached the OT network and issued an unauthorized Modbus write directly to the SIS, disabling its trip relay — defeating the plant's last line of defense before anyone has even touched the process itself.\n\nAs the newly assigned OT security engineer, your mission is to:\n\n1. Reconnoiter the network and observe that the SIS is **not** distinguishable from the ordinary process controller — a segmentation failure.\n2. Execute the attack yourself to understand exactly what the adversary did and why it worked.\n3. Detect the attack using Suricata and Zeek, and understand why the existing detection is imprecise.\n4. Write a **host-scoped Suricata IPS rule** that blocks unauthorized writes to the SIS specifically.\n5. Correct the **firewall segmentation** so the SIS is no longer reachable from the attacker zone at all.\n\n**Rules of Engagement:** This is an isolated Docker lab environment. All traffic stays on your local machine. Every technique used here is already documented publicly by MITRE ATT&CK for ICS and CISA advisories — this lab reproduces nothing beyond what is already public record.",
+    "requirements": {
+      "estimatedRamMb": 1536,
+      "estimatedCpuCores": 3,
+      "containerCount": 7
+    },
+    "tutorialSteps": [
+      {
+        "id": "step-00-welcome",
+        "title": "Welcome to Lab 04 — TRITON/TRISIS: Safety System Compromise",
+        "body": "## Learning Objectives\n\nBy the end of this lab you will be able to:\n\n- Explain the difference between a **BPCS** (Basic Process Control System) and a **SIS** (Safety Instrumented System), and why IEC 61511 requires them to be independent\n- Describe **XENOTIME** (also tracked as TEMP.Veles), the threat actor behind the 2017 TRITON/TRISIS incident, and its unusual motivation\n- Map this lab's attack sequence onto real **MITRE ATT&CK for ICS** technique IDs, including an Initial Access technique for pivoting through a misconfigured internet-facing device\n- Pivot from an internet-facing foothold into an OT network using stolen SSH credentials and an SSH local port-forward tunnel — a real, general-purpose technique, not a Modbus-specific one\n- Explain what a SIEM is, why OT environments need one, and name real proprietary and open-source examples\n- Use **Grafana + Loki** to query Suricata and Zeek log data with **LogQL** — the same skill a SOC analyst uses in a real OT SIEM\n- Write a **host-scoped Suricata IPS rule** protecting a specific safety-critical device\n- Explain why a firewall rule alone would not have closed the gap in this lab, and what actually would have\n\n---\n\n## Who Is XENOTIME?\n\nXENOTIME (also reported as TEMP.Veles) is the threat activity group behind the TRITON/TRISIS malware, first identified publicly by Dragos and FireEye/Mandiant following a 2017 incident at a Saudi Arabian petrochemical facility. XENOTIME is widely assessed to have state-nexus ties and is considered one of only a handful of activity groups ever observed specifically targeting **Safety Instrumented Systems** — not just the process control layer.\n\n**Why that matters:** Most ICS-targeting malware (Stuxnet, Industroyer, INDUSTROYER2) manipulates the *process* — opening a valve, tripping a breaker. TRITON went one step further: it targeted the system whose *entire job* is to prevent a hazardous process from causing physical harm when something else already goes wrong. Security researchers described it at the time as the first malware family with the potential to directly cause loss of life, not just financial or operational damage — an escalation in intent, not just capability.\n\n---\n\n## What Actually Happened in 2017\n\nThe attacker gained a foothold, eventually reaching an **engineering workstation** with legitimate TriStation software installed for programming Schneider Electric Triconex safety controllers. From there, they pushed unauthorized logic to the SIS. During one deployment attempt, a bug in the attacker's own code caused several Triconex controllers to fail safely and trip the plant — the malfunction that led to the incident's public discovery, not the attacker's intended trigger.\n\n**This lab's scope:** TriStation is a proprietary Schneider protocol with no public specification — unlike Modbus, DNP3, EtherNet/IP, or the other protocols this platform implements for real, there is no public reference this project could implement accurately. This lab instead reproduces two **real, publicly documented** patterns from post-incident and industry analysis: (1) the **root architectural failure** every TRITON/TRISIS write-up agrees on — the SIS was reachable, over a standard unauthenticated ICS protocol, from a network position it should never have been exposed to — and (2) a **realistic initial-access path** into that network: an internet-facing IoT device with weak, unrotated default credentials, pivoted through to reach the internal network. That second pattern isn't specific to the 2017 incident — it's one of the most common real-world ways attackers reach OT networks at all, documented across countless Mirai-style botnet compromises and ICS intrusion reports. You will exploit both conditions using real protocols this simulator fully implements: SSH and Modbus TCP.\n\n---\n\n## MITRE ATT&CK for ICS — This Lab's Techniques\n\n| Tactic | Technique | What you'll do |\n|---|---|---|\n| Initial Access | **T0883** Internet Accessible Device | Find an internet-facing IP camera reachable from where you start |\n| Initial Access | **T0812** Default Credentials | SSH into the camera using a password that was never changed from the factory default |\n| Discovery | **T0846** Remote System Discovery | From inside the camera's network position, scan the OT subnet and find the SIS is indistinguishable from the BPCS |\n| Impair Process Control | **T0855** Unauthorized Command Message | Send a Modbus write the SIS was never meant to accept from you |\n| Impair Process Control | **T0831** Manipulation of Control | Disable the trip relay — defeating the safety function itself |\n\n---\n\n## What Is a SIEM, and Why Does OT Need Its Own Kind?\n\nA **SIEM (Security Information and Event Management)** platform is not a single sensor — it's the layer that sits ABOVE your sensors. It collects logs and alerts from every source (IDS, firewalls, endpoints, applications), stores them centrally, and gives an analyst one place to search, correlate, and build dashboards across all of it. Without one, you're stuck flipping between separate tools' separate consoles, one alert at a time.\n\n**Why IT SIEMs usually fail in OT:** A SIEM built for Windows Event Logs and web server access logs generally has no idea what a DNP3 Direct Operate or a Modbus Write Single Coil even is — the query language and detection content assume IT protocols. OT-specific platforms exist precisely to close that gap.\n\n**Proprietary OT-focused platforms** (commonly deployed at real utilities and industrial sites):\n- **Dragos Platform** — ICS-specific threat detection, asset identification, built by the same firm that did the original TRISIS/TRITON research\n- **Claroty xDome / Continuous Threat Detection (CTD)**\n- **Nozomi Networks Guardian / Vantage**\n- **Microsoft Defender for IoT** (formerly CyberX)\n- **Tenable.ot**, **Armis**, **Forescout**\n\n**Open-source SIEM stacks** (what a smaller operator, or a student, can actually stand up):\n- **Security Onion** — a full network security monitoring distro bundling Suricata, Zeek, and an Elastic-based SIEM front end. The closest open-source analog to what you're about to do in this lab.\n- **Wazuh** — open-source SIEM/XDR built on the Elastic Stack, with community-contributed ICS detection rules.\n- **The Elastic Stack (ELK)** and **Graylog** — general-purpose log aggregation platforms frequently adapted for OT with custom Suricata/Zeek log ingestion, exactly like this lab's pipeline.\n\n**What you're actually using right now:** Suricata (IDS/IPS) → Zeek (protocol analysis) → **Loki** (log aggregation) → **Grafana** (query and dashboards) is architecturally the same pattern as Security Onion or a Wazuh/ELK deployment — sensors generate events, a log aggregator indexes them centrally, and a query/dashboard layer lets an analyst correlate across sources. Starting a few steps from now, you'll use Grafana's **Explore** view and its query language, **LogQL**, to do exactly what a SOC analyst does in a real OT SIEM: search across a firehose of log data for the one connection that matters.\n\n---\n\nAll of this information is already public — MITRE's ATT&CK for ICS matrix, Dragos's and CISA's TRITON/TRISIS write-ups, and FireEye/Mandiant's original research are all cited, publicly available sources. Nothing in this lab introduces new offensive capability.\n\n**Click Run Simulation (blue play button) to start all containers before clicking Next.**",
+        "successCheck": "Review the objectives, the XENOTIME background, and the ATT&CK technique table above. Click Run Simulation in the toolbar and wait for the status indicator to show all containers running."
+      },
+      {
+        "id": "step-01-explore",
+        "title": "Step 1 — Explore Meridian Petrochemical's Reactor Unit",
+        "body": "## The Reactor R-101 Safety Architecture\n\n- **BPCS PLC** — the Basic Process Control System. Runs normal reactor operation: feed rate, temperature, pressure control under normal conditions.\n- **Triconex SIS** — a fully independent Safety Instrumented System. Its ONLY job: if reactor pressure exceeds a high-high limit, close feed isolation valve **SDV-101** and de-energize **ESD relay K1** — regardless of what the BPCS is doing, even if the BPCS has failed or been compromised.\n\nClick the **Triconex SIS** node on the **OT Process (L0–L2)** layer tab and look at the Properties Panel. You should see its Safety Instrumented System configuration:\n\n- **SIS Function:** High-High Pressure Shutdown — Reactor R-101 feed isolation\n- **Voting Configuration:** 2oo3 (two-out-of-three redundant pressure transmitters must agree before tripping — reduces spurious trips while still catching a real overpressure event)\n- **Safe State:** Close SDV-101 (feed isolation valve); de-energize ESD relay K1\n\n**IEC 61511 (Functional Safety for the Process Industry)** requires the SIS to be independent from the BPCS — separate logic solver, separate I/O, and ideally separate, controlled-access networking. Independence that exists only on paper (same subnet, same firewall rules, same reachability as the BPCS) is not independence at all. Keep that in mind as you explore the network.\n\n---\n\n## Network Zones\n\nSwitch between the **Internet DMZ (L5)**, **OT Process (L0–L2)**, **Control Center (L3)**, and **Plant DMZ (L3.5)** layer tabs to see the full architecture:\n\n| Zone | Subnet | Purpose |\n|---|---|---|\n| Internet DMZ | 10.200.50.0/24 | Perimeter Camera 07 — an internet-facing IoT device |\n| OT Field | 10.200.10.0/24 | BPCS PLC, Triconex SIS, pressure transmitter, field switch |\n| Control | 10.200.20.0/24 | Engineering workstation, HMI, historian |\n| Plant DMZ | 10.200.30.0/24 | Firewall, Suricata IDS/IPS sensor |\n| Attacker | 10.200.60.0/24 | Kali Linux (the threat actor) |\n\n**Where you actually start:** Kali sits where a real external attacker sits — on the public internet, with no direct route into the plant network at all. The only thing Kali can currently see is whatever the plant exposes to the internet: in this case, **Perimeter Camera 07**, a security camera on the Internet DMZ. Getting from there to the SIS is the whole point of the next several steps — it is not a given the way it might have felt in previous labs.\n\nNote also that the **BPCS PLC** and the **Triconex SIS** sit on the exact same OT subnet, behind the exact same firewall rules, on the exact same Modbus TCP port 502. From a network standpoint, nothing distinguishes the safety system from the process controller it's supposed to independently protect — that part of the segmentation failure is still exactly as real as before.",
+        "successCheck": "You clicked the Triconex SIS node and can see its SIS Function, Voting Configuration, and Safe State in the Properties Panel. You can identify Perimeter Camera 07 on the Internet DMZ layer tab, and you understand that Kali currently has no direct path to the OT or Control zones at all."
+      },
+      {
+        "id": "step-02-recon-camera",
+        "title": "Step 2 — Reconnaissance: Find a Way In",
+        "body": "## Scanning What You Can Actually Reach\n\nA real external attacker doesn't start with a map of the target's internal network — they start with whatever that organization exposes to the public internet (MITRE ATT&CK for ICS **T0883 — Internet Accessible Device**, Initial Access tactic). Kali's network position in this lab models exactly that: it can reach the Internet DMZ, and nothing else.\n\n1. Click the **⚔ Kali Terminal** button in the OTForge toolbar.\n2. Scan the Internet DMZ for open services:\n```\nnmap -p22,80 --open 10.200.50.0/24\n```\n\n---\n\n## What You'll See\n\nOne host responds: **10.200.50.15**, with port 22 (SSH) and port 80 (HTTP) both open. Browse to it (`http://10.200.50.15` from a browser inside the lab environment, or `curl 10.200.50.15` from the Kali terminal) and you'll find a generic \"IPCam-Pro Web Admin\" page — confirming this is a network camera, not a server of any real significance on its own.\n\n**Why an attacker bothers with a camera at all:** internet-facing IoT devices — cameras, DVRs, environmental sensors — are frequently installed by a facilities or physical-security team with no coordination with the IT/OT security program, plugged into whatever network jack was convenient at install time, and left running factory-default credentials indefinitely. None of that is specific to this lab's fictional plant — it's one of the most common, well-documented real-world initial access patterns into otherwise well-defended networks (the Mirai botnet built an army of exactly these devices using nothing more than default Telnet/SSH credentials).\n\nTry connecting to anything else you scanned in previous labs — the OT subnet, the control zone — and confirm it's genuinely unreachable from here:\n```\nnc -zv -w3 10.200.10.11 502\n```\nThis should time out or report no route. From Kali's actual starting position, the SIS is not just \"hard to find\" — it is completely unreachable. The camera is the only way in.",
+        "command": "nmap -p22,80 --open 10.200.50.0/24",
+        "successCheck": "The nmap scan found 10.200.50.15 with ports 22 and 80 open. You confirmed the OT subnet is unreachable directly from Kali's starting position, and you understand the camera is the only available entry point."
+      },
+      {
+        "id": "step-03-compromise-camera",
+        "title": "Step 3 — Compromise the Camera",
+        "body": "## Default Credentials (T0812)\n\nIP cameras and similar embedded IoT devices very often ship with a fixed factory default password that the installer never changes — `admin`/`admin`, `admin`/`12345`, or similar. This is tracked as MITRE ATT&CK for ICS **T0812 — Default Credentials**, Initial Access tactic. It requires no exploit development at all — just knowing (or guessing, or looking up in a leaked default-password list) what the vendor shipped.\n\n1. From the Kali terminal, SSH to the camera as root:\n```\nssh -o StrictHostKeyChecking=no root@10.200.50.15\n```\n2. When prompted for a password, enter:\n```\nadmin123\n```\n3. You should land at a root shell on the camera. Confirm where you are:\n```\nid && hostname\n```\n4. Exit back to your Kali terminal:\n```\nexit\n```\n\n---\n\n## Why This Matters More Than It Looks Like It Should\n\nYou didn't exploit a vulnerability in any meaningful sense — you logged in with valid credentials that happen to be public knowledge. That's exactly why default-credential compromises are so common in the real world: there's no patch for \"the installer never changed the password,\" and no IDS signature reliably distinguishes a legitimate admin login from an attacker who read the same manual. You now have a foothold — a root shell — on a device that lives on the plant's network. What that foothold is actually worth depends entirely on where else that device can reach, which is exactly what you'll check next.",
+        "command": "ssh -o StrictHostKeyChecking=no root@10.200.50.15",
+        "successCheck": "You SSH'd into the camera with root/admin123 and confirmed a root shell with id and hostname. You understand this was a credentials problem, not a software exploit, and that the value of this foothold depends on the camera's other network connections."
+      },
+      {
+        "id": "step-04-pivot",
+        "title": "Step 4 — Pivot to the OT Network",
+        "body": "## A Camera That Shouldn't Be Dual-Homed\n\nCheck the camera's network interfaces while you're SSH'd in:\n```\nssh -o StrictHostKeyChecking=no root@10.200.50.15 'ip -4 addr show | grep inet'\n```\nYou'll see two IPv4 addresses on two different interfaces: one on the 10.200.50.0/24 Internet DMZ subnet (where you found it), and a second one on the 10.200.10.0/24 **OT subnet** — the same subnet the BPCS and the Triconex SIS live on.\n\n**This is the actual root-cause vulnerability in this step**, and it is depressingly common in real deployments: someone ran a network cable from this \"convenience\" camera directly onto the OT switch — maybe so plant staff could view it from the control room, maybe because it was the nearest available jack during installation — with nobody from OT security ever reviewing that decision. The camera has no legitimate reason to be reachable from both the public internet and the safety-critical process network at the same time. From a segmentation standpoint, it is now a bridge between them, whether anyone intended it to be one or not.\n\n---\n\n## Building the Tunnel\n\nYou don't need any special tool for this — SSH itself can forward a TCP port through the connection you already have. This is called **local port forwarding**.\n\n1. From the Kali terminal, open a tunnel that maps a local port to the SIS's Modbus port, through the camera:\n```\nssh -o StrictHostKeyChecking=no -N -L 5060:10.200.10.11:502 root@10.200.50.15 &\n```\n- `-N` — don't run a remote shell, just forward the port\n- `-L 5060:10.200.10.11:502` — anything Kali connects to on local port 5060 gets tunneled through the camera and delivered to 10.200.10.11 port 502 (the SIS's Modbus port)\n- the trailing `&` backgrounds the tunnel so your terminal is free for the next step\n\n2. Give it a couple of seconds, then confirm the tunnel is actually up:\n```\nnc -zv 127.0.0.1 5060\n```\nA successful connection here means Kali — which still has zero direct route to the OT subnet — can now reach the SIS's Modbus port **through the camera**, entirely through a legitimate-looking SSH session. Anything sent to `127.0.0.1:5060` on Kali is, from the SIS's perspective, indistinguishable from a normal connection arriving from the camera's own OT-side address. This is the pivot.",
+        "command": "ssh -o StrictHostKeyChecking=no -N -L 5060:10.200.10.11:502 root@10.200.50.15 &",
+        "successCheck": "The SSH tunnel is running in the background and nc -zv 127.0.0.1 5060 reports a successful connection. You understand that the camera's illegitimate second network interface, not any weakness in Modbus or the SIS itself, is what makes this pivot possible."
+      },
+      {
+        "id": "step-05-suricata-baseline",
+        "title": "Step 5 — Check the Suricata Baseline",
+        "body": "## The Pre-Loaded OTForge IDS Rules\n\nOTForge ships with a set of custom ICS/OT Suricata rules in the `ics-rules.rules` file, always loaded at simulation startup. The most relevant one for this lab:\n\n```\nalert tcp $HOME_NET any -> $HOME_NET 502\n    (msg:\"ICS-SIM Modbus TCP Write Single Coil\";\n     flow:to_server,established;\n     content:\"|05|\"; offset:7; depth:1;\n     sid:9000002; rev:3;\n     classtype:protocol-command-decode;)\n```\n\n**Dissecting this rule:** In a standard Modbus/TCP frame, byte offset 7 (right after the 7-byte MBAP header) is the **function code** byte. `content:\"|05|\"` matches function code 0x05 — **Write Single Coil**, per the Modbus Application Protocol Specification. This rule fires on ANY coil write to ANY Modbus device on port 502, anywhere on the network.\n\n**Open Grafana:** click the **Monitor** button in the OTForge toolbar, then click **Open Grafana ↗** in the panel header — this opens a separate window with the pre-built **ICS Lab Overview** dashboard (give it 15-30 seconds on first launch). Look at the **Total Alerts** stat panel (top-left) — it should read **0**, and the **Suricata — Alerts** panel below it should be empty. Nothing has written a coil so far.\n\n(The Monitor panel's own built-in Live Logs view still works for a quick glance, but its log list force-scrolls to the newest entry every few seconds with no way to pause it — genuinely hard to read anything in it once traffic picks up. Grafana is where you'll actually work for the rest of this lab.)\n\n**The weakness of this rule:** It cannot tell a legitimate BPCS write from an unauthorized write to the SIS. It fires just as loudly on ordinary valve/pump commands the BPCS sends every few seconds as it would on an attacker disabling the SIS's trip relay. In a real deployment, that means either constant alert fatigue or — more likely — the rule gets tuned down until it misses the one write that actually matters.\n\n**Your goal** in this lab is to write a rule scoped specifically to the SIS's IP address, so it fires ONLY on unauthorized writes to the safety system — not on every Modbus write on the network.",
+        "successCheck": "You opened Grafana via Monitor -> Open Grafana and confirmed the Total Alerts stat reads 0 with no entries in the Suricata - Alerts panel yet. You understand that the pre-loaded rule (SID 9000002) fires on any coil write to any host, and that your custom rule will be scoped to the SIS's IP specifically."
+      },
+      {
+        "id": "step-06-attack",
+        "title": "Step 6 — Execute the Attack",
+        "body": "## Attack Scenario\n\nYou now have exactly what a XENOTIME-style intruder would have at this point: a live tunnel from your own machine, through a compromised internet-facing camera, straight to the SIS's Modbus port — with no direct network route of your own into the plant at all. Your goal: disable ESD relay K1 — the trip output that closes SDV-101 on high-high pressure — so that if reactor pressure later exceeds the safe limit, **nothing stops it**.\n\nThe attack uses Modbus **Function Code 05 (Write Single Coil)** to write OFF to coil 0 — the same coil address a legitimate SIS logic solver would de-energize during a real trip, but commanded here from an unauthorized host, through an unauthorized path.\n\n**This is not a protocol exploit.** Modbus has no built-in authentication. The script simply opens a TCP connection and sends a well-formed Write Single Coil request — exactly as a legitimate engineering tool would, but from an unauthorized source, and it has no way of knowing (or caring) that its TCP connection is being relayed through an SSH tunnel and a compromised camera instead of arriving directly.\n\n---\n\n## Running the Attack Through the Tunnel\n\nConfirm your tunnel from Step 4 is still running (`nc -zv 127.0.0.1 5060` should still succeed — if not, re-open it), then run the attack against the **local end of the tunnel**, not the SIS's real IP:\n```\npython3 /root/Desktop/Attack_Scripts/sis_attack.py 127.0.0.1 --port 5060\n```\nThe script connects to `127.0.0.1:5060` on Kali. SSH silently relays that connection through the camera to `{{sis-1.ip}}:502`. From the SIS's point of view, the connection simply arrives from the camera — a device that, thanks to Step 4's misconfiguration, has always been able to reach it.\n\n---\n\n## Watch the Canvas\n\nWhile the attack runs, switch to the **Plant DMZ (L3.5)** layer tab — this is where the **Suricata IDS/IPS Sensor** lives. Watch for a red **ATK** badge on the sensor node, flagging live traffic on the OT network.",
+        "command": "python3 /root/Desktop/Attack_Scripts/sis_attack.py 127.0.0.1 --port 5060",
+        "successCheck": "The attack script completed and reported the coil write was transmitted (confirmed or unconfirmed - either is fine, the important thing is the packet reached the SIS through the tunnel). Proceed to examine Grafana."
+      },
+      {
+        "id": "step-07-detect",
+        "title": "Step 7 — Spot the Attack in Grafana",
+        "body": "## Suricata Alert: SID 9000002\n\nSwitch to your Grafana window (or reopen it from Monitor -> Open Grafana). In the **Suricata — Alerts** panel you should now see a new line — a Write Single Coil alert with a destination of `{{sis-1.ip}}:502`. Notice the **source** address: it's the camera's OT-side IP, not Kali's. Suricata, sitting on the OT network, has no way to see through the SSH tunnel — as far as it's concerned, this connection genuinely came from the camera.\n\nThis fired because your write matched function code 0x05 at the expected byte offset — but it would have fired identically for a completely legitimate BPCS command. The alert alone doesn't tell you a safety system was just disabled — it's mixed in with anything else the network is doing.\n\n---\n\n## Query It Directly — Your First LogQL\n\nThis is the actual SIEM skill: instead of scrolling a mixed feed, **query for exactly what you're looking for.**\n\n1. In Grafana, click the compass **Explore** icon in the left sidebar.\n2. Select the **Loki** datasource (top-left dropdown).\n3. Enter this query in the query editor:\n```\n{job=\"suricata\", event_type=\"alert\"} |= \"{{sis-1.ip}}\"\n```\n4. Run it (Shift+Enter or the Run button).\n\n**Reading this query:** `{job=\"suricata\", event_type=\"alert\"}` is a *stream selector* — it narrows the search to only Suricata's alert events (out of everything Suricata logs: DNS, HTTP, flow stats, alerts, all mixed together). The `|=` operator is a *line filter* — it keeps only lines containing the literal text that follows, here the SIS's IP address. Together: \"show me only Suricata alerts that mention the SIS,\" out of every alert the whole network generated.\n\n5. Now do the same for Zeek's Modbus log:\n```\n{job=\"zeek\", filename=~\".*modbus.log\"} |= \"{{sis-1.ip}}\"\n```\nThis one uses `=~` (regex match) on the `filename` label to select only `modbus.log` entries (Zeek writes many log files — `conn.log`, `dns.log`, `modbus.log`, etc., all under the same `job=\"zeek\"` label), then the same `|=` filter for the SIS's IP.\n\nYou should see a `WRITE_SINGLE_COIL` entry with a source address on the OT subnet (the camera's OT-side interface — not Kali, and not any legitimate engineering workstation) and **destination `{{sis-1.ip}}`** (the Triconex SIS) on port 502.\n\nZeek's built-in Modbus analyzer logs every Modbus message it sees, regardless of any signature — this connection record alone tells the complete story: an unauthorized write reached the safety system, relayed through a device that should never have had that access.\n\n---\n\n## The Detection Gap\n\nBoth tools recorded the event — so why isn't that enough?\n\n**Problem 1:** SID 9000002 also fires on every legitimate BPCS coil write. It cannot distinguish \"the BPCS opened a valve\" from \"someone just disabled the plant's last line of defense.\" You only found this one by querying for the SIS's IP directly — a real analyst without a lead to search for is stuck scrolling everything.\n\n**Problem 2:** Neither tool stopped anything. The write reached the SIS. In IDS mode, detection happens after the fact — exactly as it did in the real incident, where the attack was only discovered because the attacker's own code malfunctioned, not because a defense caught it in time.\n\n**Problem 3:** Even if you wrote a firewall rule denying the attacker zone access to OT right now, it would do nothing here — this traffic never uses the attacker zone at all. It arrives at the SIS looking exactly like traffic from the camera, a device with a pre-existing (if illegitimate) network path. You'll come back to this in the lab report.\n\n**Your solution:** Write a rule scoped specifically to the SIS's IP address, then upgrade it to a rule that blocks the packet before it ever reaches the safety system — regardless of what source address it arrives from.",
+        "successCheck": "In Grafana's Suricata - Alerts panel, you can see the ICS-SIM Modbus TCP Write Single Coil alert with the camera's OT-side IP as the source. You ran both LogQL queries in Explore (Suricata alert and Zeek modbus.log, each filtered to the SIS's IP) and got back exactly the attack traffic, not the whole log stream. You understand why a source-zone-based firewall rule would not have helped here."
+      },
+      {
+        "id": "step-08-rule-anatomy",
+        "title": "Step 8 — Scoping a Rule to a Specific Safety-Critical Host",
+        "body": "## Why Scope by Destination IP?\n\nUnlike DNP3 or IEC 61850, this simulator's Modbus rules match on raw function-code bytes rather than an application-layer keyword — the same technique the pre-loaded SID 9000002 already uses. That means the only way to distinguish \"a write to the BPCS\" from \"a write to the SIS\" is by **destination IP address**, since both devices speak the identical Modbus wire format on the identical port.\n\nScoping by destination also has a major advantage you can now appreciate directly: it does not matter what source address the write arrives from — Kali directly, the camera's pivot leg, a compromised engineering workstation, anything. If the packet is headed for the SIS with function code 0x05, this rule catches it, regardless of the path it took to get there.\n\nHere is the rule you will write in the next step:\n\n```\nalert tcp any any -> {{sis-1.ip}} 502\n    (msg:\"LAB04-ALERT Unauthorized write to Safety Instrumented System\";\n     flow:to_server,established;\n     content:\"|05|\"; offset:7; depth:1;\n     classtype:attempted-admin;\n     sid:9100001; rev:1;)\n```\n\n---\n\n## Field-by-Field\n\n- **`alert`** — action keyword. `alert` logs and passes; `reject` (next step) drops the packet AND sends a TCP RST to the sender; `drop` silently discards without RST.\n- **`tcp any any -> {{sis-1.ip}} 502`** — from any source, to the SIS's specific IP, port 502. This is the key difference from SID 9000002, which matches `$HOME_NET` (every device) rather than one specific host.\n- **`content:\"|05|\"; offset:7; depth:1`** — same function-code match as the pre-loaded rule (Write Single Coil).\n- **`classtype:attempted-admin`** — appropriate for an unauthorized control-plane write to a safety-critical device.\n- **`sid:9100001`** — OTForge bundled rules use SIDs 9000001–9099999; custom lab rules use 9100001+.\n\n**This is a real architectural limitation worth noting honestly:** in an ideal ISA-84 deployment, the SIS would sit on its own physically separate network and this per-host rule wouldn't be your only line of defense — the SIS simply wouldn't be reachable from a misconfigured camera, a compromised workstation, or anywhere else it doesn't strictly need to be reached from. This rule is a compensating control for the segmentation failure you exploited in Steps 2–4, not a replacement for actually fixing the camera's illegitimate network access (which you'll discuss in the lab report).",
+        "successCheck": "You can explain why the rule is scoped by destination IP rather than source zone or a Modbus-specific function keyword, and why that makes it effective regardless of which path an attacker's traffic takes. Proceed to write this rule."
+      },
+      {
+        "id": "step-09-write-alert",
+        "title": "Step 9 — Write and Test the Alert Rule",
+        "body": "## Writing the Rule\n\n1. Click the **Suricata IDS/IPS Sensor** node (Plant DMZ zone).\n2. In the Properties Panel, scroll to **Custom Suricata Rules**.\n3. Type the rule from Step 8, substituting the SIS's real IP address (shown on the canvas or in the node's Properties Panel):\n```\nalert tcp any any -> {{sis-1.ip}} 502 (msg:\"LAB04-ALERT Unauthorized write to Safety Instrumented System\"; flow:to_server,established; content:\"|05|\"; offset:7; depth:1; classtype:attempted-admin; sid:9100001; rev:1;)\n```\n4. Click **Save**.\n\n---\n\n## Reloading and Re-Testing\n\n5. Click **Stop Simulation**, wait for all containers to stop.\n6. Click **Run Simulation** to restart with the rule loaded.\n7. Once running, re-open your tunnel (it will not have survived the restart) and re-run the attack through it:\n```\nssh -o StrictHostKeyChecking=no -N -L 5060:10.200.10.11:502 root@10.200.50.15 &\npython3 /root/Desktop/Attack_Scripts/sis_attack.py 127.0.0.1 --port 5060\n```\n8. Back in Grafana Explore, re-run your query from Step 7:\n```\n{job=\"suricata\", event_type=\"alert\"} |= \"{{sis-1.ip}}\"\n```\nYou should now see TWO alerts for this connection: SID 9000002 (generic) and **SID 9100001 — your rule**, firing specifically because the destination matched the SIS's IP. Want to see just your rule? Narrow the query further:\n```\n{job=\"suricata\", event_type=\"alert\"} |= \"9100001\"\n```\n\n**The write still succeeded.** Your rule is more precise, but it is still only detecting, not preventing. The next step fixes that.",
+        "command": "python3 /root/Desktop/Attack_Scripts/sis_attack.py 127.0.0.1 --port 5060",
+        "successCheck": "The Custom Rules textarea contains your alert rule, the simulation restarted, and re-running the attack through the re-opened tunnel produced both SID 9000002 and SID 9100001 when queried in Grafana Explore. The write still reached the SIS - proceed to convert the rule to a block."
+      },
+      {
+        "id": "step-10-write-reject",
+        "title": "Step 10 — Upgrade to a Reject Rule",
+        "body": "## Converting Detection to Prevention\n\nChange only the action keyword — `alert` becomes `reject`. Everything else stays identical.\n\n1. Click the **Suricata IDS/IPS Sensor** node.\n2. In **Custom Rules**, add a NEW LINE below your existing alert rule:\n```\nreject tcp any any -> {{sis-1.ip}} 502 (msg:\"LAB04-BLOCK Unauthorized write to Safety Instrumented System\"; flow:to_server,established; content:\"|05|\"; offset:7; depth:1; classtype:attempted-admin; sid:9100002; rev:1;)\n```\nYour textarea should now contain both rules — the alert (sid:9100001) and the reject (sid:9100002).\n3. Click **Save**.\n4. **Stop Simulation**, wait for containers to stop, then **Run Simulation** again.\n\n---\n\n## Confirm the Block\n\n5. Once running, re-open the tunnel and re-run the attack:\n```\nssh -o StrictHostKeyChecking=no -N -L 5060:10.200.10.11:502 root@10.200.50.15 &\npython3 /root/Desktop/Attack_Scripts/sis_attack.py 127.0.0.1 --port 5060\n```\nThis time you will NOT see \"SIS echoed the write back — coil write CONFIRMED.\" Instead you'll see something like `Server closed connection without responding`, a `Connection reset`, or a timeout — the exact wording depends on the split-second timing of Suricata's TCP RST versus the SIS's own response, but the outcome is the same: the write was never confirmed. Suricata's `reject` action sends a TCP RST before (or immediately after) the Modbus write is delivered, tearing down the connection before a normal response can complete. **The SIS's trip relay is never touched — even though the traffic still arrives through the same camera pivot as before.** This is the payoff of scoping the rule by destination instead of source: it doesn't matter that the packet looks like it's coming from a legitimate-ish device on the OT network. It's headed for the SIS with a coil-write function code, and that's all this rule cares about.\n\n6. In Grafana Explore, re-run your query:\n```\n{job=\"suricata\", event_type=\"alert\"} |= \"{{sis-1.ip}}\"\n```\nSID 9100002 fired with a reject action. SID 9100001 (your alert rule) also matched the same packet, but `reject` takes priority (Suricata's default action order: `pass > drop > reject > alert`). You can confirm the action Suricata actually took straight from the log data by parsing the JSON `action` field:\n```\n{job=\"suricata\", event_type=\"alert\"} |= \"{{sis-1.ip}}\" | json action=\"alert.action\"\n```\nThis promotes `action` to a label Grafana shows as a colored chip on each log line — look for the line tagged `action: blocked` (that's SID 9100002); the others will show `action: allowed`. Direct evidence, straight from the log data, that this specific packet was stopped rather than just alerted on.\n\n---\n\n## What You Have and Have Not Fixed\n\nThe Triconex SIS is now protected by a host-scoped IPS rule that blocks unauthorized coil writes regardless of where they originate. That is a genuinely working, independently verified mitigation.\n\nWhat you have **not** fixed is the camera itself — it is still sitting on both the Internet DMZ and the OT subnet at once, still running default credentials, and still fully able to reach the BPCS and every other OT device on port 502 (this rule only protects the SIS specifically). Fixing that is an architecture problem, not a Suricata rule — you'll address it directly in the lab report.",
+        "command": "python3 /root/Desktop/Attack_Scripts/sis_attack.py 127.0.0.1 --port 5060",
+        "successCheck": "The attack script reported a connection error rather than a successful write, even through the tunnel. In Grafana Explore, querying for the SIS's IP shows SID 9100002 fired with action=blocked. You understand that the camera's dual-homing and weak credentials are still unresolved, separate problems from the Suricata rule you just verified."
+      },
+      {
+        "id": "step-11-report",
+        "title": "Step 11 — Lab Report",
+        "body": "## Lab Report Requirements\n\nSubmit a written report (minimum 600 words) addressing the following:\n\n---\n\n### Part 1 — Technical Analysis (25%)\n\nDescribe, in your own words, what you observed in the Zeek Modbus log during the attack. Provide the source/destination addresses and explain why the source you saw was the camera's OT-side interface rather than Kali's own address. Explain why SID 9000002 (generic) and SID 9100001 (host-scoped) fired for different underlying reasons even though both matched the same packet.\n\n---\n\n### Part 2 — XENOTIME and the Real Incident (20%)\n\nIn 2–3 paragraphs, summarize what is publicly known about XENOTIME/TEMP.Veles and the 2017 TRITON/TRISIS incident. What made this incident different from prior ICS-targeting malware (Stuxnet, Industroyer)? Why do researchers consider targeting a Safety Instrumented System specifically to be an escalation, independent of whether the attack ultimately succeeds?\n\n---\n\n### Part 3 — The Pivot and Why a Firewall Rule Wouldn't Have Stopped It (25%)\n\nYou reached the SIS by compromising a camera with default credentials and using it as a pivot, not by attacking the OT network directly. In this lab, that traffic never touched a firewall rule keyed on \"the attacker zone\" at all — it looked exactly like ordinary traffic from a device that already had a network path to the SIS. Explain, with specific reference to what you observed in Steps 6–10, why a firewall rule denying the attacker zone access to OT would have done nothing here. Then explain what actually WOULD have prevented this pivot from working in the first place — think specifically about the camera's second network interface, not about Suricata or the firewall.\n\n---\n\n### Part 4 — Beyond This Lab (30%)\n\nThis lab could not reproduce the real TriStation protocol or the firmware-level compromise used in the actual 2017 incident, and its camera-pivot path is a generalized, realistic stand-in rather than a documented detail of that specific case. Answer both of the following:\n\n(a) Name at least TWO real-world controls that would have prevented the camera itself from ever becoming a usable pivot point — consider network segmentation for IoT/OT devices specifically, credential management policy for embedded devices, and asset inventory/discovery programs that would have flagged a camera with two network interfaces in the first place.\n\n(b) Name at least TWO additional real-world SIS security controls (beyond network segmentation and IDS/IPS) that would have made the actual 2017 TriStation-based attack harder to execute or detect. Consider: engineering workstation hardening, TriStation keyswitch physical controls, SIS logic change-management procedures, and firmware integrity verification.\n\n---\n\n### Deliverables\n\n- Written report (minimum 600 words, not counting screenshots)\n- Screenshot of your Grafana Explore query results showing SID 9100001 (alert) and SID 9100002 (reject) for the SIS\n- Screenshot of the Zeek log showing the attack's source (the camera's OT-side address) and destination (the SIS)\n- Screenshot of your terminal showing the SSH tunnel command and a successful `nc -zv 127.0.0.1 5060`\n- Your complete Custom Rules text (both the alert and reject rules)",
+        "successCheck": "Review the lab report requirements above. Ensure you have all four required screenshots before stopping the simulation. When finished, stop the simulation using the Stop button in the OTForge toolbar to free system resources."
+      }
+    ]
+  },
+  "visual": {
+    "nodes": [
+      {
+        "id": "attack-1",
+        "type": "device",
+        "position": {
+          "x": 700,
+          "y": 60
+        },
+        "data": {
+          "nodeId": "attack-1",
+          "label": "Kali Linux\n(Attacker)",
+          "category": "attack-machine",
+          "zone": "attacker"
+        }
+      },
+      {
+        "id": "camera-1",
+        "type": "device",
+        "position": {
+          "x": 460,
+          "y": 60
+        },
+        "data": {
+          "nodeId": "camera-1",
+          "label": "Perimeter Camera 07\n(IP Camera)",
+          "category": "ip-camera",
+          "zone": "internet-dmz"
+        }
+      },
+      {
+        "id": "firewall-1",
+        "type": "device",
+        "position": {
+          "x": 280,
+          "y": 160
+        },
+        "data": {
+          "nodeId": "firewall-1",
+          "label": "Plant Firewall",
+          "category": "firewall",
+          "zone": "plant-dmz"
+        }
+      },
+      {
+        "id": "ids-1",
+        "type": "ids-ips",
+        "position": {
+          "x": 500,
+          "y": 160
+        },
+        "data": {
+          "nodeId": "ids-1",
+          "label": "Suricata IDS/IPS\nSensor",
+          "category": "ids-ips",
+          "zone": "plant-dmz"
+        }
+      },
+      {
+        "id": "workstation-1",
+        "type": "device",
+        "position": {
+          "x": 60,
+          "y": 280
+        },
+        "data": {
+          "nodeId": "workstation-1",
+          "label": "Engineering\nWorkstation",
+          "category": "engineering-workstation",
+          "zone": "control"
+        }
+      },
+      {
+        "id": "hmi-1",
+        "type": "hmi",
+        "position": {
+          "x": 260,
+          "y": 280
+        },
+        "data": {
+          "nodeId": "hmi-1",
+          "label": "HMI",
+          "category": "hmi",
+          "zone": "control"
+        }
+      },
+      {
+        "id": "historian-1",
+        "type": "historian",
+        "position": {
+          "x": 460,
+          "y": 280
+        },
+        "data": {
+          "nodeId": "historian-1",
+          "label": "Process\nHistorian",
+          "category": "historian",
+          "zone": "control"
+        }
+      },
+      {
+        "id": "switch-ot",
+        "type": "device",
+        "position": {
+          "x": 360,
+          "y": 380
+        },
+        "data": {
+          "nodeId": "switch-ot",
+          "label": "OT Field Switch",
+          "category": "switch",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "bpcs-1",
+        "type": "device",
+        "position": {
+          "x": 120,
+          "y": 580
+        },
+        "data": {
+          "nodeId": "bpcs-1",
+          "label": "BPCS PLC\n(Reactor Control)",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "sis-1",
+        "type": "device",
+        "position": {
+          "x": 400,
+          "y": 580
+        },
+        "data": {
+          "nodeId": "sis-1",
+          "label": "Triconex SIS\n(Safety System)",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "pressure-1",
+        "type": "device",
+        "position": {
+          "x": 620,
+          "y": 580
+        },
+        "data": {
+          "nodeId": "pressure-1",
+          "label": "Pressure\nTransmitter",
+          "category": "smart-sensor",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "reactor-1",
+        "type": "pump",
+        "position": {
+          "x": 120,
+          "y": 780
+        },
+        "data": {
+          "nodeId": "reactor-1",
+          "label": "Reactor R-101",
+          "zone": "ot"
+        }
+      },
+      {
+        "id": "feed-valve",
+        "type": "valve",
+        "position": {
+          "x": 400,
+          "y": 780
+        },
+        "data": {
+          "nodeId": "feed-valve",
+          "label": "SDV-101\nFeed Isolation Valve",
+          "zone": "ot"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-attack-ids",
+        "source": "attack-1",
+        "target": "ids-1",
+        "data": {
+          "protocol": "none",
+          "label": "Monitored traffic"
+        }
+      },
+      {
+        "id": "e-attack-camera",
+        "source": "attack-1",
+        "target": "camera-1",
+        "data": {
+          "protocol": "none",
+          "label": "SSH :22 (weak default creds)"
+        }
+      },
+      {
+        "id": "e-camera-switch",
+        "source": "camera-1",
+        "target": "switch-ot",
+        "data": {
+          "protocol": "none",
+          "label": "Dual-homed pivot leg (extraNetworks: ot) — misconfigured direct OT access"
+        }
+      },
+      {
+        "id": "e-attack-firewall",
+        "source": "attack-1",
+        "target": "firewall-1",
+        "data": {
+          "protocol": "none",
+          "label": ""
+        }
+      },
+      {
+        "id": "e-firewall-workstation",
+        "source": "firewall-1",
+        "target": "workstation-1",
+        "data": {
+          "protocol": "none",
+          "label": ""
+        }
+      },
+      {
+        "id": "e-workstation-switch",
+        "source": "workstation-1",
+        "target": "switch-ot",
+        "data": {
+          "protocol": "modbus-tcp",
+          "label": "Modbus :502"
+        }
+      },
+      {
+        "id": "e-hmi-switch",
+        "source": "hmi-1",
+        "target": "switch-ot",
+        "data": {
+          "protocol": "none",
+          "label": ""
+        }
+      },
+      {
+        "id": "e-historian-switch",
+        "source": "historian-1",
+        "target": "switch-ot",
+        "data": {
+          "protocol": "none",
+          "label": ""
+        }
+      },
+      {
+        "id": "e-switch-bpcs",
+        "source": "switch-ot",
+        "target": "bpcs-1",
+        "data": {
+          "protocol": "modbus-tcp",
+          "label": "Modbus :502\nUnit 1"
+        }
+      },
+      {
+        "id": "e-switch-sis",
+        "source": "switch-ot",
+        "target": "sis-1",
+        "data": {
+          "protocol": "modbus-tcp",
+          "label": "Modbus :502\nUnit 1"
+        }
+      },
+      {
+        "id": "e-switch-pressure",
+        "source": "switch-ot",
+        "target": "pressure-1",
+        "data": {
+          "protocol": "modbus-tcp",
+          "label": "Modbus :502"
+        }
+      },
+      {
+        "id": "e-bpcs-reactor",
+        "source": "bpcs-1",
+        "target": "reactor-1",
+        "data": {
+          "protocol": "none",
+          "label": "Feed rate / temp control",
+          "fluidType": "electric"
+        }
+      },
+      {
+        "id": "e-sis-feedvalve",
+        "source": "sis-1",
+        "target": "feed-valve",
+        "data": {
+          "protocol": "none",
+          "label": "Trip: Coil 0 (ESD Relay K1)",
+          "fluidType": "electric"
+        }
+      },
+      {
+        "id": "e-pressure-sis",
+        "source": "pressure-1",
+        "target": "sis-1",
+        "data": {
+          "protocol": "modbus-tcp",
+          "label": "High-High Pressure Input"
+        }
+      }
+    ],
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.9
+    }
+  },
+  "network": {
+    "segments": [
+      {
+        "zone": "ot",
+        "subnet": "10.200.10.0/24",
+        "gateway": "10.200.10.1",
+        "dockerNetwork": "ics-sim-ot-net"
+      },
+      {
+        "zone": "control",
+        "subnet": "10.200.20.0/24",
+        "gateway": "10.200.20.1",
+        "dockerNetwork": "ics-sim-control-net"
+      },
+      {
+        "zone": "plant-dmz",
+        "subnet": "10.200.30.0/24",
+        "gateway": "10.200.30.1",
+        "dockerNetwork": "ics-sim-plant-dmz-net"
+      },
+      {
+        "zone": "internet-dmz",
+        "subnet": "10.200.50.0/24",
+        "gateway": "10.200.50.1",
+        "dockerNetwork": "ics-sim-internet-dmz-net"
+      },
+      {
+        "zone": "attacker",
+        "subnet": "10.200.60.0/24",
+        "gateway": "10.200.60.1",
+        "dockerNetwork": "ics-sim-attacker-net"
+      }
+    ],
+    "routes": []
+  },
+  "devices": {
+    "devices": {
+      "bpcs-1": {
+        "nodeId": "bpcs-1",
+        "category": "plc",
+        "ipAddress": "10.200.10.10",
+        "protocols": [
+          "modbus-tcp"
+        ],
+        "modbus": {
+          "mode": "tcp",
+          "port": 502,
+          "unitId": 1
+        },
+        "plcProgram": {
+          "language": "st",
+          "source": "UFJPR1JBTSBicGNzX2xvZ2ljCiAgVkFSCiAgICBmZWVkX3ZhbHZlIEFUICVRWDAuMCA6IEJPT0w7CiAgICByZWFjdG9yX3ByZXNzdXJlIEFUICVRVzAgOiBJTlQ7CiAgRU5EX1ZBUgoKICAoKiBOb3JtYWwgcHJvY2VzcyBmZWVkIHZhbHZlIGNvbW1hbmQg4oCUIEJQQ1MtY29udHJvbGxlZCwgaW5kZXBlbmRlbnQgZnJvbQogICAgIHRoZSBTSVMncyBvd24gY29pbCAwIChkaWZmZXJlbnQgZGV2aWNlL0lQLCBubyBzaGFyZWQgbWVtb3J5KS4gUmVhY3RvcgogICAgIHByZXNzdXJlIGlzIGEgZGlzcGxheS1vbmx5IGhvbGRpbmcgcmVnaXN0ZXIgZm9yIHRoaXMgbGFiJ3Mgc2NvcGUuICopCiAgZmVlZF92YWx2ZSA6PSBmZWVkX3ZhbHZlOwogIHJlYWN0b3JfcHJlc3N1cmUgOj0gMTIwOwoKRU5EX1BST0dSQU0KCkNPTkZJR1VSQVRJT04gY29uZmlnMAogIFRBU0sgdGFzazAoSU5URVJWQUwgOj0gVCM1MDBtcywgUFJJT1JJVFkgOj0gMCk7CiAgUFJPR1JBTSBpbnN0MCBXSVRIIHRhc2swIDogYnBjc19sb2dpYzsKRU5EX0NPTkZJR1VSQVRJT04K",
+          "variables": [
+            {
+              "name": "feed_valve",
+              "type": "BOOL",
+              "address": "%QX0.0",
+              "protocol": "modbus-tcp",
+              "protocolAddress": "0"
+            },
+            {
+              "name": "reactor_pressure",
+              "type": "INT",
+              "address": "%QW0",
+              "protocol": "modbus-tcp",
+              "protocolAddress": "40001"
+            }
+          ]
+        }
+      },
+      "sis-1": {
+        "nodeId": "sis-1",
+        "category": "safety-plc",
+        "ipAddress": "10.200.10.11",
+        "protocols": [
+          "modbus-tcp"
+        ],
+        "modbus": {
+          "mode": "tcp",
+          "port": 502,
+          "unitId": 1
+        },
+        "safetyPlc": {
+          "sisFunction": "High-High Pressure Shutdown — Reactor R-101 feed isolation",
+          "votingConfig": "2oo3",
+          "safeState": "Close SDV-101 (feed isolation valve); de-energize ESD relay K1"
+        },
+        "plcProgram": {
+          "language": "st",
+          "source": "UFJPR1JBTSBzaXNfbG9naWMKICBWQVIKICAgIHRyaXBfcmVsYXkgQVQgJVFYMC4wIDogQk9PTDsKICBFTkRfVkFSCgogICgqIEVTRCBSZWxheSBLMSDigJQgc2FmZXR5IHRyaXAgb3V0cHV0LiBUUlVFID0gZW5lcmdpemVkIChzYWZlL2FybWVkKSwKICAgICBGQUxTRSA9IHRyaXBwZWQvZGlzYWJsZWQuIERyaXZlbiBleHRlcm5hbGx5IHZpYSBNb2RidXMgd3JpdGVzIG9ubHkg4oCUCiAgICAgbm8gc2VsZi1vdmVycmlkaW5nIGxvZ2ljLCBzbyBib3RoIGxlZ2l0aW1hdGUgZW5naW5lZXJpbmcgd3JpdGVzIGFuZAogICAgIChpbiB0aGlzIGxhYikgdGhlIHVuYXV0aG9yaXplZCBhdHRhY2tlciB3cml0ZSBwZXJzaXN0IGJldHdlZW4gc2NhbnMuICopCiAgdHJpcF9yZWxheSA6PSB0cmlwX3JlbGF5OwoKRU5EX1BST0dSQU0KCkNPTkZJR1VSQVRJT04gY29uZmlnMAogIFRBU0sgdGFzazAoSU5URVJWQUwgOj0gVCM1MDBtcywgUFJJT1JJVFkgOj0gMCk7CiAgUFJPR1JBTSBpbnN0MCBXSVRIIHRhc2swIDogc2lzX2xvZ2ljOwpFTkRfQ09ORklHVVJBVElPTgo=",
+          "variables": [
+            {
+              "name": "trip_relay",
+              "type": "BOOL",
+              "address": "%QX0.0",
+              "protocol": "modbus-tcp",
+              "protocolAddress": "0"
+            }
+          ]
+        }
+      },
+      "pressure-1": {
+        "nodeId": "pressure-1",
+        "category": "smart-sensor",
+        "ipAddress": "10.200.10.12",
+        "protocols": [
+          "modbus-tcp"
+        ],
+        "sensor": {
+          "kind": "pressure",
+          "waveform": "sine",
+          "minValue": 0,
+          "maxValue": 250,
+          "units": "psi",
+          "noisePercent": 3,
+          "modbusRegister": 0
+        }
+      },
+      "switch-ot": {
+        "nodeId": "switch-ot",
+        "category": "switch",
+        "ipAddress": "10.200.10.20",
+        "protocols": [
+          "none"
+        ]
+      },
+      "workstation-1": {
+        "nodeId": "workstation-1",
+        "category": "engineering-workstation",
+        "ipAddress": "10.200.20.13",
+        "protocols": [
+          "none"
+        ]
+      },
+      "firewall-1": {
+        "nodeId": "firewall-1",
+        "category": "firewall",
+        "ipAddress": "10.200.30.11",
+        "protocols": [
+          "none"
+        ]
+      },
+      "camera-1": {
+        "nodeId": "camera-1",
+        "category": "ip-camera",
+        "ipAddress": "10.200.50.15",
+        "protocols": [
+          "none"
+        ],
+        "extraNetworks": [
+          "ot"
+        ]
+      },
+      "attack-1": {
+        "nodeId": "attack-1",
+        "category": "attack-machine",
+        "ipAddress": "10.200.60.10",
+        "protocols": [
+          "none"
+        ]
+      }
+    }
+  },
+  "security": {
+    "defaultFirewallPolicy": "deny",
+    "firewallRules": [
+      {
+        "id": "rule-allow-control-ot-modbus",
+        "sourceZone": "control",
+        "destinationZone": "ot",
+        "protocol": "tcp",
+        "destinationPort": 502,
+        "action": "allow",
+        "comment": "Allow engineering workstation and HMI/historian to reach the BPCS and SIS via Modbus. NOTE: this legitimate rule is also the ONLY path the camera pivot's traffic uses once tunneled in — there is no separate 'insecure' rule for the attacker zone to exploit here."
+      },
+      {
+        "id": "rule-allow-ot-control-any",
+        "sourceZone": "ot",
+        "destinationZone": "control",
+        "protocol": "any",
+        "destinationPort": "any",
+        "action": "allow",
+        "comment": "Allow BPCS/SIS responses back to the engineering workstation and HMI/historian"
+      },
+      {
+        "id": "rule-allow-control-plant-dmz",
+        "sourceZone": "control",
+        "destinationZone": "plant-dmz",
+        "protocol": "any",
+        "destinationPort": "any",
+        "action": "allow",
+        "comment": "Allow control zone to reach plant DMZ (for workstation access to OTForge monitoring)"
+      }
+    ],
+    "ids": {
+      "enabledRulesets": [
+        "emerging-scada",
+        "emerging-modbus"
+      ],
+      "disabledRuleIds": [],
+      "zeekScripts": [
+        "modbus.zeek"
+      ]
+    },
+    "logging": {
+      "retentionDays": 7,
+      "influxdbEnabled": true,
+      "lokiEnabled": true
+    }
+  }
+}

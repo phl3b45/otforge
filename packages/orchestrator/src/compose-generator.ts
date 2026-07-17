@@ -122,6 +122,9 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   'internet-server': 'nginx:alpine',
   // Phase 12: Authoritative DNS server — dnsmasq serving the meridian-process.com zone.
   'dns-server': 'ghcr.io/iburres/otforge-dns:latest',
+  // IoT camera — Alpine + real openssh-server with weak default root credentials
+  // (containers/camera). The exploitable surface is SSH, not an ICS protocol.
+  'ip-camera': 'ghcr.io/iburres/otforge-camera:latest',
   // ── Red Team ─────────────────────────────────────────────────────────────────
   // Custom Kali rolling image with full Xfce4 + noVNC (port 6080) + ICS attack tools.
   // Built from containers/attack-base — replaces the old linuxserver/kali-linux stub.
@@ -179,6 +182,8 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   'internet-server': { memory: 128, cpus: '0.25' }, // internet-facing web server
   // Phase 12: dnsmasq on Alpine — extremely lightweight DNS server
   'dns-server': { memory: 32, cpus: '0.05' },
+  // Alpine + openssh-server + busybox-extras httpd — tiny footprint
+  'ip-camera': { memory: 32, cpus: '0.1' },
   // ── Red Team ─────────────────────────────────────────────────────────────────
   // 2 GB: full Xfce4 desktop + Wireshark GUI + Armitage + Metasploit + noVNC server.
   // Students are expected to have 16+ GB RAM; this budget reflects that baseline.
@@ -843,6 +848,73 @@ export function generateCompose(
         // internet) via attacker-net even when the scenario's DNS server is air-gapped
         // (DNS_UPSTREAM=""). Without this fallback, Firefox and apt can't reach the internet.
         services[serviceName].dns = [dnsIp, '8.8.8.8']
+      }
+    }
+
+    // IP camera (containers/camera/) — dual-homed IoT device: primary zone (its
+    // ipAddress-determined network, typically Internet DMZ) plus an extraNetworks
+    // leg into another zone. Models the common real-world misconfiguration of a
+    // "convenience" camera bridging a supposedly isolated segment. Every zone the
+    // camera ISN'T already directly attached to gets routed through the firewall's
+    // IP on the camera's extra leg — same mechanism as the attack-machine block
+    // above.
+    //
+    // IMPORTANT LIMITATION (confirmed live, minimal 2-network reproduction,
+    // 2026-07-16): this ONLY actually reaches zones that are NOT `internal: true`
+    // — i.e., in practice, only 'attacker'. Docker's own host-level isolation for
+    // `internal: true` networks blocks packets from ever being forwarded between
+    // two internal bridges, even through a container that is a legitimate member
+    // of both, with NET_ADMIN, ip_forward=1, and correct nftables ACCEPT rules on
+    // the intermediary — the packet never even reaches the intermediary's own
+    // netfilter FORWARD hook (verified with an nftables packet counter: 0 hits).
+    // This is why the attack-machine's identical-looking override actually works:
+    // attacker-net is the one zone excluded from `internal: true`. It is NOT why
+    // this override works for a camera whose extraNetworks zone is itself
+    // internal (e.g., 'control') — that path is architecturally dead. A pivot
+    // device that needs to actually reach a Purdue zone must be directly
+    // dual-homed onto that zone (extraNetworks including the target zone itself),
+    // the same pattern engineering-workstation already uses for its own direct
+    // ot-net leg — not routed through the firewall from a different internal zone.
+    // This block is kept for the zones where it CAN help (reaching 'attacker',
+    // or any zone the camera is already directly attached to, which needs no
+    // route at all and is correctly skipped below) and as a documented dead end
+    // for the internal-to-internal case, rather than silently doing nothing.
+    if (
+      device.category === 'ip-camera' &&
+      device.extraNetworks &&
+      device.extraNetworks.length > 0
+    ) {
+      const primaryZone =
+        findZoneForIp(device.ipAddress, scenario) ?? findZoneForIpInDefaults(device.ipAddress)
+      const attachedZones = new Set<NetworkZone>([
+        ...device.extraNetworks,
+        ...(primaryZone ? [primaryZone] : [])
+      ])
+      const routeCmds: string[] = []
+      for (const extraZone of device.extraNetworks) {
+        const fwIpOnExtraZone = effectiveZones[extraZone].subnet.replace('.0/24', '.254')
+        for (const zone of Object.keys(effectiveZones) as NetworkZone[]) {
+          if (zone === 'attacker' || attachedZones.has(zone)) continue
+          routeCmds.push(
+            `ip route replace ${effectiveZones[zone].subnet} via ${fwIpOnExtraZone} 2>/dev/null || true`
+          )
+        }
+      }
+      if (routeCmds.length > 0) {
+        // Unlike the attack-machine image (entrypoint.sh at container root), this
+        // container follows the WORKDIR /app convention most containers in this
+        // project use — the real script lives at /app/entrypoint.sh.
+        services[serviceName].entrypoint = [
+          '/bin/sh',
+          '-c',
+          `${routeCmds.join('; ')}; exec /app/entrypoint.sh`
+        ]
+        // NET_ADMIN is required for `ip route replace` — without it the command
+        // fails with "Operation not permitted" and the 2>/dev/null || true fallback
+        // swallows the error silently, leaving the route missing with no visible
+        // failure until something tries to use it (confirmed live: the container
+        // ran fine, but the pivot's onward connection got "Network unreachable").
+        services[serviceName].cap_add = ['NET_ADMIN']
       }
     }
 

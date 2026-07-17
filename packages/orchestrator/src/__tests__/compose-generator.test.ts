@@ -42,6 +42,7 @@ interface ParsedService {
   cap_add?: string[]
   ports?: string[]
   volumes?: string[]
+  entrypoint?: string[]
   deploy: { resources: { limits: { memory: string; cpus: string } } }
 }
 
@@ -469,6 +470,92 @@ describe('profinet-device', () => {
     )
     const env = compose.services['pn-1'].environment ?? []
     expect(env.some(e => e.startsWith('PROFINET_'))).toBe(false)
+  })
+})
+
+describe('ip-camera — dual-homed pivot device', () => {
+  const zones = [
+    { zone: 'internet-dmz' as const, subnet: '10.200.50.0/24', gateway: '10.200.50.1' },
+    { zone: 'control' as const, subnet: '10.200.20.0/24', gateway: '10.200.20.1' },
+    { zone: 'ot' as const, subnet: '10.200.10.0/24', gateway: '10.200.10.1' }
+  ]
+
+  it('uses the otforge-camera image', () => {
+    const compose = gen(
+      makeScenario([['cam-1', { category: 'ip-camera', ipAddress: '10.200.50.15' }]], zones)
+    )
+    expect(compose.services['cam-1'].image).toBe('ghcr.io/iburres/otforge-camera:latest')
+  })
+
+  it('assigns 32m memory limit (Alpine + openssh-server, tiny footprint)', () => {
+    const compose = gen(
+      makeScenario([['cam-1', { category: 'ip-camera', ipAddress: '10.200.50.15' }]], zones)
+    )
+    expect(compose.services['cam-1'].deploy.resources.limits.memory).toBe('32m')
+  })
+
+  it('attaches to its primary zone plus each extraNetworks zone', () => {
+    const compose = gen(
+      makeScenario(
+        [
+          [
+            'cam-1',
+            { category: 'ip-camera', ipAddress: '10.200.50.15', extraNetworks: ['control'] }
+          ]
+        ],
+        zones
+      )
+    )
+    const nets = Object.keys(compose.services['cam-1'].networks)
+    expect(nets).toContain('internet-dmz-net')
+    expect(nets).toContain('control-net')
+  })
+
+  it('routes zones NOT directly attached (e.g. OT) through the firewall via the extraNetworks leg', () => {
+    const compose = gen(
+      makeScenario(
+        [
+          [
+            'cam-1',
+            { category: 'ip-camera', ipAddress: '10.200.50.15', extraNetworks: ['control'] }
+          ]
+        ],
+        zones
+      )
+    )
+    const entrypoint = compose.services['cam-1'].entrypoint?.join(' ') ?? ''
+    // Control's firewall IP is its subnet base + .254 (10.200.20.254) — OT traffic
+    // (a zone the camera has no direct interface on) must route through it.
+    expect(entrypoint).toContain('ip route replace 10.200.10.0/24 via 10.200.20.254')
+  })
+
+  it('does NOT add a route override for a zone the camera has no extraNetworks at all', () => {
+    const compose = gen(
+      makeScenario([['cam-1', { category: 'ip-camera', ipAddress: '10.200.50.15' }]], zones)
+    )
+    expect(compose.services['cam-1'].entrypoint).toBeUndefined()
+  })
+
+  it('grants NET_ADMIN when a route override is added (ip route replace needs it)', () => {
+    const compose = gen(
+      makeScenario(
+        [
+          [
+            'cam-1',
+            { category: 'ip-camera', ipAddress: '10.200.50.15', extraNetworks: ['control'] }
+          ]
+        ],
+        zones
+      )
+    )
+    expect(compose.services['cam-1'].cap_add).toContain('NET_ADMIN')
+  })
+
+  it('does NOT grant NET_ADMIN when there is no extraNetworks leg (nothing to route)', () => {
+    const compose = gen(
+      makeScenario([['cam-1', { category: 'ip-camera', ipAddress: '10.200.50.15' }]], zones)
+    )
+    expect(compose.services['cam-1'].cap_add).toBeUndefined()
   })
 })
 

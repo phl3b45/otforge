@@ -111,6 +111,7 @@ export type DeviceCategory =
   | 'email-server'
   | 'internet-server'
   | 'dns-server' // Authoritative/recursive DNS server — meridian-process.com zone (Phase 12)
+  | 'ip-camera' // Internet-facing IoT camera — weak default SSH credentials, commonly misconfigured as a dual-homed pivot into an internal zone
   // ── Red Team ─────────────────────────────────────────────────────────────────
   | 'attack-machine'
 

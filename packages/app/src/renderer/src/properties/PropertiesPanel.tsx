@@ -51,6 +51,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   'iec61850-ied': 'IEC 61850 IED (MMS) — substation automation',
   'ethernetip-adapter': 'EtherNet/IP Adapter (CIP) — remote I/O',
   'profinet-device': 'PROFINET Device (DCP) — discovery/naming only',
+  'ip-camera': 'IP Camera — weak default SSH credentials',
   hmi: 'Human Machine Interface',
   historian: 'Data Historian',
   sensor: 'BACnet Device — building automation (generic / AHU / VAV / chiller / zone sensor)',
