@@ -54,6 +54,8 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   'iec61850-ied': 'ghcr.io/iburres/otforge-iec61850:latest',
   // EtherNet/IP (CIP) remote I/O adapter — hand-rolled asyncio server on Alpine (containers/ethernetip)
   'ethernetip-adapter': 'ghcr.io/iburres/otforge-ethernetip:latest',
+  // PROFINET IO device — hand-rolled DCP-only raw-socket server on Alpine (containers/profinet)
+  'profinet-device': 'ghcr.io/iburres/otforge-profinet:latest',
   // Phase 10: Conpot legacy device emulation (S7comm + IEC 104)
   'legacy-plc': 'ghcr.io/iburres/otforge-conpot:latest',
   'iec104-rtu': 'ghcr.io/iburres/otforge-conpot:latest',
@@ -140,6 +142,7 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   ied: { memory: 80, cpus: '0.25' }, // pure-Python DNP3 on Alpine
   'iec61850-ied': { memory: 128, cpus: '0.25' }, // libiec61850 MMS server on Debian
   'ethernetip-adapter': { memory: 64, cpus: '0.25' }, // hand-rolled asyncio ENIP/CIP server on Alpine
+  'profinet-device': { memory: 64, cpus: '0.25' }, // hand-rolled raw-socket DCP server on Alpine
   'legacy-plc': { memory: 80, cpus: '0.25' }, // pure-Python S7comm on Alpine (Phase 10)
   'iec104-rtu': { memory: 80, cpus: '0.25' }, // pure-Python IEC 104 on Alpine (Phase 10)
   'process-unit': { memory: 96, cpus: '0.25' }, // pymodbus + physics loop on Alpine (Phase 11)
@@ -669,6 +672,14 @@ export function generateCompose(
     // Switch and router containers need NET_ADMIN for iproute2 / ip_forward sysctl
     // and NET_RAW for tcpdump packet capture by students during traffic analysis labs.
     if (device.category === 'switch' || device.category === 'router') {
+      services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
+    }
+
+    // PROFINET IO device speaks DCP over a raw AF_PACKET socket (EtherType 0x8892,
+    // no IP/UDP framing) — NET_RAW for the raw socket itself, NET_ADMIN for the
+    // multicast MAC filter (SIOCADDMULTI) needed to receive DCP-Identify multicast
+    // requests. See containers/profinet/server.py.
+    if (device.category === 'profinet-device') {
       services[serviceName].cap_add = ['NET_ADMIN', 'NET_RAW']
     }
 
@@ -1529,6 +1540,14 @@ function buildDeviceEnv(
   if (device.ethernetip) {
     env.push(`ENIP_PORT=${device.ethernetip.port}`)
     env.push(`ENIP_SLOT=${device.ethernetip.slot}`)
+  }
+
+  // PROFINET DCP configuration — consumed by containers/profinet/server.py.
+  // No port: DCP runs directly over raw Ethernet (EtherType 0x8892), not TCP/UDP.
+  if (device.profinet) {
+    env.push(`PROFINET_STATION_NAME=${device.profinet.stationName}`)
+    env.push(`PROFINET_VENDOR_ID=${device.profinet.vendorId}`)
+    env.push(`PROFINET_DEVICE_ID=${device.profinet.deviceId}`)
   }
 
   // Siemens S7comm configuration — consumed by containers/conpot/server.py

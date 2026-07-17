@@ -76,7 +76,8 @@ const PALETTE: PaletteSection[] = [
       { category: 'rtu', label: 'RTU' },
       { category: 'ied', label: 'IED (DNP3)' },
       { category: 'iec61850-ied', label: 'IEC 61850 IED' },
-      { category: 'ethernetip-adapter', label: 'EtherNet/IP Adapter' }
+      { category: 'ethernetip-adapter', label: 'EtherNet/IP Adapter' },
+      { category: 'profinet-device', label: 'PROFINET Device' }
     ]
   },
   {

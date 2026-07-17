@@ -46,6 +46,8 @@ jobs:
             context: containers/iec61850
           - image: otforge-ethernetip
             context: containers/ethernetip
+          - image: otforge-profinet
+            context: containers/profinet
           - image: otforge-firewall
             context: containers/firewall
           - image: otforge-switch

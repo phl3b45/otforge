@@ -21,6 +21,7 @@ export type Protocol =
   | 'bacnet'
   | 'ethernet-ip'
   | 'iec61850'
+  | 'profinet' // PROFINET DCP (Discovery and Configuration Protocol) — device discovery/naming/IP assignment over raw Ethernet, EtherType 0x8892
   | 's7comm' // Siemens S7 Communication (S7-300/400/1200/1500, port 102)
   | 'iec-104' // IEC 60870-5-104 telecontrol protocol (port 2404)
   | 'mqtt' // Message Queuing Telemetry Transport — IIoT sensors, cloud gateways, broker-based pub/sub
@@ -75,6 +76,7 @@ export type DeviceCategory =
   | 'ied' // Intelligent Electronic Device — DNP3 outstation (protection relay / bay controller)
   | 'iec61850-ied' // IEC 61850 IED — MMS server (substation automation: power gen + distribution)
   | 'ethernetip-adapter' // EtherNet/IP (CIP) remote I/O adapter — explicit messaging only, no Class 1 cyclic I/O
+  | 'profinet-device' // PROFINET IO device — DCP discovery/naming/IP assignment only, no AR establishment or RT cyclic I/O
   | 'safety-plc' // Safety Instrumented System / Safety PLC (IEC 61511) — Triconex, Siemens Safety
   | 'dcs-controller' // Distributed Control System controller — Honeywell, Emerson DeltaV, ABB 800xA
   | 'legacy-plc' // Siemens S7-300/400/1200/1500 via S7comm (Phase 10)
@@ -371,6 +373,38 @@ export interface EtherNetIPConfig {
    * Needed by FUXA and pycomm3 when forming CIP connection paths.
    */
   slot: number
+}
+
+/**
+ * PROFINET DCP (Discovery and Configuration Protocol) configuration for a
+ * PROFINET IO device.
+ *
+ * PROFINET is the dominant Ethernet-based fieldbus in automotive and discrete
+ * manufacturing (Siemens-centric, competing with EtherNet/IP in that space).
+ * Its full stack has three layers:
+ *   - DCP — device discovery plus station-name/IP assignment, raw Ethernet
+ *     frames (EtherType 0x8892), no authentication in the base spec.
+ *   - Context Manager (DCE/RPC over UDP 34964) — establishes the Application
+ *     Relationship (AR) between an IO Controller (PLC) and an IO Device
+ *     before cyclic data can flow.
+ *   - RT (Real-Time) cyclic data — raw Ethernet frames, sub-millisecond
+ *     cycle times, the actual process I/O exchange.
+ *
+ * This device implements DCP only: Identify (discovery), Get, and Set —
+ * including the unauthenticated station-name and IP "Set" requests that let
+ * anyone on the segment rename or re-address a real device with no
+ * credentials, a well-known PROFINET security property worth demonstrating
+ * on its own. AR establishment and RT cyclic data are a much larger
+ * undertaking (the same scope cut this project already made for EtherNet/IP
+ * Class 1 I/O and IEC 61850 GOOSE/SV) and are deferred.
+ */
+export interface ProfinetConfig {
+  /** NameOfStation — PROFINET's primary device identifier, set via DCP instead of a hostname. */
+  stationName: string
+  /** Vendor ID (16-bit) reported in the DCP Device ID block — GSDML-matched to a device type on a real network. */
+  vendorId: number
+  /** Device ID (16-bit) reported alongside vendorId — together identify the specific device model. */
+  deviceId: number
 }
 
 export interface PLCProgramConfig {
@@ -729,6 +763,7 @@ export interface DeviceConfig {
   opcua?: OpcUaConfig
   bacnet?: BacnetConfig // BACnet/IP config (sensor devices)
   ethernetip?: EtherNetIPConfig // EtherNet/IP CIP config (plc, rtu devices)
+  profinet?: ProfinetConfig // PROFINET DCP config (profinet-device devices)
   s7?: S7Config // Siemens S7comm config (legacy-plc devices, Phase 10)
   iec104?: Iec104Config // IEC 60870-5-104 config (iec104-rtu devices, Phase 10)
   processUnit?: ProcessUnitConfig // Physics process simulation config (Phase 11)

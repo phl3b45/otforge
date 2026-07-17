@@ -34,3 +34,7 @@ scenarios/custom/
 # at least one student (likely from running a packaged build once) and, being
 # untracked, used to permanently trip the "Update OTForge" dirty-tree guard.
 resources.pak
+# Python bytecode cache — appears if anyone runs `python3 -m py_compile` locally
+# against a containers/*/server.py while testing.
+__pycache__/
+*.pyc
