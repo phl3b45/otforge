@@ -48,6 +48,8 @@ jobs:
             context: containers/ethernetip
           - image: otforge-profinet
             context: containers/profinet
+          - image: otforge-camera
+            context: containers/camera
           - image: otforge-firewall
             context: containers/firewall
           - image: otforge-switch

@@ -374,6 +374,7 @@ const DEFAULT_PROTOCOLS: Record<DeviceCategory, Protocol[]> = {
   'email-server': ['none'],
   'internet-server': ['none'],
   'dns-server': ['none'], // authoritative DNS server — meridian-process.com zone (Phase 12)
+  'ip-camera': ['none'], // real otforge-camera container — SSH is the attack surface, not an ICS protocol
   // ── Red Team ─────────────────────────────────────────────────────────────────
   'attack-machine': ['none']
 }
@@ -421,6 +422,7 @@ const CATEGORY_LABELS: Record<DeviceCategory, string> = {
   'email-server': 'Email Server',
   'internet-server': 'Internet Srv',
   'dns-server': 'DNS Server', // Phase 12
+  'ip-camera': 'IP Camera',
   // ── Red Team ────────────────────────────────────────────────────────────────
   'attack-machine': 'Attack Machine'
 }

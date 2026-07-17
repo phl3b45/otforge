@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IPCam-Pro Web Admin</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #1a1a1a; color: #ddd; display: flex;
+         align-items: center; justify-content: center; height: 100vh; margin: 0; }
+  .panel { background: #2a2a2a; padding: 32px 40px; border-radius: 6px; width: 320px;
+           box-shadow: 0 2px 12px rgba(0,0,0,0.4); }
+  h1 { font-size: 18px; margin: 0 0 4px; color: #fff; }
+  .model { font-size: 12px; color: #888; margin-bottom: 20px; }
+  label { display: block; font-size: 13px; margin: 12px 0 4px; }
+  input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #444;
+          background: #1a1a1a; color: #ddd; border-radius: 3px; }
+  button { margin-top: 20px; width: 100%; padding: 10px; background: #3a6ea5; color: #fff;
+           border: none; border-radius: 3px; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <h1>Perimeter Camera 07</h1>
+    <div class="model">IPCam-Pro Firmware v2.1 — Web Admin</div>
+    <label for="u">Username</label>
+    <input id="u" type="text" autocomplete="off">
+    <label for="p">Password</label>
+    <input id="p" type="password" autocomplete="off">
+    <button type="button" disabled>Sign In</button>
+  </div>
+</body>
+</html>

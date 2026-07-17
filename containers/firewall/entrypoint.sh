@@ -176,6 +176,20 @@ nft add rule inet ics_fw forward reject with icmp type admin-prohibited
 nft add table ip nat
 nft add chain ip nat postrouting "{ type nat hook postrouting priority 100; }"
 nft add rule ip nat postrouting ip saddr "${FW_ZONE_ATTACKER}" masquerade
+# NOTE: a matching masquerade rule for FW_ZONE_CONTROL was tried and reverted
+# while building Lab 04 (TRITON/TRISIS) — it doesn't help. Docker's host-level
+# isolation for `internal: true` networks (every zone except attacker) blocks
+# packets from ever being forwarded between two internal bridges at all, even
+# through a container attached to both with correct routes/rules/ip_forward —
+# confirmed with an nftables packet counter showing 0 hits on this container's
+# own FORWARD chain. Masquerade only rewrites addressing for packets that
+# actually arrive; it can't fix packets that never arrive. attacker-net is the
+# one zone excluded from `internal: true`, which is the real reason this rule
+# works for attacker traffic and would not for any other zone pair. A device
+# that needs real access to another Purdue zone must be directly dual-homed
+# onto it (see how engineering-workstation gets its own direct ot-net leg in
+# compose-generator.ts), not routed through the firewall from a different
+# internal zone.
 
 # ── Display final ruleset ───────────────────────────────────────────────────────
 echo "[ics-firewall] Active nftables ruleset:"
