@@ -174,6 +174,17 @@ export class DockerClient {
       await mkdir(scenarioDir, { recursive: true })
       await writeFile(composeFile, composeYaml, 'utf-8')
 
+      // Best-effort: clear leftover containers/networks from an unclean stop so
+      // `up` does not fail with "network … has active endpoints".
+      try {
+        // codeql[js/shell-command-constructed-from-input] -- projectName is sanitized to [a-z0-9-] by toProjectName()
+        await run(
+          `docker compose -p ${projectName} -f "${composeFile}" down --volumes --remove-orphans`
+        )
+      } catch {
+        /* best-effort */
+      }
+
       // Classify images as missing (first install) or present (possible update) so
       // the overlay can show "Importing Containers" vs "Updating Containers".
       // If any image is missing, 'import' takes priority over 'update'.

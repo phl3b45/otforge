@@ -1907,12 +1907,25 @@ export function ScadaCanvas({
 
       onScenarioChange(prev => {
         const base = prev ?? buildEmptyScenario()
+        // One Kali only: insider drop replaces any existing attack-machine.
+        const nodes =
+          category === 'attack-machine'
+            ? base.visual.nodes.filter(n => n.type !== 'attack-machine')
+            : base.visual.nodes
+        const devices =
+          category === 'attack-machine'
+            ? Object.fromEntries(
+                Object.entries(base.devices.devices).filter(
+                  ([, d]) => d.category !== 'attack-machine'
+                )
+              )
+            : base.devices.devices
         return {
           ...base,
           visual: {
             ...base.visual,
             nodes: [
-              ...base.visual.nodes,
+              ...nodes,
               {
                 id: nodeId,
                 type: category,
@@ -1922,7 +1935,7 @@ export function ScadaCanvas({
             ]
           },
           devices: {
-            devices: { ...base.devices.devices, [nodeId]: device }
+            devices: { ...devices, [nodeId]: device }
           }
         }
       })
