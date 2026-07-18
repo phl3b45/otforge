@@ -1110,7 +1110,10 @@ export function ScadaCanvas({
       .join('|')}:${(scenario.visual.siteRegions ?? [])
       .map(r => `${r.id}@${r.position.x},${r.position.y},${r.width}x${r.height},${r.zone}`)
       .join('|')}:${Object.values(scenario.devices.devices)
-      .map(d => `${d.nodeId}@${d.ipAddress}@${d.label ?? ''}`)
+      .map(
+        d =>
+          `${d.nodeId}@${d.ipAddress}@${d.label ?? ''}@${d.category}@${d.sensor?.kind ?? ''}@${d.controller?.kind ?? ''}`
+      )
       .join(',')}`
     if (nodeSyncKey !== prevNodeSyncKeyRef.current) {
       prevNodeSyncKeyRef.current = nodeSyncKey
