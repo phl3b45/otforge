@@ -303,6 +303,31 @@ function nodeRenderEqual(a: Node, b: Node): boolean {
   )
 }
 
+/** displayNodes also layers className / fillLevel / cross-layer stubs onto nodes. */
+function displayNodeEqual(a: Node, b: Node): boolean {
+  if (a.className !== b.className) return false
+  if (a.position.x !== b.position.x || a.position.y !== b.position.y) return false
+  if (!!a.selected !== !!b.selected) return false
+  if (!nodeRenderEqual(a, b)) return false
+  if (a.type === 'siteNode') return true
+  const ad = a.data as DeviceNodeData
+  const bd = b.data as DeviceNodeData
+  if ((ad.fillLevel ?? -1) !== (bd.fillLevel ?? -1)) return false
+  const az =
+    ad.crossLayerLinks
+      ?.map(l => l.zone)
+      .slice()
+      .sort()
+      .join(',') ?? ''
+  const bz =
+    bd.crossLayerLinks
+      ?.map(l => l.zone)
+      .slice()
+      .sort()
+      .join(',') ?? ''
+  return az === bz
+}
+
 /**
  * Default IP address for newly dropped devices, by zone.
  *
@@ -816,6 +841,13 @@ export function ScadaCanvas({
   const rfInstance = useRef<ReactFlowInstance | null>(null)
 
   /**
+   * Previous displayNodes array — reuse object refs when decorations are unchanged
+   * so cross-layer stub injection / pending-connection classNames don't remount
+   * every node and wipe edge paths.
+   */
+  const prevDisplayNodesRef = useRef<Node[]>([])
+
+  /**
    * Tracks the last layer that triggered a fitView call.
    * fitView must only run when the user switches layer tabs, NOT on every scenario
    * mutation (node added, node dragged, edge added). Without this guard, dropping a
@@ -1075,7 +1107,16 @@ export function ScadaCanvas({
       }
     }
 
-    return result
+    // Keep RF node object identity stable across decoration rebuilds (pending
+    // connection highlight, cross-layer stubs, tank fill). New object refs here
+    // are the same class of bug as setNodes(allNodes) — traces vanish until tab switch.
+    const prevById = new Map(prevDisplayNodesRef.current.map(n => [n.id, n]))
+    const reconciled = result.map(fresh => {
+      const prev = prevById.get(fresh.id)
+      return prev && displayNodeEqual(prev, fresh) ? prev : fresh
+    })
+    prevDisplayNodesRef.current = reconciled
+    return reconciled
   }, [nodes, pendingConnection, levelStates, edges, scenario, activeLayer, onLayerChange])
 
   // Sync canvas state when the scenario or active layer changes
@@ -1083,6 +1124,7 @@ export function ScadaCanvas({
     if (!scenario) {
       setNodes([])
       setEdges([])
+      prevDisplayNodesRef.current = []
       // No nodes — show the full 25 × 25 canvas area so the user sees the grid
       setTimeout(() => {
         if (rfInstance.current) fitCanvasView(rfInstance.current)
