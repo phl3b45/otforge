@@ -800,10 +800,21 @@ describe('environment variable injection', () => {
     expect(env).toContain('PLC_VAR_COUNT=2')
   })
 
-  it('does NOT inject INITIAL_PROGRAM_B64 when plcProgram has no source', () => {
-    const compose = gen(makeScenario([['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }]]))
-    const env = compose.services['plc-1'].environment ?? []
-    expect(env.some(v => v.startsWith('INITIAL_PROGRAM_B64'))).toBe(false)
+  it('injects edge-aware auto ST when PLC has no authored plcProgram', () => {
+    const scenario = makeScenario([
+      ['plc-1', { category: 'plc', ipAddress: '10.200.10.10' }],
+      [
+        'pump-1',
+        { category: 'smart-controller', ipAddress: '10.200.10.11', controller: { kind: 'pump' } }
+      ]
+    ])
+    scenario.visual.edges = [
+      { id: 'e1', source: 'plc-1', target: 'pump-1', data: { protocol: 'modbus-tcp' } }
+    ]
+    const b64 = (gen(scenario).services['plc-1'].environment ?? [])
+      .find(v => v.startsWith('INITIAL_PROGRAM_B64='))
+      ?.slice('INITIAL_PROGRAM_B64='.length)
+    expect(Buffer.from(b64!, 'base64').toString()).toContain('pump_1_run AT %QX0.0')
   })
 })
 

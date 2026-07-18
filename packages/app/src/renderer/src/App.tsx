@@ -383,11 +383,13 @@ function StatusBar({
  */
 function PlcIdeModal({
   device,
+  scenario,
   simRunning,
   onProgramChange,
   onClose
 }: {
   device: DeviceConfig
+  scenario: OTForgeScenario
   simRunning: boolean
   onProgramChange: (nodeId: string, program: PLCProgramConfig) => void
   onClose: () => void
@@ -426,6 +428,7 @@ function PlcIdeModal({
         {/* Single-column Save Program body rendered by PlcIdePanel in modal mode */}
         <PlcIdePanel
           device={device}
+          scenario={scenario}
           simRunning={simRunning}
           onProgramChange={onProgramChange}
           modal={true}
@@ -2224,9 +2227,10 @@ export default function App() {
         onDelete={handleDelete}
       />
       {/* PLC IDE full-screen modal — fixed overlay rendered on top of the workspace */}
-      {plcIdeDevice && (
+      {plcIdeDevice && scenario && (
         <PlcIdeModal
           device={plcIdeDevice}
+          scenario={scenario}
           simRunning={simStatus === 'running'}
           onProgramChange={handleProgramChange}
           onClose={handleClosePlcIde}

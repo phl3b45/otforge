@@ -1,13 +1,15 @@
 {
   "extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
   "include": [
-    "src/renderer/src/**/*"
+    "src/renderer/src/**/*",
+    "../orchestrator/src/plc-program-gen.ts"
   ],
   "compilerOptions": {
     "composite": true,
     "paths": {
       "@renderer/*": ["./src/renderer/src/*"],
-      "@schema/*": ["../schema/src/*"]
+      "@schema/*": ["../schema/src/*"],
+      "@plc-gen": ["../orchestrator/src/plc-program-gen.ts"]
     }
   }
 }
