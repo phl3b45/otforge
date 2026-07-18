@@ -272,6 +272,38 @@ function fitCanvasView(instance: ReactFlowInstance): void {
 }
 
 /**
+ * True when two React Flow nodes would render the same on canvas.
+ * Used to keep object identity across scenario sync so edge handle bounds stay valid.
+ */
+function nodeRenderEqual(a: Node, b: Node): boolean {
+  if (a.type !== b.type) return false
+  if (a.type === 'siteNode') {
+    const ar = (a.data as SiteNodeData).region
+    const br = (b.data as SiteNodeData).region
+    return (
+      ar.id === br.id &&
+      ar.label === br.label &&
+      ar.color === br.color &&
+      ar.width === br.width &&
+      ar.height === br.height &&
+      ar.zone === br.zone &&
+      (a.data as SiteNodeData).readOnly === (b.data as SiteNodeData).readOnly
+    )
+  }
+  const ad = a.data as DeviceNodeData
+  const bd = b.data as DeviceNodeData
+  return (
+    ad.zone === bd.zone &&
+    ad.label === bd.label &&
+    ad.device.category === bd.device.category &&
+    ad.device.ipAddress === bd.device.ipAddress &&
+    (ad.device.label ?? '') === (bd.device.label ?? '') &&
+    (ad.device.sensor?.kind ?? '') === (bd.device.sensor?.kind ?? '') &&
+    (ad.device.controller?.kind ?? '') === (bd.device.controller?.kind ?? '')
+  )
+}
+
+/**
  * Default IP address for newly dropped devices, by zone.
  *
  * Must match ZONE_DEFAULTS in packages/orchestrator/src/network-config.ts — both
@@ -794,8 +826,9 @@ export function ScadaCanvas({
 
   /**
    * Tracks node-graph identity for the sync effect. Edge-only scenario updates
-   * must not call setNodes — replacing every node object leaves React Flow edge
-   * paths bound to stale handle bounds (traces vanish until a layer-tab switch).
+   * must not call setNodes. When setNodes does run (drop/edit), existing node
+   * object refs are preserved by id — replacing every node leaves React Flow
+   * edge paths bound to stale handle bounds (traces vanish until a tab switch).
    */
   const prevNodeSyncKeyRef = useRef<string>('')
 
@@ -1103,8 +1136,9 @@ export function ScadaCanvas({
         ? deviceNodes.map(n => (n.id === selId ? { ...n, selected: true } : n))
         : deviceNodes)
     ]
-    // Skip setNodes when only edges changed (e.g. new connection). Remounting nodes
-    // on every edge edit desyncs RF handle bounds from edge SVG paths.
+    // Skip setNodes when only edges changed. When nodes must update (drop, edit),
+    // reuse existing node object refs by id — a full remount leaves RF edge paths
+    // on stale handle bounds (traces vanish until a layer-tab switch).
     const nodeSyncKey = `${activeLayer}:${scenario.visual.nodes
       .map(n => `${n.id}@${n.position.x},${n.position.y},${n.data.zone},${n.data.label}`)
       .join('|')}:${(scenario.visual.siteRegions ?? [])
@@ -1117,7 +1151,30 @@ export function ScadaCanvas({
       .join(',')}`
     if (nodeSyncKey !== prevNodeSyncKeyRef.current) {
       prevNodeSyncKeyRef.current = nodeSyncKey
-      setNodes(allNodes)
+      setNodes(prev => {
+        const prevById = new Map(prev.map(n => [n.id, n]))
+        return allNodes.map(fresh => {
+          const existing = prevById.get(fresh.id)
+          if (!existing) return fresh
+          // Unchanged nodes keep the same object ref so RF handle bounds stay valid.
+          // (fresh.data is always a new object from scenarioToNodes — compare fields.)
+          const samePos =
+            existing.position.x === fresh.position.x && existing.position.y === fresh.position.y
+          const sameSel = !!existing.selected === !!fresh.selected
+          if (samePos && sameSel && nodeRenderEqual(existing, fresh)) return existing
+          return {
+            ...existing,
+            position: fresh.position,
+            data: fresh.data,
+            selected: fresh.selected,
+            width: fresh.width ?? existing.width,
+            height: fresh.height ?? existing.height,
+            zIndex: fresh.zIndex,
+            selectable: fresh.selectable,
+            draggable: fresh.draggable
+          }
+        })
+      })
     }
     // Mark every edge as reconnectable so the user can drag endpoints to reroute
     // connections without having to delete and recreate them (read-only mode excluded).
