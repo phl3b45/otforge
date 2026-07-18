@@ -609,6 +609,13 @@ describe('attack-machine — Insider Threat mode (visual zone placement)', () =>
     const nets = Object.keys(compose.services['kali-1'].networks)
     expect(nets).toEqual(['attacker-net', 'internet-dmz-net'])
   })
+
+  it('omits the insider drop-zone *_SUBNET env so entrypoint.sh will not steal the connected route', () => {
+    const env = gen(insiderScenario('ot')).services['kali-1'].environment ?? []
+    expect(env.some(e => e.startsWith('OT_SUBNET='))).toBe(false)
+    expect(env).toContain('CONTROL_SUBNET=10.200.20.0/24')
+    expect(env).toContain('PLANT_DMZ_SUBNET=10.200.30.0/24')
+  })
 })
 
 // ── PLC port publishing ───────────────────────────────────────────────────────
