@@ -50,6 +50,8 @@ jobs:
             context: containers/profinet
           - image: otforge-camera
             context: containers/camera
+          - image: otforge-dcs
+            context: containers/dcs
           - image: otforge-firewall
             context: containers/firewall
           - image: otforge-switch
