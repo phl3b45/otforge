@@ -808,24 +808,17 @@ export function generateCompose(
         services[serviceName].environment = attackEnv
       }
 
-      // Inject static routes via the firewall gateway before the main entrypoint runs.
-      // Using compose entrypoint override avoids requiring an attack-base image rebuild
-      // when routing config changes. Routes OT/control/plant-dmz traffic through the
-      // firewall so nftables deny rules are effective for Tutorial 03 defense exercises.
+      // entrypoint.sh does `ip route replace $SUBNET via $FW_GW_IP` for each
+      // *_SUBNET env that is set. Omit the insider drop-tab subnet so the
+      // connected NIC route is not stolen (same-zone nmap showed filtered).
       const fwGwIp = `${attackerBase}.254`
-      services[serviceName].entrypoint = [
-        '/bin/sh',
-        '-c',
-        `ip route replace ${effectiveZones.ot.subnet} via ${fwGwIp} 2>/dev/null || true; ` +
-          `ip route replace ${effectiveZones.control.subnet} via ${fwGwIp} 2>/dev/null || true; ` +
-          `ip route replace ${effectiveZones['plant-dmz'].subnet} via ${fwGwIp} 2>/dev/null || true; ` +
-          `exec /entrypoint.sh`
-      ]
       const attackEnvFw: string[] = services[serviceName].environment ?? []
       attackEnvFw.push(`FW_GW_IP=${fwGwIp}`)
-      attackEnvFw.push(`OT_SUBNET=${effectiveZones.ot.subnet}`)
-      attackEnvFw.push(`CONTROL_SUBNET=${effectiveZones.control.subnet}`)
-      attackEnvFw.push(`PLANT_DMZ_SUBNET=${effectiveZones['plant-dmz'].subnet}`)
+      if (insiderZone !== 'ot') attackEnvFw.push(`OT_SUBNET=${effectiveZones.ot.subnet}`)
+      if (insiderZone !== 'control')
+        attackEnvFw.push(`CONTROL_SUBNET=${effectiveZones.control.subnet}`)
+      if (insiderZone !== 'plant-dmz')
+        attackEnvFw.push(`PLANT_DMZ_SUBNET=${effectiveZones['plant-dmz'].subnet}`)
       services[serviceName].environment = attackEnvFw
 
       // Point Kali's resolver at the scenario's dns-server so exercise hostnames
