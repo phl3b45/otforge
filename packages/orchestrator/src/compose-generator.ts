@@ -64,8 +64,10 @@ const DEVICE_IMAGES: Record<DeviceCategory, string> = {
   'process-unit': 'ghcr.io/iburres/otforge-process:latest',
   // STUB: Safety PLC / SIS — same OpenPLC runtime until otforge-safety-plc is built.
   'safety-plc': 'ghcr.io/iburres/otforge-openplc:latest',
-  // STUB: DCS Controller — pymodbus on Alpine until otforge-dcs image is built.
-  'dcs-controller': 'ghcr.io/iburres/alpine:latest',
+  // Real DCS Controller — polls connected field devices over Modbus TCP and
+  // re-exposes them via an OPC-UA server (containers/dcs), mirroring how a
+  // real DCS (DeltaV/Experion/800xA) aggregates field I/O.
+  'dcs-controller': 'ghcr.io/iburres/otforge-dcs:latest',
   // BACnet/IP device — bacpypes3 Python server on Alpine (containers/bacnet)
   sensor: 'ghcr.io/iburres/otforge-bacnet:latest',
   // STUB: IIoT sensor — MQTT publisher stub until otforge-iiot-sensor is built.
@@ -151,7 +153,7 @@ const DEVICE_LIMITS: Record<DeviceCategory, { memory: number; cpus: string }> = 
   'iec104-rtu': { memory: 80, cpus: '0.25' }, // pure-Python IEC 104 on Alpine (Phase 10)
   'process-unit': { memory: 96, cpus: '0.25' }, // pymodbus + physics loop on Alpine (Phase 11)
   'safety-plc': { memory: 128, cpus: '0.5' }, // Safety PLC / SIS — same budget as process PLC
-  'dcs-controller': { memory: 128, cpus: '0.5' }, // DCS Controller — OPC-UA server + loop logic
+  'dcs-controller': { memory: 128, cpus: '0.5' }, // Real DCS — Modbus client poll loop + OPC-UA server
   sensor: { memory: 96, cpus: '0.25' }, // BACnet/IP bacpypes3 Python server
   'iiot-sensor': { memory: 64, cpus: '0.1' }, // IIoT sensor — lightweight MQTT publish loop
   'iot-gateway': { memory: 96, cpus: '0.2' }, // IoT gateway — MQTT broker + protocol bridge
@@ -446,6 +448,39 @@ export function generateCompose(
     }
   }
 
+  // ── DCS controller → field device map ──────────────────────────────────────
+  // Scan canvas edges to find which smart-controller/smart-sensor field
+  // devices (if any) each dcs-controller is directly wired to. Used below to
+  // inject DCS_FIELD_DEVICES so the DCS's Modbus client poll loop knows which
+  // field devices to read at container startup — see containers/dcs/server.py.
+  //
+  // Unlike the PLC↔process-unit map above, this is a direct-edge-only,
+  // one-to-many relationship (no coilSource indirection): a DCS only sees
+  // whatever is actually wired to it on the canvas, matching a real DCS's
+  // I/O scope and connectionRules.ts's existing dcs-controller.sensor entry.
+  const dcsToFieldDeviceNodeIds = new Map<string, string[]>()
+  const isFieldDevice = (category: string): boolean =>
+    category === 'smart-controller' || category === 'smart-sensor'
+  for (const edge of scenario.visual.edges) {
+    const srcDevice = scenario.devices.devices[edge.source]
+    const tgtDevice = scenario.devices.devices[edge.target]
+    if (!srcDevice || !tgtDevice) continue
+    let dcsNodeId: string | null = null
+    let fieldNodeId: string | null = null
+    if (srcDevice.category === 'dcs-controller' && isFieldDevice(tgtDevice.category)) {
+      dcsNodeId = edge.source
+      fieldNodeId = edge.target
+    } else if (tgtDevice.category === 'dcs-controller' && isFieldDevice(srcDevice.category)) {
+      dcsNodeId = edge.target
+      fieldNodeId = edge.source
+    }
+    if (dcsNodeId && fieldNodeId) {
+      const existing = dcsToFieldDeviceNodeIds.get(dcsNodeId) ?? []
+      existing.push(fieldNodeId)
+      dcsToFieldDeviceNodeIds.set(dcsNodeId, existing)
+    }
+  }
+
   // ── IP deduplication ────────────────────────────────────────────────────────
   // Tracks host octets already assigned per Docker network so that stale or
   // duplicate IPs in the scenario JSON never produce an invalid compose file.
@@ -640,6 +675,30 @@ export function generateCompose(
       if (device.controller.liftMethod)
         ctrlEnv.push(`CONTROLLER_LIFT_METHOD=${device.controller.liftMethod}`)
       services[serviceName].environment = ctrlEnv
+    }
+
+    // DCS controller — inject the field devices (smart-controller/smart-sensor)
+    // this DCS is directly wired to, so containers/dcs/server.py knows which
+    // Modbus TCP hosts to poll at startup. Omitted entirely when the DCS has
+    // no connecting edges yet — the container still starts cleanly with an
+    // empty namespace (see server.py's module docstring).
+    if (device.category === 'dcs-controller') {
+      const fieldDeviceNodeIds = dcsToFieldDeviceNodeIds.get(nodeId) ?? []
+      if (fieldDeviceNodeIds.length > 0) {
+        const fieldDeviceEntries = fieldDeviceNodeIds.map(fieldNodeId => {
+          const fieldIp =
+            claimedDeviceIps.get(fieldNodeId) ??
+            resolveDeviceIp(
+              scenario.devices.devices[fieldNodeId].ipAddress,
+              scenario,
+              effectiveZones
+            )
+          return `${sanitizeServiceName(fieldNodeId)}|${fieldIp}`
+        })
+        const dcsEnv: string[] = services[serviceName].environment ?? []
+        dcsEnv.push(`DCS_FIELD_DEVICES=${fieldDeviceEntries.join(',')}`)
+        services[serviceName].environment = dcsEnv
+      }
     }
 
     // Process-unit containers publish their Modbus TCP port (502) on a deterministic
