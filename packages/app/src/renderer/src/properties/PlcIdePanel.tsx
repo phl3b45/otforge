@@ -30,60 +30,14 @@
  */
 
 import { useState, useCallback, useId } from 'react'
-import type { DeviceConfig, PLCProgramConfig, Protocol, ImportedRoutine } from '@otforge/schema'
-
-// ── Default ST program template ───────────────────────────────────────────────
-
-const DEFAULT_ST_PROGRAM = `(* ============================================================
-   OTForge — PLC Program Template
-   Language: IEC 61131-3 Structured Text (ST)
-
-   Instructions:
-   1. Declare your process variables in the VAR block.
-      - Use AT %IX0.0 for digital inputs  (sensors, switches)
-      - Use AT %QX0.0 for digital outputs (pumps, valves)
-      - Use AT %IW0   for analog inputs   (4–20 mA, 0–10 V)
-      - Use AT %MW0   for memory words    (setpoints, counters)
-   2. Write your control logic below END_VAR.
-   3. Add variable bindings in the table, then click Save
-      to store the program in the scenario.
-   4. Click Deploy to push the program to a running container.
-   ============================================================ *)
-
-PROGRAM main
-  VAR
-    (* Process inputs — read from Modbus Input/Coil registers *)
-    level_high  AT %IX0.0 : BOOL;   (* High-level float switch    *)
-    level_low   AT %IX0.1 : BOOL;   (* Low-level float switch     *)
-    flow_rate   AT %IW0   : WORD;   (* Flow rate 0–1000 (L/min×10)*)
-
-    (* Process outputs — written to Modbus Coil/HR registers *)
-    pump_run    AT %QX0.0 : BOOL;   (* Start pump                 *)
-    inlet_valve AT %QX0.1 : BOOL;   (* Open inlet valve           *)
-    alarm_out   AT %QX0.2 : BOOL;   (* Activate alarm horn        *)
-
-    (* Internal memory — setpoints configurable via HMI *)
-    flow_setpt  AT %MW0   : WORD := 500;  (* Low-flow alarm threshold   *)
-  END_VAR
-
-  (* ── Control logic ──────────────────────────────────────────── *)
-
-  (* Start pump when tank is low; stop when tank is full *)
-  IF NOT level_high AND level_low THEN
-    pump_run    := TRUE;
-    inlet_valve := TRUE;
-  END_IF;
-
-  IF level_high THEN
-    pump_run    := FALSE;
-    inlet_valve := FALSE;
-  END_IF;
-
-  (* Raise alarm if flow drops below setpoint while pump is running *)
-  alarm_out := pump_run AND (flow_rate < flow_setpt);
-
-END_PROGRAM
-`
+import type {
+  DeviceConfig,
+  PLCProgramConfig,
+  Protocol,
+  ImportedRoutine,
+  OTForgeScenario
+} from '@otforge/schema'
+import { buildAutoPlcProgram, toB64, fromB64 } from '@plc-gen'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -101,6 +55,8 @@ interface VarRow {
 
 export interface PlcIdePanelProps {
   device: DeviceConfig
+  /** Full scenario — used to seed edge-aware auto ST when no plcProgram is saved. */
+  scenario: OTForgeScenario
   simRunning: boolean
   onProgramChange: (nodeId: string, program: PLCProgramConfig) => void
   /** When true, renders in the full-screen two-column IDE modal layout. */
@@ -570,15 +526,18 @@ function RoutinePickerModal({
  */
 export function PlcIdePanel({
   device,
+  scenario,
   simRunning,
   onProgramChange,
   modal = false
 }: PlcIdePanelProps) {
+  const auto = !device.plcProgram?.source ? buildAutoPlcProgram(scenario, device.nodeId) : null
   const initialSource = device.plcProgram?.source
-    ? atob(device.plcProgram.source)
-    : DEFAULT_ST_PROGRAM
-  const initialRows: VarRow[] =
-    device.plcProgram?.variables.map((v, i) => schemaVarToRow(v, i)) ?? []
+    ? fromB64(device.plcProgram.source)
+    : fromB64(auto!.source)
+  const initialRows: VarRow[] = (
+    device.plcProgram?.variables?.length ? device.plcProgram.variables : (auto?.variables ?? [])
+  ).map((v, i) => schemaVarToRow(v, i))
 
   const [source, setSource] = useState(initialSource)
   const [varRows, setVarRows] = useState<VarRow[]>(initialRows)
@@ -598,16 +557,20 @@ export function PlcIdePanel({
   const buildProgram = useCallback(
     (): PLCProgramConfig => ({
       language: 'st',
-      source: btoa(source),
+      source: toB64(source),
       variables: varRows.map(rowToSchemaVar)
     }),
     [source, varRows]
   )
 
   const handleSave = useCallback(() => {
-    onProgramChange(device.nodeId, buildProgram())
-    setStatusMsg('Program saved. Restart simulation to deploy to PLC.')
-    setTimeout(() => setStatusMsg(null), 4000)
+    try {
+      onProgramChange(device.nodeId, buildProgram())
+      setStatusMsg('Program saved. Restart simulation to deploy to PLC.')
+      setTimeout(() => setStatusMsg(null), 4000)
+    } catch (err) {
+      setStatusMsg(`Save failed: ${(err as Error).message}`)
+    }
   }, [buildProgram, device.nodeId, onProgramChange])
 
   const handleOpenWebUI = useCallback(() => {

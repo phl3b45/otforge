@@ -31,6 +31,7 @@
 import yaml from 'js-yaml'
 import type { OTForgeScenario, DeviceCategory, NetworkZone } from '@otforge/schema'
 import { ZONE_DEFAULTS } from './network-config'
+import { buildAutoPlcProgram } from './plc-program-gen'
 
 /**
  * Maps each DeviceCategory to its Docker image reference on GHCR.
@@ -1549,12 +1550,12 @@ function ipToInt(ip: string): number {
  * configure the server process when the container starts.
  *
  * @param device   - The device configuration to generate env vars for.
- * @param _scenario - Full scenario (reserved for future cross-device references).
+ * @param scenario - Full scenario (PLC auto-ST walks edges for coil bindings).
  * @returns Array of "KEY=VALUE" strings for the compose environment field.
  */
 function buildDeviceEnv(
   device: OTForgeScenario['devices']['devices'][string],
-  _scenario: OTForgeScenario
+  scenario: OTForgeScenario
 ): string[] {
   const env: string[] = [
     `DEVICE_ID=${device.nodeId}`,
@@ -1697,17 +1698,14 @@ function buildDeviceEnv(
     env.push(`MAIL_DOMAIN=${device.mail.domain}`)
   }
 
-  // PLC program pre-load (Phase 4):
-  //   If the device has a saved Structured Text program, inject it as a base64-
-  //   encoded environment variable. The OpenPLC entrypoint.sh reads this variable,
-  //   decodes it to a .st file, and pre-loads it into the runtime at container
-  //   startup — so the PLC runs the user's program from the very first second.
-  //   The source field in PLCProgramConfig is already base64-encoded (btoa in the UI).
-  if (device.plcProgram?.source) {
-    env.push(`INITIAL_PROGRAM_B64=${device.plcProgram.source}`)
-    // Inject variable binding count for informational logging in entrypoint.sh.
-    // Optional-chain guards scenarios that omit the variables array (e.g. hand-authored JSON).
-    env.push(`PLC_VAR_COUNT=${device.plcProgram.variables?.length ?? 0}`)
+  // PLC program pre-load: authored plcProgram wins; otherwise edge-aware ST so
+  // OpenPLC auto-starts (502 binds) with coils for connected pumps/valves.
+  if (device.category === 'plc' || device.category === 'safety-plc') {
+    const program = device.plcProgram?.source
+      ? device.plcProgram
+      : buildAutoPlcProgram(scenario, device.nodeId)
+    env.push(`INITIAL_PROGRAM_B64=${program.source}`)
+    env.push(`PLC_VAR_COUNT=${program.variables?.length ?? 0}`)
   }
 
   return env

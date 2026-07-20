@@ -108,7 +108,9 @@ export default defineConfig({
     resolve: {
       alias: {
         '@renderer': resolve(__dirname, 'src/renderer/src'),
-        '@schema': resolve(__dirname, '../schema/src')
+        '@schema': resolve(__dirname, '../schema/src'),
+        // Bundle the pure gen helper — do not import @otforge/orchestrator (CJS/Docker).
+        '@plc-gen': resolve(__dirname, '../orchestrator/src/plc-program-gen.ts')
       }
     }
   }
