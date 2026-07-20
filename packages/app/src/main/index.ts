@@ -747,6 +747,14 @@ function registerIPCHandlers(): void {
       send('Installing dependencies (npm install)...')
       await runStreamedCommand('npm', ['install'], projectRoot, send)
 
+      // Tracks the container image pull outcome SEPARATELY from the overall
+      // source update — see AppUpdateResult.imageRefresh in packages/schema/
+      // src/ipc.ts for why this can't just be folded into `ok`. Every branch
+      // below sets exactly one of these two variables so the dialog text can
+      // tell the user honestly whether images were actually refreshed.
+      let imageRefresh: AppUpdateResult['imageRefresh']
+      let imageRefreshError: string | undefined
+
       if (scenario) {
         const dockerAvailable = await dockerClient.isAvailable()
         if (dockerAvailable) {
@@ -756,17 +764,36 @@ function registerIPCHandlers(): void {
           const scenarioDir = pathJoin(app.getPath('userData'), 'scenarios', projectName)
           const composeYaml = generateCompose(scenario, projectName, scenarioDir, zones)
           const imageResult = await dockerClient.updateImages(projectName, composeYaml, send)
-          if (!imageResult.ok) {
+          if (imageResult.ok) {
+            imageRefresh = 'ok'
+          } else {
+            imageRefresh = 'failed'
+            imageRefreshError = imageResult.error
             send(
               `Container image refresh failed: ${imageResult.error} (source update still applied)`
             )
           }
         } else {
+          imageRefresh = 'skipped-no-docker'
           send('Docker is not running — skipping container image refresh.')
         }
       } else {
+        imageRefresh = 'skipped-no-scenario'
         send('No scenario loaded — skipping container image refresh.')
       }
+
+      // Appended to whichever dialog shows below whenever images were NOT
+      // confirmed refreshed, so "up to date"/"restart required" never implies
+      // more than what actually happened. Left empty (no addendum) only when
+      // imageRefresh === 'ok'.
+      const imageRefreshNote =
+        imageRefresh === 'skipped-no-scenario'
+          ? '\n\nNote: no lab was open, so container images were NOT refreshed. Open a lab and click Update OTForge again to check for newer images.'
+          : imageRefresh === 'skipped-no-docker'
+            ? '\n\nNote: Docker was not running, so container images were NOT refreshed. Start Docker and click Update OTForge again to check for newer images.'
+            : imageRefresh === 'failed'
+              ? `\n\nNote: container image refresh FAILED (${imageRefreshError}). Source code is current, but you may still be running outdated containers — try Update OTForge again.`
+              : ''
 
       if (restartRequired) {
         await dialog.showMessageBox(mainWindow!, {
@@ -775,7 +802,8 @@ function registerIPCHandlers(): void {
           message: 'Update downloaded — restart required',
           detail:
             "This update changed OTForge's own code, so it needs to restart to take effect.\n\n" +
-            'Click OK, then stop this process (Ctrl+C) and run `npm run dev` again.',
+            'Click OK, then stop this process (Ctrl+C) and run `npm run dev` again.' +
+            imageRefreshNote,
           buttons: ['OK']
         })
         app.exit(0)
@@ -784,11 +812,12 @@ function registerIPCHandlers(): void {
           type: 'info',
           title: 'OTForge',
           message: 'OTForge is already up to date.',
+          detail: imageRefreshNote || undefined,
           buttons: ['OK']
         })
       }
 
-      return { ok: true, restartRequired }
+      return { ok: true, restartRequired, imageRefresh, imageRefreshError }
     } catch (err) {
       return { ok: false, error: `Update failed: ${(err as Error).message}` }
     }
