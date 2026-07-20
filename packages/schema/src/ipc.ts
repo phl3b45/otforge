@@ -124,11 +124,23 @@ export interface AppInfo {
  * dialog. The renderer does not need to react to this field at all — by the
  * time app:update's promise resolves, the user has already been told
  * everything they need to know.
+ *
+ * `imageRefresh` reflects the SEPARATE outcome of the container image pull
+ * step, which does not affect `ok`/`restartRequired` at all — a scenario
+ * not being loaded, Docker not running, or `docker compose pull` failing are
+ * all still reported as an overall successful update, since the source/
+ * dependency update genuinely did succeed independently. This field exists
+ * so the main process's own dialog can say so honestly instead of always
+ * showing the same "up to date" message regardless of whether images were
+ * actually refreshed — a scenario that silently never got its images
+ * updated looks identical to a fully-current one otherwise.
  */
 export interface AppUpdateResult {
   ok: boolean
   error?: string
   restartRequired?: boolean
+  imageRefresh?: 'ok' | 'failed' | 'skipped-no-scenario' | 'skipped-no-docker'
+  imageRefreshError?: string
 }
 
 // ── PLC firmware import (Phase 9 add-on) ──────────────────────────────────────
