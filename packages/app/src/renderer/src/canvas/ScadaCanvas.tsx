@@ -272,6 +272,63 @@ function fitCanvasView(instance: ReactFlowInstance): void {
 }
 
 /**
+ * True when two React Flow nodes would render the same on canvas.
+ * Used to keep object identity across scenario sync so edge handle bounds stay valid.
+ */
+function nodeRenderEqual(a: Node, b: Node): boolean {
+  if (a.type !== b.type) return false
+  if (a.type === 'siteNode') {
+    const ar = (a.data as SiteNodeData).region
+    const br = (b.data as SiteNodeData).region
+    return (
+      ar.id === br.id &&
+      ar.label === br.label &&
+      ar.color === br.color &&
+      ar.width === br.width &&
+      ar.height === br.height &&
+      ar.zone === br.zone &&
+      (a.data as SiteNodeData).readOnly === (b.data as SiteNodeData).readOnly
+    )
+  }
+  const ad = a.data as DeviceNodeData
+  const bd = b.data as DeviceNodeData
+  return (
+    ad.zone === bd.zone &&
+    ad.label === bd.label &&
+    ad.device.category === bd.device.category &&
+    ad.device.ipAddress === bd.device.ipAddress &&
+    (ad.device.label ?? '') === (bd.device.label ?? '') &&
+    (ad.device.sensor?.kind ?? '') === (bd.device.sensor?.kind ?? '') &&
+    (ad.device.controller?.kind ?? '') === (bd.device.controller?.kind ?? '')
+  )
+}
+
+/** displayNodes also layers className / fillLevel / cross-layer stubs onto nodes. */
+function displayNodeEqual(a: Node, b: Node): boolean {
+  if (a.className !== b.className) return false
+  if (a.position.x !== b.position.x || a.position.y !== b.position.y) return false
+  if (!!a.selected !== !!b.selected) return false
+  if (!nodeRenderEqual(a, b)) return false
+  if (a.type === 'siteNode') return true
+  const ad = a.data as DeviceNodeData
+  const bd = b.data as DeviceNodeData
+  if ((ad.fillLevel ?? -1) !== (bd.fillLevel ?? -1)) return false
+  const az =
+    ad.crossLayerLinks
+      ?.map(l => l.zone)
+      .slice()
+      .sort()
+      .join(',') ?? ''
+  const bz =
+    bd.crossLayerLinks
+      ?.map(l => l.zone)
+      .slice()
+      .sort()
+      .join(',') ?? ''
+  return az === bz
+}
+
+/**
  * Default IP address for newly dropped devices, by zone.
  *
  * Must match ZONE_DEFAULTS in packages/orchestrator/src/network-config.ts — both
@@ -784,6 +841,13 @@ export function ScadaCanvas({
   const rfInstance = useRef<ReactFlowInstance | null>(null)
 
   /**
+   * Previous displayNodes array — reuse object refs when decorations are unchanged
+   * so cross-layer stub injection / pending-connection classNames don't remount
+   * every node and wipe edge paths.
+   */
+  const prevDisplayNodesRef = useRef<Node[]>([])
+
+  /**
    * Tracks the last layer that triggered a fitView call.
    * fitView must only run when the user switches layer tabs, NOT on every scenario
    * mutation (node added, node dragged, edge added). Without this guard, dropping a
@@ -1043,7 +1107,16 @@ export function ScadaCanvas({
       }
     }
 
-    return result
+    // Keep RF node object identity stable across decoration rebuilds (pending
+    // connection highlight, cross-layer stubs, tank fill). New object refs here
+    // are the same class of bug as setNodes(allNodes) — traces vanish until tab switch.
+    const prevById = new Map(prevDisplayNodesRef.current.map(n => [n.id, n]))
+    const reconciled = result.map(fresh => {
+      const prev = prevById.get(fresh.id)
+      return prev && displayNodeEqual(prev, fresh) ? prev : fresh
+    })
+    prevDisplayNodesRef.current = reconciled
+    return reconciled
   }, [nodes, pendingConnection, levelStates, edges, scenario, activeLayer, onLayerChange])
 
   // Sync canvas state when the scenario or active layer changes
@@ -1051,6 +1124,7 @@ export function ScadaCanvas({
     if (!scenario) {
       setNodes([])
       setEdges([])
+      prevDisplayNodesRef.current = []
       // No nodes — show the full 25 × 25 canvas area so the user sees the grid
       setTimeout(() => {
         if (rfInstance.current) fitCanvasView(rfInstance.current)
@@ -1095,7 +1169,31 @@ export function ScadaCanvas({
         ? deviceNodes.map(n => (n.id === selId ? { ...n, selected: true } : n))
         : deviceNodes)
     ]
-    setNodes(allNodes)
+    // Reuse existing node object refs by id. A full remount leaves RF edge paths
+    // on stale handle bounds (traces vanish until a layer-tab switch).
+    setNodes(prev => {
+      const prevById = new Map(prev.map(n => [n.id, n]))
+      return allNodes.map(fresh => {
+        const existing = prevById.get(fresh.id)
+        if (!existing) return fresh
+        // fresh.data is always a new object from scenarioToNodes — compare fields.
+        const samePos =
+          existing.position.x === fresh.position.x && existing.position.y === fresh.position.y
+        const sameSel = !!existing.selected === !!fresh.selected
+        if (samePos && sameSel && nodeRenderEqual(existing, fresh)) return existing
+        return {
+          ...existing,
+          position: fresh.position,
+          data: fresh.data,
+          selected: fresh.selected,
+          width: fresh.width ?? existing.width,
+          height: fresh.height ?? existing.height,
+          zIndex: fresh.zIndex,
+          selectable: fresh.selectable,
+          draggable: fresh.draggable
+        }
+      })
+    })
     // Mark every edge as reconnectable so the user can drag endpoints to reroute
     // connections without having to delete and recreate them (read-only mode excluded).
     setEdges(
