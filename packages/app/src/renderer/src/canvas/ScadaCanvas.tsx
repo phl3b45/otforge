@@ -267,8 +267,10 @@ const FIT_ZOOM_BOOST = 1.5
  * "too zoomed out" feeling is fixed consistently everywhere, not just on startup.
  */
 function fitCanvasView(instance: ReactFlowInstance): void {
-  instance.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 })
-  instance.zoomTo(instance.getZoom() * FIT_ZOOM_BOOST, { duration: 0 })
+  void (async () => {
+    await instance.fitBounds(CANVAS_BOUNDS, { padding: 0.04, duration: 0 })
+    await instance.zoomTo(instance.getZoom() * FIT_ZOOM_BOOST, { duration: 0 })
+  })()
 }
 
 /**
@@ -855,6 +857,7 @@ export function ScadaCanvas({
    * which re-centers the viewport — making the device appear to "snap to center".
    */
   const prevLayerRef = useRef<NetworkZone | null>(null)
+  const prevScenarioKeyRef = useRef<string | null>(null)
 
   /**
    * Timer ref for auto-dismissing the invalid connection tooltip.
@@ -1130,6 +1133,7 @@ export function ScadaCanvas({
         if (rfInstance.current) fitCanvasView(rfInstance.current)
       }, 100)
       prevLayerRef.current = null
+      prevScenarioKeyRef.current = null
       return
     }
     const deviceNodes = scenarioToNodes(scenario, activeLayer)
@@ -1204,6 +1208,11 @@ export function ScadaCanvas({
     )
     // Only re-fit when the active layer tab changes — not on every node/edge mutation.
     // Scenario edits (drops, drags, connections) must not re-center the viewport.
+    const scenarioKey = `${scenario.meta.name}\0${scenario.meta.createdAt}`
+    if (scenarioKey !== prevScenarioKeyRef.current) {
+      prevScenarioKeyRef.current = scenarioKey
+      prevLayerRef.current = null
+    }
     if (prevLayerRef.current !== activeLayer) {
       prevLayerRef.current = activeLayer
       setTimeout(() => {
